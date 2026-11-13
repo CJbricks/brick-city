@@ -57,7 +57,7 @@ import {
   tenKStatus,
 } from "@/lib/unlocks";
 import { levelFromXp } from "@/lib/xp";
-import { homeSpawn } from "@/game/town";
+import { TILE, homeSpawn } from "@/game/town";
 
 const XP_KEYS = ["overall", "trail", "marathon", "ultra", "versatile"];
 
@@ -397,6 +397,9 @@ export function createNewGame({ name, gender }) {
     milestones: [],
     weeklyHistory: [],
     pendingSummary: null,
+    // Pixel size of one tile when this save was written. loadSave uses it
+    // to tell a v2 position (already 32px) from a v1 position (16px).
+    tileSize: TILE,
     position: homeSpawn(),
     lastTicker: "",
   };

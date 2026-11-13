@@ -6,10 +6,15 @@
 
 import { describe, expect, it } from "vitest";
 import { createNewGame } from "@/lib/activities";
-import { CITY_SIGNS, DIR, buildWorld, canReach, homeSpawn, isBlocked, lookupInteract, PLACES, TILE, signCopy } from "@/game/town";
+import { CITY_SIGNS, COLS, DIR, ROWS, buildWorld, canReach, homeSpawn, isBlocked, lookupInteract, PLACES, TILE, signCopy, worldPixelSize } from "@/game/town";
 import { CITY_INFO } from "@/lib/constants";
 
 describe("town paths", () => {
+  it("draws the town at 32px tiles", () => {
+    expect(TILE).toBe(32);
+    expect(worldPixelSize()).toEqual({ width: COLS * 32, height: ROWS * 32 });
+  });
+
   it("starts at home on a walkable tile and can reach every place", () => {
     const state = createNewGame({ name: "Ada", gender: "female" });
     const world = buildWorld(state);

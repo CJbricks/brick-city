@@ -8,6 +8,10 @@
  * Coordinates are tiles. (0, 0) is the top-left tree border. Y grows
  * downward, same as the screen. A "mat" is the walkable tile in front of
  * a door. Standing on it and pressing A opens that place.
+ *
+ * TILE is 32 source pixels. v1 used 16. A saved position is a pixel,
+ * not a tile, so an old save has to be doubled on load (see save.js)
+ * or the runner spawns halfway into the next tile and often in a wall.
  */
 
 import { CITY_INFO } from "@/lib/constants";
@@ -15,7 +19,7 @@ import { isMountainOpen } from "@/lib/unlocks";
 
 export { CITY_INFO };
 
-export const TILE = 16;
+export const TILE = 32;
 export const COLS = 36;
 export const ROWS = 30;
 
