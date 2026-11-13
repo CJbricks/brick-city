@@ -1,0 +1,507 @@
+/**
+ * PlayScreen.js
+ * The town, once a runner exists. This component owns the windows (menus,
+ * dialogue, map, races) and the keyboard. The canvas owns walking. They
+ * meet when you press A: we ask the canvas what tile you're facing, then
+ * run a pure function from src/lib/activities.js and show the result.
+ *
+ * Saves go to localStorage. There is no server and no Strava.
+ */
+
+"use client";
+
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Hud } from "@/components/game/Hud";
+import { Overworld } from "@/components/game/Overworld";
+import {
+  BonkChoice,
+  DialogueView,
+  HelpView,
+  InventoryView,
+  MapView,
+  MenuList,
+  RaceView,
+  StatusView,
+  SummaryView,
+  WeekView,
+  travelSpawn,
+} from "@/components/game/Panels";
+import { TouchControls } from "@/components/game/TouchControls";
+import { CITY_SIGNS, PLACES, placeIsLocked, signCopy } from "@/game/town";
+import {
+  acknowledgeWeek,
+  chatLines,
+  closetItems,
+  jobScript,
+  menuFor,
+  perform,
+  shoeShopItems,
+} from "@/lib/activities";
+import { describeNeeds, isMountainOpen, mountainStatus } from "@/lib/unlocks";
+import { writeSave } from "@/lib/save";
+
+const SYSTEM = [
+  { label: "Runner status", detail: "Meters, attributes, gear", action: { type: "open-status" } },
+  { label: "This week", detail: "Miles, races, old summaries", action: { type: "open-week" } },
+  { label: "Shoes", detail: "Closet", action: { type: "open-gear" } },
+  { label: "How to play", detail: "Buttons", action: { type: "open-help" } },
+  { label: "Save game", detail: "This browser", action: { type: "save" } },
+  { label: "Title screen", detail: "Leave the town", action: { type: "title" } },
+];
+
+export function PlayScreen({ game, setGame, onTitle }) {
+  const [panel, setPanel] = useState(null);
+  const [ticker, setTicker] = useState("");
+  const [mapNote, setMapNote] = useState("");
+  const worldRef = useRef(null);
+  const gameRef = useRef(game);
+  const panelRef = useRef(panel);
+  const actions = useRef({});
+
+  const frozen = Boolean(panel) || Boolean(game.pendingSummary);
+
+  useLayoutEffect(() => {
+    worldRef.current?.setLive({
+      game,
+      frozen,
+      mountainOpen: isMountainOpen(game),
+    });
+  });
+
+  useEffect(() => {
+    if (frozen) worldRef.current?.clearHeld();
+  }, [frozen]);
+
+  useEffect(() => {
+    const pos = worldRef.current?.getPosition();
+    writeSave(pos ? { ...game, position: pos } : game);
+  }, [game]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const pos = worldRef.current?.getPosition();
+      if (!pos) return;
+      writeSave({ ...gameRef.current, position: pos });
+    }, 2000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!ticker) return undefined;
+    const id = setTimeout(() => setTicker(""), 4200);
+    return () => clearTimeout(id);
+  }, [ticker]);
+
+  function currentState() {
+    const pos = worldRef.current?.getPosition();
+    return pos ? { ...gameRef.current, position: pos } : gameRef.current;
+  }
+
+  function commit(next, lines, nextTicker) {
+    setGame(next);
+    if (nextTicker) setTicker(nextTicker);
+    if (lines && lines.length) {
+      setPanel({ type: "dialogue", speaker: "Brick City", pages: lines, index: 0 });
+    } else {
+      setPanel(null);
+    }
+  }
+
+  function run(action, roll = Math.random()) {
+    const result = perform(currentState(), action, roll);
+    // A bonk with a gel in the pocket waits here. The same roll is reused
+    // when the player eats the gel or toughs it out, so the threat does
+    // not get rerolled.
+    if (result.needsChoice) {
+      setPanel({
+        type: "bonk",
+        action,
+        roll,
+        gels: currentState().gels || 0,
+        choiceIndex: 0,
+      });
+      return;
+    }
+    commit(result.state, result.lines, result.ticker);
+  }
+
+  function activate(item) {
+    if (!item) return;
+    if (item.disabled) {
+      setPanel({
+        type: "dialogue",
+        speaker: "Brick City",
+        pages: [item.disabledReason || "Not now."],
+        index: 0,
+      });
+      return;
+    }
+    const action = item.action || {};
+    if (action.type === "open-status") {
+      setPanel({ type: "status" });
+      return;
+    }
+    if (action.type === "open-week") {
+      setPanel({ type: "week" });
+      return;
+    }
+    if (action.type === "open-help") {
+      setPanel({ type: "help" });
+      return;
+    }
+    if (action.type === "open-gear") {
+      setPanel({ type: "list", title: "Shoes", items: closetItems(currentState()), index: 0 });
+      return;
+    }
+    if (action.type === "open-shop") {
+      setPanel({ type: "list", title: "Shoes", items: shoeShopItems(currentState()), index: 0 });
+      return;
+    }
+    if (action.type === "open-shift") {
+      const job = jobScript(action.job);
+      setPanel({
+        type: "dialogue",
+        speaker: job.speaker,
+        pages: [job.text],
+        index: 0,
+        choices: job.choices,
+        choiceIndex: 0,
+        jobId: job.id,
+      });
+      return;
+    }
+    if (action.type === "open-race") {
+      setPanel({ type: "race", id: action.id });
+      return;
+    }
+    if (action.type === "save") {
+      writeSave(currentState());
+      setPanel({ type: "dialogue", speaker: "Home", pages: ["Saved in this browser."], index: 0 });
+      return;
+    }
+    if (action.type === "title") {
+      writeSave(currentState());
+      onTitle();
+      return;
+    }
+    if (action.type === "noop") return;
+    run(action);
+  }
+
+  function openLocation(id) {
+    if (String(id).startsWith("sign-")) {
+      const sign = CITY_SIGNS.find((item) => item.id === id);
+      if (!sign) return;
+      const copy = signCopy(sign);
+      setPanel({ type: "dialogue", speaker: copy.speaker, pages: copy.lines, index: 0 });
+      return;
+    }
+    if (id === "rival") {
+      const chat = chatLines("rival");
+      setPanel({
+        type: "dialogue",
+        speaker: chat.speaker,
+        pages: chat.lines,
+        index: 0,
+        choices: [
+          { id: "race", label: "Race" },
+          { id: "later", label: "Not now" },
+        ],
+        choiceIndex: 0,
+      });
+      return;
+    }
+    const menu = menuFor(id, currentState());
+    if (menu) {
+      setPanel({
+        type: "list",
+        title: menu.title,
+        intro: menu.intro,
+        items: menu.items,
+        index: 0,
+      });
+      return;
+    }
+    const chat = chatLines(id);
+    if (chat) {
+      setPanel({ type: "dialogue", speaker: chat.speaker, pages: chat.lines, index: 0 });
+    }
+  }
+
+  function choose(current, choiceIndex) {
+    const choice = current.choices[choiceIndex];
+    if (!choice) return;
+    if (current.jobId) {
+      run({ type: "shift", job: current.jobId, choice: choice.id });
+      return;
+    }
+    if (choice.id === "race") {
+      setPanel({ type: "race", id: "rival" });
+      return;
+    }
+    setPanel(null);
+  }
+
+  function tryTravel(place) {
+    if (placeIsLocked(place, gameRef.current)) {
+      setPanel({
+        type: "dialogue",
+        speaker: "Ranger Inez Quill",
+        pages: ["The gate is still shut.", describeNeeds(mountainStatus(gameRef.current).needs)],
+        index: 0,
+      });
+      return;
+    }
+    const spawn = travelSpawn(place);
+    worldRef.current?.travelTo(spawn);
+    const pos = worldRef.current?.getPosition() || spawn;
+    setGame({ ...gameRef.current, position: pos });
+    setPanel(null);
+  }
+
+  function pressA() {
+    const current = panelRef.current;
+    if (gameRef.current.pendingSummary && (!current || current.type !== "dialogue")) {
+      setGame(acknowledgeWeek(currentState()));
+      return;
+    }
+    if (!current) {
+      const hit = worldRef.current?.interact();
+      if (hit) openLocation(hit);
+      return;
+    }
+    if (current.type === "dialogue") {
+      const last = current.index >= current.pages.length - 1;
+      if (!last) {
+        setPanel({ ...current, index: current.index + 1 });
+        return;
+      }
+      if (current.choices) {
+        choose(current, current.choiceIndex || 0);
+        return;
+      }
+      setPanel(null);
+      return;
+    }
+    if (current.type === "list") {
+      activate(current.items[current.index] || current.items[0]);
+      return;
+    }
+    if (current.type === "race") {
+      run(current.id === "rival" ? { type: "rival" } : { type: "race", id: current.id });
+      return;
+    }
+    if (current.type === "bonk") {
+      const choice = (current.choiceIndex || 0) === 0 ? "eat" : "decline";
+      run({ ...current.action, choice }, current.roll);
+      return;
+    }
+    if (current.type === "map") {
+      tryTravel(PLACES[current.index] || PLACES[0]);
+      return;
+    }
+    setPanel(null);
+  }
+
+  function pressB() {
+    if (panelRef.current) {
+      setPanel(null);
+      return;
+    }
+    if (gameRef.current.pendingSummary) setGame(acknowledgeWeek(currentState()));
+  }
+
+  function moveSelection(dir) {
+    const current = panelRef.current;
+    if (!current) return;
+    const delta = dir === "up" ? -1 : dir === "down" ? 1 : 0;
+    if (!delta) return;
+    if (current.type === "list") {
+      const length = current.items.length || 1;
+      setPanel({ ...current, index: (current.index + delta + length) % length });
+    } else if (current.type === "map") {
+      const length = PLACES.length;
+      setPanel({ ...current, index: (current.index + delta + length) % length });
+    } else if (current.type === "bonk") {
+      const choiceIndex = ((current.choiceIndex || 0) + delta + 2) % 2;
+      setPanel({ ...current, choiceIndex });
+    } else if (current.type === "dialogue" && current.choices && current.index >= current.pages.length - 1) {
+      const length = current.choices.length;
+      const choiceIndex = ((current.choiceIndex || 0) + delta + length) % length;
+      setPanel({ ...current, choiceIndex });
+    }
+  }
+
+  function openMap() {
+    setMapNote("");
+    setPanel({ type: "map", index: 0 });
+  }
+
+  function openInventory() {
+    setPanel({ type: "inventory" });
+  }
+
+  function saveFromMap() {
+    writeSave(currentState());
+    setMapNote("Saved in this browser.");
+  }
+
+  function openMenu() {
+    setPanel({ type: "list", title: "Menu", items: SYSTEM, index: 0 });
+  }
+
+  useLayoutEffect(() => {
+    // Handlers read these at event time. Updating them in an effect (not
+    // during render) keeps the keyboard listener stable without stale state.
+    gameRef.current = game;
+    panelRef.current = panel;
+    actions.current = { pressA, pressB, moveSelection, openMap, openInventory };
+  });
+
+  useEffect(() => {
+    const dirs = {
+      ArrowUp: "up",
+      ArrowDown: "down",
+      ArrowLeft: "left",
+      ArrowRight: "right",
+      KeyW: "up",
+      KeyS: "down",
+      KeyA: "left",
+      KeyD: "right",
+    };
+    const onDown = (event) => {
+      const dir = dirs[event.code];
+      if (dir) {
+        event.preventDefault();
+        if (panelRef.current || gameRef.current.pendingSummary) {
+          if (!event.repeat) actions.current.moveSelection(dir);
+          worldRef.current?.clearHeld();
+        } else {
+          worldRef.current?.setDirection(dir, true);
+        }
+        return;
+      }
+      if (event.code === "KeyZ" || event.code === "Enter" || event.code === "Space") {
+        event.preventDefault();
+        if (!event.repeat) actions.current.pressA();
+        return;
+      }
+      if (event.code === "KeyX" || event.code === "Escape") {
+        event.preventDefault();
+        if (!event.repeat) actions.current.pressB();
+        return;
+      }
+      if (event.code === "KeyM" && !event.repeat) {
+        event.preventDefault();
+        actions.current.openMap();
+        return;
+      }
+      if (event.code === "KeyI" && !event.repeat) {
+        event.preventDefault();
+        actions.current.openInventory();
+      }
+    };
+    const onUp = (event) => {
+      const dir = dirs[event.code];
+      if (dir) worldRef.current?.setDirection(dir, false);
+    };
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    return () => {
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+    };
+  }, []);
+
+  function onHold(dir, down) {
+    if (panel || game.pendingSummary) {
+      if (down) moveSelection(dir);
+      worldRef.current?.clearHeld();
+      return;
+    }
+    worldRef.current?.setDirection(dir, down);
+  }
+
+  return (
+    <div className="play-root" data-testid="play-screen">
+      <div className="play-stage">
+        <Overworld ref={worldRef} initialPosition={game.position} />
+        <Hud game={game} onOpen={() => setPanel({ type: "status" })} />
+        {ticker ? <div className="ticker" data-testid="ticker">{ticker}</div> : null}
+        <div className="overlay">
+          {panel?.type === "list" ? (
+            <MenuList
+              title={panel.title}
+              intro={panel.intro}
+              items={panel.items}
+              index={panel.index}
+              onPick={(itemIndex) => activate(panel.items[itemIndex])}
+            />
+          ) : null}
+          {panel?.type === "dialogue" ? (
+            <DialogueView
+              speaker={panel.speaker}
+              pages={panel.pages}
+              index={panel.index}
+              choices={panel.choices}
+              choiceIndex={panel.choiceIndex || 0}
+              onChoose={(choiceIndex) => choose(panel, choiceIndex)}
+            />
+          ) : null}
+          {panel?.type === "race" ? (
+            <RaceView
+              game={game}
+              raceId={panel.id}
+              onRun={() => run(panel.id === "rival" ? { type: "rival" } : { type: "race", id: panel.id })}
+              onBack={() => setPanel(null)}
+            />
+          ) : null}
+          {panel?.type === "map" ? (
+            <MapView
+              game={game}
+              index={panel.index}
+              onHover={(index) => setPanel({ type: "map", index })}
+              onTravel={tryTravel}
+              onSave={saveFromMap}
+              saveNote={mapNote}
+            />
+          ) : null}
+          {panel?.type === "inventory" ? (
+            <InventoryView
+              game={game}
+              onEat={() => run({ type: "eat-gel" })}
+              onEquip={(id) => run({ type: "equip", id })}
+              onClose={() => setPanel(null)}
+            />
+          ) : null}
+          {panel?.type === "bonk" ? (
+            <BonkChoice
+              gels={panel.gels}
+              choiceIndex={panel.choiceIndex || 0}
+              onHover={(choiceIndex) => setPanel({ ...panel, choiceIndex })}
+              onEat={() => run({ ...panel.action, choice: "eat" }, panel.roll)}
+              onDecline={() => run({ ...panel.action, choice: "decline" }, panel.roll)}
+            />
+          ) : null}
+          {panel?.type === "status" ? <StatusView game={game} onClose={() => setPanel(null)} /> : null}
+          {panel?.type === "week" ? <WeekView game={game} onClose={() => setPanel(null)} /> : null}
+          {panel?.type === "help" ? <HelpView onClose={() => setPanel(null)} /> : null}
+          {game.pendingSummary && !panel ? (
+            <SummaryView
+              summary={game.pendingSummary}
+              onClose={() => setGame(acknowledgeWeek(currentState()))}
+            />
+          ) : null}
+        </div>
+      </div>
+      <TouchControls
+        onHold={onHold}
+        onA={pressA}
+        onB={pressB}
+        onMap={openMap}
+        onInventory={openInventory}
+        onMenu={openMenu}
+      />
+    </div>
+  );
+}

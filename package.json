@@ -1,0 +1,27 @@
+{
+  "name": "brick-city",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Brick City, a Game Boy Color-style running RPG. Original pixel art. No Strava.",
+  "scripts": {
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chakra-ui/react": "^3.38.0",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "next": "^16.4.6",
+    "pixi.js": "^8.23.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.4.6",
+    "vitest": "^5.1.0"
+  }
+}
