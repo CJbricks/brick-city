@@ -34,6 +34,7 @@ import {
   buildWorld,
   isBlocked,
   lookupInteract,
+  noteArrival,
   tileOf,
   worldPixelSize,
 } from "@/game/town";
@@ -116,6 +117,7 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
     facing: initialPosition.facing || "down",
   });
   const worldRef = useRef(null);
+  const jumped = useRef(false);
 
   useImperativeHandle(ref, () => ({
     setDirection(dir, down) {
@@ -129,6 +131,9 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
     },
     travelTo(spawn) {
       pos.current = { x: spawn.x, y: spawn.y, facing: spawn.facing || "down" };
+      // Map travel is not a step. The ticker must not treat the landing
+      // tile as "just walked onto the mat" or Home opens after every jump.
+      jumped.current = true;
     },
     interact() {
       const world = worldRef.current;
@@ -239,6 +244,7 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
       player.anchor.set(0.5, 1);
       actors.addChild(player);
 
+      let arrival = null;
       let mapKey = "";
       let mapFrames = [];
       let waterFrame = 0;
@@ -342,6 +348,23 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
           anim += ticker.deltaMS;
         } else {
           anim = 0;
+        }
+
+        // Open Home, Grocery, the Gym, and the Run Store only when a step
+        // changes the tile onto their mat. The first tick (spawn or a
+        // loaded save) and a map jump only remember the tile. Park and the
+        // mountain are not entrances, so they stay on the A button.
+        const here = tileOf(pos.current.x, pos.current.y);
+        if (jumped.current) {
+          arrival = here;
+          jumped.current = false;
+        } else {
+          const stepOn = noteArrival(arrival, here, moving && !frozen);
+          arrival = stepOn.previous;
+          if (stepOn.entered) {
+            held.current = { up: false, down: false, left: false, right: false };
+            live.onEnter?.(stepOn.entered);
+          }
         }
 
         const gender = game.runner.gender === "female" ? "female" : "male";

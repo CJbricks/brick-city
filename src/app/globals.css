@@ -385,6 +385,17 @@ canvas {
   width: 8px;
   height: 8px;
   display: block;
+  flex: none;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.coin-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  white-space: nowrap;
 }
 
 .sore-flag {

@@ -202,6 +202,16 @@ The pictures are still code. `src/game/art.js` paints every tile and every runne
 
 The grade is a vertical gradient over the whole screen: sky color at the top, ground color at the bottom. It is one Pixi fill, not a flat rectangle of one color. Dusk and night then draw a second layer on top: warm circles on the windows, the storefront lanterns, and the streetlamps at the intersections. That layer is drawn *after* the grade and uses additive blending (`'add'`, which is `"lighter"` on a canvas). If the lamps were under the grade, the night wash would paint them dark too. The window rectangles in `townLights()` are the same rectangles `art.js` uses for the glass, so the glow stays on the pane.
 
+## HUD icons
+
+The hearts, bolts, and the coin next to your money are not image files. `Icon` in `src/components/game/Hud.js` paints an 8×8 canvas with `fillRect`, one rectangle per pixel. The coin is a dark ring, a gold fill, a light pixel in the corner, and a short dark slot. The ring is what keeps it visible on the cream card. CSS sets `image-rendering: pixelated` and puts the coin in an inline flex row with a 3px gap, so it sits on the same line as the number. The number is just the count. The picture is the "c", which keeps the phone row from crowding the SORE flag.
+
+## Sidewalks and walking into a building
+
+Sidewalk tiles are the letter `s` in `src/game/town.js`. They are walkable, like roads. Each run of sidewalk shares one edge with the street and the other with a door, so you are not stepping across a grass gap to get inside. The door pictures in `src/game/art.js` are lined up with that same edge.
+
+Home, the Grocery, the Gym, and the Run Store open when you step onto their mat. The check is in `noteArrival`. The first time the game looks at your tile (a new game starts on Home's mat, and a save can too) it only remembers the tile. A jump from the town map does the same. The menu opens on the step that changes the tile. Closing it with B leaves you standing there, and it does not open again until you walk off and come back. A still works if you want the menu without leaving. Park and the mountain trail are not in that list, so you still face the sign and press A.
+
 ## Controls
 
 | Action | Keyboard | Touch |

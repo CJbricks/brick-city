@@ -11,6 +11,7 @@
 import { useEffect, useRef } from "react";
 import { Box, Button, Stack, Text } from "@chakra-ui/react";
 import { renderWorld } from "@/game/art";
+import { Icon } from "@/components/game/Hud";
 import { COLS, PLACES, ROWS, placeIsLocked, spawnFor } from "@/game/town";
 import { ATTRIBUTES, CITY_INFO, MAX_ENERGY, TRACKS } from "@/lib/constants";
 import { RACES, readiness, shoeById, shoeWear } from "@/lib/race";
@@ -189,7 +190,10 @@ export function StatusView({ game, onClose }) {
         <p key={track.id}>{`${track.name}: rank ${trackRank(game.xp[track.id])} · ${game.xp[track.id]} XP`}</p>
       ))}
       <p>{`${shoe.name} · ${wear.label} · ${Math.round(game.gear.miles[game.gear.equipped] || 0)} / ${shoe.maxMiles} mi`}</p>
-      <p>{`Coins ${game.coins} · Gels ${game.gels} · Miles ${game.progress.totalMiles}`}</p>
+      <p className="coin-count">
+        <Icon kind="coin" />
+        <span>{`${game.coins} coins · Gels ${game.gels} · Miles ${game.progress.totalMiles}`}</span>
+      </p>
       <Button className="gbc-btn" onClick={onClose}>Close</Button>
     </Window>
   );
@@ -253,7 +257,10 @@ export function InventoryView({ game, onEat, onEquip, onClose }) {
   return (
     <Window title="Inventory" testId="inventory">
       <CityPlaque />
-      <p>{`Coins ${game.coins}`}</p>
+      <p className="coin-count">
+        <Icon kind="coin" />
+        <span>{`${game.coins} coins`}</span>
+      </p>
       <p data-testid="inventory-energy">{`Energy ${energy} / ${MAX_ENERGY}`}</p>
       <p data-testid="inventory-gels">{`Stride Fuel gels: ${game.gels || 0}`}</p>
       <p className="menu-detail">Eat a gel for +1 energy and +12 nutrition. At 10/10 energy the gel stays in your pocket.</p>

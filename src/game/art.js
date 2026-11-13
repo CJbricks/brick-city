@@ -767,6 +767,19 @@ function drawCobble(ctx, px, py, x, y) {
   }
 }
 
+function drawSidewalk(ctx, px, py, x, y) {
+  // Pale slabs, lighter than the asphalt and the cobble plaza, so the
+  // walk reads as a path from the curb to the door.
+  const n = hash(x, y);
+  ink(ctx, px, py, TILE, TILE, "#d7d0c3");
+  ink(ctx, px, py, TILE, 1, "#f6f1e6");
+  ink(ctx, px, py + TILE - 2, TILE, 2, "#a9a193");
+  ink(ctx, px + 15, py + 2, 2, TILE - 4, "#b7b0a2");
+  ink(ctx, px + 2, py + 15, TILE - 4, 2, "#b7b0a2");
+  ink(ctx, px + 3 + (n % 8), py + 5, 4, 1, "#eee8dc");
+  ink(ctx, px + 18, py + 22, 5, 1, "#c4bdb0");
+}
+
 function drawStep(ctx, px, py) {
   ink(ctx, px, py, TILE, TILE, "#b7aa9a");
   ink(ctx, px, py, TILE, TILE, "#cfc4b4");
@@ -881,6 +894,9 @@ function drawTile(ctx, code, x, y, ground, waterFrame) {
       break;
     case "d":
       drawDirt(ctx, px, py, x, y);
+      break;
+    case "s":
+      drawSidewalk(ctx, px, py, x, y);
       break;
     case "t":
       drawTree(ctx, px, py, x, y);
@@ -1037,21 +1053,24 @@ function panes(id) {
 }
 
 function drawHome(ctx, ox, oy) {
-  drawVFence(ctx, ox + 4, oy + 100, 52);
-  drawVFence(ctx, ox + 7 * TILE - 20, oy + 100, 52);
-  drawHFence(ctx, ox + 4, oy + 5 * TILE - 18, 92);
-  drawHFence(ctx, ox + 128, oy + 5 * TILE - 18, 7 * TILE - 136);
+  const foot = 5 * TILE;
+  drawVFence(ctx, ox + 4, oy + 96, 40);
+  drawVFence(ctx, ox + 7 * TILE - 20, oy + 96, 40);
   shingles(ctx, ox + 36, oy + 26, 156, 46, "#b33a32", "#7a241c", "#d45a48");
   chimney(ctx, ox + 156, oy + 8);
-  woodSiding(ctx, ox + 48, oy + 64, 132, 62);
+  woodSiding(ctx, ox + 48, oy + 64, 132, 56);
   for (const pane of panes("home")) windowPane(ctx, pane.x, pane.y, pane.w, pane.h);
-  doorPanel(ctx, ox + 100, oy + 90, 26, 36, "#2f6b3a");
-  box(ctx, ox + 92, oy + 124, 42, 6, "#d9d0c4", "#f4f0e8", "#8a8478");
-  box(ctx, ox + 88, oy + 130, 50, 6, "#cfc6b8", "#f4f0e8", "#6e6860");
+  // The door and its last step end on the south edge of the building,
+  // which is the north edge of the sidewalk tile. No grass strip between.
+  doorPanel(ctx, ox + 100, oy + 112, 26, 32, "#2f6b3a");
+  ink(ctx, ox + 88, oy + 144, 50, 16, "#d7d0c3");
+  ink(ctx, ox + 88, oy + 144, 50, 1, "#f6f1e6");
+  ink(ctx, ox + 84, oy + foot - 8, 58, 8, "#cfc6b8");
+  ink(ctx, ox + 84, oy + foot - 2, 58, 2, "#8d877c");
   drawLantern(ctx, ox + 112, oy + 108);
   labeledSign(ctx, ox + 70, oy + 2, "HOME");
-  drawFlower(ctx, ox + 40, oy + 120, 1);
-  drawFlower(ctx, ox + 176, oy + 118, 4);
+  drawFlower(ctx, ox + 40, oy + 108, 1);
+  drawFlower(ctx, ox + 176, oy + 108, 4);
 }
 
 function drawGrocery(ctx, ox, oy) {
@@ -1059,9 +1078,9 @@ function drawGrocery(ctx, ox, oy) {
   brickCourses(ctx, ox + 36, oy + 48, 184, 78);
   stripedAwning(ctx, ox + 24, oy + 86, 208, 18, "#2f7a45", "#f4f7f2");
   for (const pane of panes("grocery")) windowPane(ctx, pane.x, pane.y, pane.w, pane.h);
-  doorPanel(ctx, ox + 100, oy + 100, 24, 32, "#214e8f");
-  crate(ctx, ox + 32, oy + 112, ["#e23d3d", "#f2c14e", "#3d9a4a", "#e23d3d", "#f2c14e", "#7ec85a"]);
-  crate(ctx, ox + 196, oy + 112, ["#3d9a4a", "#e23d3d", "#f2c14e", "#7ec85a", "#e23d3d", "#f2c14e"]);
+  doorPanel(ctx, ox + 100, oy + 5 * TILE - 36, 24, 36, "#214e8f");
+  crate(ctx, ox + 32, oy + 5 * TILE - 28, ["#e23d3d", "#f2c14e", "#3d9a4a", "#e23d3d", "#f2c14e", "#7ec85a"]);
+  crate(ctx, ox + 196, oy + 5 * TILE - 28, ["#3d9a4a", "#e23d3d", "#f2c14e", "#7ec85a", "#e23d3d", "#f2c14e"]);
   drawLantern(ctx, ox + 128, oy + 96);
   labeledSign(ctx, ox + 78, oy + 24, "GROCERY");
 }
@@ -1076,15 +1095,17 @@ function drawDumbbell(ctx, x, y) {
 
 function drawGym(ctx, ox, oy) {
   shingles(ctx, ox + 28, oy + 28, 168, 52, "#3c4654", "#232a33", "#6a7380");
-  brickCourses(ctx, ox + 36, oy + 72, 140, 96);
+  brickCourses(ctx, ox + 36, oy + 72, 188, 96);
   for (const pane of panes("gym")) windowPane(ctx, pane.x, pane.y, pane.w, pane.h);
-  doorPanel(ctx, ox + 178, oy + 96, 18, 40, "#214e8f");
-  doorPanel(ctx, ox + 196, oy + 96, 18, 40, "#1a3f78");
-  ink(ctx, ox + 182, oy + 102, 10, 14, "#9fd8ea");
-  ink(ctx, ox + 200, oy + 102, 10, 14, "#9fd8ea");
+  // Double doors end on the east edge of the gym (local x = 7 tiles),
+  // flush with the sidewalk on tile x = 9.
+  doorPanel(ctx, ox + 188, oy + 96, 18, 32, "#214e8f");
+  doorPanel(ctx, ox + 206, oy + 96, 18, 32, "#1a3f78");
+  ink(ctx, ox + 192, oy + 102, 10, 14, "#9fd8ea");
+  ink(ctx, ox + 210, oy + 102, 10, 14, "#9fd8ea");
   box(ctx, ox + 70, oy + 18, 28, 18, "#f3e2c0", "#fff8ea", "#6b4428");
   drawDumbbell(ctx, ox + 73, oy + 21);
-  drawLantern(ctx, ox + 198, oy + 108);
+  drawLantern(ctx, ox + 214, oy + 88);
   labeledSign(ctx, ox + 78, oy + 8, "GYM");
   drawHFence(ctx, ox + 16, oy + 7 * TILE - 20, 70);
   drawFlower(ctx, ox + 24, oy + 180, 2);
@@ -1099,15 +1120,17 @@ function drawSneaker(ctx, x, y) {
 }
 
 function drawStore(ctx, ox, oy) {
-  stripedAwning(ctx, ox + 20, oy + 2, 184, 16, "#2a4f8f", "#f7f7f7");
+  // Awning hangs a few pixels onto the sidewalk. The door itself starts
+  // on the north edge of the building, flush with tile y = 22.
+  stripedAwning(ctx, ox + 20, oy - 12, 184, 16, "#2a4f8f", "#f7f7f7");
   shingles(ctx, ox + 28, oy + 36, 168, 40, "#b33a32", "#7a241c", "#d45a48");
   brickCourses(ctx, ox + 36, oy + 70, 152, 70);
   for (const pane of panes("store")) windowPane(ctx, pane.x, pane.y, pane.w, pane.h);
-  doorPanel(ctx, ox + 100, oy + 18, 24, 28, "#214e8f");
+  doorPanel(ctx, ox + 100, oy, 24, 32, "#214e8f");
   drawSneaker(ctx, ox + 70, oy + 46);
-  crate(ctx, ox + 28, oy + 20, ["#f7f7f7", "#2aa6a0", "#e23b3b"]);
-  crate(ctx, ox + 164, oy + 20, ["#24366b", "#f7f7f7", "#2aa6a0"]);
-  drawLantern(ctx, ox + 112, oy + 8);
+  crate(ctx, ox + 28, oy + 4, ["#f7f7f7", "#2aa6a0", "#e23b3b"]);
+  crate(ctx, ox + 164, oy + 4, ["#24366b", "#f7f7f7", "#2aa6a0"]);
+  drawLantern(ctx, ox + 112, oy - 4);
   labeledSign(ctx, ox + 48, oy + 78, "RUN STORE");
   drawHFence(ctx, ox + 16, oy + 5 * TILE - 20, 7 * TILE - 40);
 }
@@ -1132,8 +1155,8 @@ function drawFountain(ctx, frame) {
 function drawGate(ctx, open) {
   const x = 30 * TILE;
   const y = 6 * TILE;
-  box(ctx, x - 8, y - 2, 12, 36, "#9aa3ab", "#d5dee6", "#5c656e");
-  box(ctx, x + 28, y - 2, 12, 36, "#9aa3ab", "#d5dee6", "#5c656e");
+  box(ctx, x - 8, y, 12, TILE, "#9aa3ab", "#d5dee6", "#5c656e");
+  box(ctx, x + 28, y, 12, TILE, "#9aa3ab", "#d5dee6", "#5c656e");
   if (!open) {
     box(ctx, x + 2, y + 6, 28, 6, "#c4956a", "#e8d0a4", "#6b4428");
     box(ctx, x + 2, y + 18, 28, 6, "#c4956a", "#e8d0a4", "#6b4428");
@@ -1168,12 +1191,13 @@ function drawCityPost(ctx, tx, ty) {
 function drawDepot(ctx) {
   const x = 19 * TILE;
   const y = 16 * TILE;
-  box(ctx, x + 2, y + 8, 8, 28, "#6b4428", "#c4956a", "#3e2614");
-  box(ctx, x + 54, y + 8, 8, 28, "#6b4428", "#c4956a", "#3e2614");
+  box(ctx, x + 2, y + 4, 8, TILE - 4, "#6b4428", "#c4956a", "#3e2614");
+  box(ctx, x + 54, y + 4, 8, TILE - 4, "#6b4428", "#c4956a", "#3e2614");
   shingles(ctx, x, y, 64, 16, "#8d3a32", "#5e221c", "#c45a48");
-  box(ctx, x + 14, y + 16, 36, 22, "#f3e2c0", "#fff8ea", "#6b4428");
-  windowPane(ctx, x + 18, y + 20, 12, 10);
-  paintOutlinedText(ctx, "DEPOT", x + 8, y + 4, "#fff8ea", 1);
+  box(ctx, x + 14, y + 14, 36, 18, "#f3e2c0", "#fff8ea", "#6b4428");
+  windowPane(ctx, x + 18, y + 16, 12, 10);
+  ink(ctx, x + 8, y + TILE - 4, 48, 4, "#d7d0c3");
+  paintOutlinedText(ctx, "DEPOT", x + 8, y + 2, "#fff8ea", 1);
 }
 
 function drawLampPost(ctx, x, y) {
