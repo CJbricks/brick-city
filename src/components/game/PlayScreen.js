@@ -14,8 +14,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Hud } from "@/components/game/Hud";
 import { Overworld } from "@/components/game/Overworld";
 import {
+  BonkChoice,
   DialogueView,
   HelpView,
+  InventoryView,
   MapView,
   MenuList,
   RaceView,
@@ -25,7 +27,7 @@ import {
   travelSpawn,
 } from "@/components/game/Panels";
 import { TouchControls } from "@/components/game/TouchControls";
-import { PLACES, placeIsLocked } from "@/game/town";
+import { CITY_SIGNS, PLACES, placeIsLocked, signCopy } from "@/game/town";
 import {
   acknowledgeWeek,
   chatLines,
@@ -50,6 +52,7 @@ const SYSTEM = [
 export function PlayScreen({ game, setGame, onTitle }) {
   const [panel, setPanel] = useState(null);
   const [ticker, setTicker] = useState("");
+  const [mapNote, setMapNote] = useState("");
   const worldRef = useRef(null);
   const gameRef = useRef(game);
   const panelRef = useRef(panel);
@@ -104,8 +107,21 @@ export function PlayScreen({ game, setGame, onTitle }) {
     }
   }
 
-  function run(action) {
-    const result = perform(currentState(), action, Math.random());
+  function run(action, roll = Math.random()) {
+    const result = perform(currentState(), action, roll);
+    // A bonk with a gel in the pocket waits here. The same roll is reused
+    // when the player eats the gel or toughs it out, so the threat does
+    // not get rerolled.
+    if (result.needsChoice) {
+      setPanel({
+        type: "bonk",
+        action,
+        roll,
+        gels: currentState().gels || 0,
+        choiceIndex: 0,
+      });
+      return;
+    }
     commit(result.state, result.lines, result.ticker);
   }
 
@@ -173,6 +189,13 @@ export function PlayScreen({ game, setGame, onTitle }) {
   }
 
   function openLocation(id) {
+    if (String(id).startsWith("sign-")) {
+      const sign = CITY_SIGNS.find((item) => item.id === id);
+      if (!sign) return;
+      const copy = signCopy(sign);
+      setPanel({ type: "dialogue", speaker: copy.speaker, pages: copy.lines, index: 0 });
+      return;
+    }
     if (id === "rival") {
       const chat = chatLines("rival");
       setPanel({
@@ -268,6 +291,11 @@ export function PlayScreen({ game, setGame, onTitle }) {
       run(current.id === "rival" ? { type: "rival" } : { type: "race", id: current.id });
       return;
     }
+    if (current.type === "bonk") {
+      const choice = (current.choiceIndex || 0) === 0 ? "eat" : "decline";
+      run({ ...current.action, choice }, current.roll);
+      return;
+    }
     if (current.type === "map") {
       tryTravel(PLACES[current.index] || PLACES[0]);
       return;
@@ -294,6 +322,9 @@ export function PlayScreen({ game, setGame, onTitle }) {
     } else if (current.type === "map") {
       const length = PLACES.length;
       setPanel({ ...current, index: (current.index + delta + length) % length });
+    } else if (current.type === "bonk") {
+      const choiceIndex = ((current.choiceIndex || 0) + delta + 2) % 2;
+      setPanel({ ...current, choiceIndex });
     } else if (current.type === "dialogue" && current.choices && current.index >= current.pages.length - 1) {
       const length = current.choices.length;
       const choiceIndex = ((current.choiceIndex || 0) + delta + length) % length;
@@ -302,7 +333,17 @@ export function PlayScreen({ game, setGame, onTitle }) {
   }
 
   function openMap() {
+    setMapNote("");
     setPanel({ type: "map", index: 0 });
+  }
+
+  function openInventory() {
+    setPanel({ type: "inventory" });
+  }
+
+  function saveFromMap() {
+    writeSave(currentState());
+    setMapNote("Saved in this browser.");
   }
 
   function openMenu() {
@@ -314,7 +355,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
     // during render) keeps the keyboard listener stable without stale state.
     gameRef.current = game;
     panelRef.current = panel;
-    actions.current = { pressA, pressB, moveSelection, openMap };
+    actions.current = { pressA, pressB, moveSelection, openMap, openInventory };
   });
 
   useEffect(() => {
@@ -353,6 +394,11 @@ export function PlayScreen({ game, setGame, onTitle }) {
       if (event.code === "KeyM" && !event.repeat) {
         event.preventDefault();
         actions.current.openMap();
+        return;
+      }
+      if (event.code === "KeyI" && !event.repeat) {
+        event.preventDefault();
+        actions.current.openInventory();
       }
     };
     const onUp = (event) => {
@@ -416,6 +462,25 @@ export function PlayScreen({ game, setGame, onTitle }) {
               index={panel.index}
               onHover={(index) => setPanel({ type: "map", index })}
               onTravel={tryTravel}
+              onSave={saveFromMap}
+              saveNote={mapNote}
+            />
+          ) : null}
+          {panel?.type === "inventory" ? (
+            <InventoryView
+              game={game}
+              onEat={() => run({ type: "eat-gel" })}
+              onEquip={(id) => run({ type: "equip", id })}
+              onClose={() => setPanel(null)}
+            />
+          ) : null}
+          {panel?.type === "bonk" ? (
+            <BonkChoice
+              gels={panel.gels}
+              choiceIndex={panel.choiceIndex || 0}
+              onHover={(choiceIndex) => setPanel({ ...panel, choiceIndex })}
+              onEat={() => run({ ...panel.action, choice: "eat" }, panel.roll)}
+              onDecline={() => run({ ...panel.action, choice: "decline" }, panel.roll)}
             />
           ) : null}
           {panel?.type === "status" ? <StatusView game={game} onClose={() => setPanel(null)} /> : null}
@@ -429,7 +494,14 @@ export function PlayScreen({ game, setGame, onTitle }) {
           ) : null}
         </div>
       </div>
-      <TouchControls onHold={onHold} onA={pressA} onB={pressB} onMap={openMap} onMenu={openMenu} />
+      <TouchControls
+        onHold={onHold}
+        onA={pressA}
+        onB={pressB}
+        onMap={openMap}
+        onInventory={openInventory}
+        onMenu={openMenu}
+      />
     </div>
   );
 }

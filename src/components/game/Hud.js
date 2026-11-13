@@ -11,7 +11,8 @@
 import { useEffect, useRef } from "react";
 import { TREND_ARROW, fatigueColor, trendsFor } from "@/lib/condition";
 import { formatWhen } from "@/lib/calendar";
-import { levelFromXp } from "@/lib/xp";
+import { MAX_ENERGY } from "@/lib/constants";
+import { levelProgress } from "@/lib/xp";
 
 const METERS = [
   { key: "endurance", short: "END", color: "#3d7edb", icon: "heart" },
@@ -70,13 +71,39 @@ function Meter({ meter, value, arrow }) {
   );
 }
 
+function LevelAndEnergy({ game }) {
+  const progress = levelProgress(game.xp.overall);
+  const energy = typeof game.energy === "number" ? game.energy : MAX_ENERGY;
+  const width = progress.need > 0 ? Math.min(100, (progress.into / progress.need) * 100) : 0;
+  return (
+    <div className="hud-progress" data-testid="hud-progress">
+      <div className="xp-row">
+        <span data-testid="xp-level">{`Lv ${progress.level}`}</span>
+        <div className="bar xp-bar" aria-hidden="true">
+          <div className="bar-fill xp-fill" style={{ width: `${width}%` }} />
+        </div>
+        <span data-testid="xp-count">{`${progress.into}/${progress.need}`}</span>
+      </div>
+      <div className="energy-row" data-testid="energy-blocks">
+        <span>ENG</span>
+        <span className="energy-blocks" aria-hidden="true">
+          {Array.from({ length: MAX_ENERGY }, (_, index) => (
+            <i key={index} className={index < energy ? "energy-on" : "energy-off"} />
+          ))}
+        </span>
+        <span>{`${energy}/${MAX_ENERGY}`}</span>
+      </div>
+    </div>
+  );
+}
+
 export function Hud({ game, onOpen }) {
   const trends = trendsFor(game.condition, game.yesterday);
   const when = formatWhen(game.calendar);
-  const level = levelFromXp(game.xp.overall);
   return (
     <div className="hud-wrap">
       <button type="button" className="hud-card" data-testid="hud" onClick={onOpen}>
+        <LevelAndEnergy game={game} />
         <div className="hud-desktop">
           {METERS.map((meter) => (
             <Meter
@@ -89,7 +116,6 @@ export function Hud({ game, onOpen }) {
           {game.condition.sore ? <div className="sore-flag">SORE</div> : null}
           <div className="hud-meta">
             <span>{when}</span>
-            <span>{`Lv ${level}`}</span>
             <span>{`${game.coins} c`}</span>
           </div>
         </div>
@@ -110,7 +136,6 @@ export function Hud({ game, onOpen }) {
           </div>
           <div className="hud-meta">
             <span>{when}</span>
-            <span>{`Lv ${level}`}</span>
             <span>{`${game.coins}c`}</span>
             {game.condition.sore ? <span className="sore-flag">SORE</span> : null}
           </div>

@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { canFit, formatWhen, isSunday, sleepPlan, summarizeWeek } from "@/lib/calendar";
+import { canFit, formatWhen, isSunday, sleepPlan, slotFromEnergy, summarizeWeek } from "@/lib/calendar";
 
 describe("calendar", () => {
   it("fits a long run in the afternoon and refuses it at night", () => {
@@ -14,6 +14,16 @@ describe("calendar", () => {
     expect(canFit(4, 1)).toBe(true);
     expect(canFit(4, 2)).toBe(false);
     expect(canFit(5, 1)).toBe(false);
+  });
+
+  it("turns energy blocks into a time of day", () => {
+    expect(slotFromEnergy(10)).toBe(0);
+    expect(slotFromEnergy(9)).toBe(0);
+    expect(slotFromEnergy(8)).toBe(1);
+    expect(slotFromEnergy(4)).toBe(3);
+    expect(slotFromEnergy(2)).toBe(4);
+    expect(slotFromEnergy(0)).toBe(5);
+    expect(slotFromEnergy(undefined)).toBe(0);
   });
 
   it("makes evening the good night and morning sleep a poor one", () => {

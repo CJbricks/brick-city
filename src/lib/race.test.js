@@ -25,19 +25,17 @@ function tiredAndHungry() {
 }
 
 describe("bonk and DNF", () => {
-  it("DNFs for sure when nutrition and sleep are both bad, gel or not", () => {
+  it("DNFs for sure when nutrition and sleep are both bad, before any gel choice", () => {
     const severe = judgeBonk({
       nutrition: 20,
       sleepQuality: "poor",
       fatigue: 10,
-      gels: 1,
       roll: 0.99,
       km: 5,
     });
     expect(severe).toMatchObject({
       bonk: true,
       dnf: true,
-      usedGel: false,
       reason: "low-fuel-poor-sleep",
     });
     const fromFatigue = judgeBonk({
@@ -71,15 +69,14 @@ describe("bonk and DNF", () => {
       km: 10,
     });
     expect(ten.dnf).toBe(true);
-    const saved = judgeBonk({
+    const stillBonks = judgeBonk({
       nutrition: 20,
       sleepQuality: "good",
       fatigue: 10,
-      gels: 1,
       roll: 0.1,
       km: 5,
     });
-    expect(saved).toMatchObject({ bonk: false, usedGel: true, reason: "gel-saved" });
+    expect(stillBonks).toMatchObject({ bonk: true, slowFinish: true, reason: "chance-bonk" });
     const lucky = judgeBonk({
       nutrition: 20,
       sleepQuality: "good",

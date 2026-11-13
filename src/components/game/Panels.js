@@ -12,11 +12,11 @@ import { useEffect, useRef } from "react";
 import { Box, Button, Stack, Text } from "@chakra-ui/react";
 import { renderWorld } from "@/game/art";
 import { COLS, PLACES, ROWS, placeIsLocked, spawnFor } from "@/game/town";
-import { ATTRIBUTES, TRACKS } from "@/lib/constants";
-import { shoeById, shoeWear, readiness, RACES } from "@/lib/race";
+import { ATTRIBUTES, CITY_INFO, MAX_ENERGY, TRACKS } from "@/lib/constants";
+import { RACES, readiness, shoeById, shoeWear } from "@/lib/race";
 import { attributeLevel, levelProgress, trackRank } from "@/lib/xp";
 import { runnerLevel, mountainStatus, describeNeeds } from "@/lib/unlocks";
-import { calendarView } from "@/lib/activities";
+import { calendarView, canEatGel } from "@/lib/activities";
 
 function Window({ title, children, testId }) {
   return (
@@ -27,9 +27,18 @@ function Window({ title, children, testId }) {
   );
 }
 
+function CityPlaque() {
+  return (
+    <p className="city-plaque" data-testid="city-plaque">
+      {`${CITY_INFO.name} · "${CITY_INFO.motto}"`}
+    </p>
+  );
+}
+
 export function MenuList({ title, intro, items, index, onPick, testId }) {
   return (
     <Window title={title} testId={testId || "menu"}>
+      <CityPlaque />
       {intro ? <p>{intro}</p> : null}
       {items.map((item, itemIndex) => (
         <button
@@ -99,7 +108,7 @@ export function RaceView({ game, raceId, onRun, onBack }) {
   );
 }
 
-export function MapView({ game, index, onHover, onTravel }) {
+export function MapView({ game, index, onHover, onTravel, onSave, saveNote }) {
   const canvasRef = useRef(null);
   useEffect(() => {
     const target = canvasRef.current;
@@ -114,7 +123,10 @@ export function MapView({ game, index, onHover, onTravel }) {
 
   return (
     <Window title="Brick City" testId="town-map">
+      <CityPlaque />
       <p>Unlocked places travel. The mountain stays grey until the ranger opens it.</p>
+      <Button className="gbc-btn" data-testid="map-save" onClick={onSave}>Save Game</Button>
+      {saveNote ? <p data-testid="map-save-note">{saveNote}</p> : null}
       <div className="map-stage">
         <canvas ref={canvasRef} className="map-canvas" />
         {PLACES.map((place, placeIndex) => {
@@ -233,4 +245,66 @@ export function HelpView({ onClose }) {
 
 export function levelLabel(game) {
   return runnerLevel(game);
+}
+
+export function InventoryView({ game, onEat, onEquip, onClose }) {
+  const energy = typeof game.energy === "number" ? game.energy : MAX_ENERGY;
+  const eat = canEatGel(game);
+  return (
+    <Window title="Inventory" testId="inventory">
+      <CityPlaque />
+      <p>{`Coins ${game.coins}`}</p>
+      <p data-testid="inventory-energy">{`Energy ${energy} / ${MAX_ENERGY}`}</p>
+      <p data-testid="inventory-gels">{`Stride Fuel gels: ${game.gels || 0}`}</p>
+      <p className="menu-detail">Eat a gel for +1 energy and +12 nutrition. At 10/10 energy the gel stays in your pocket.</p>
+      <Button className="gbc-btn" data-testid="eat-gel" disabled={!eat.ok} onClick={onEat}>
+        {eat.ok ? "Eat 1 gel (+1 energy)" : eat.reason}
+      </Button>
+      <p>Shoes</p>
+      {(game.gear?.owned || []).map((id) => {
+        const shoe = shoeById(id);
+        const worn = shoeWear(game.gear, id);
+        const on = game.gear.equipped === id;
+        return (
+          <button
+            key={id}
+            type="button"
+            className="menu-row"
+            disabled={on}
+            onClick={() => onEquip(id)}
+          >
+            {on ? `${shoe.name} (on)` : `Equip ${shoe.name}`}
+            <span className="menu-detail">{`${worn.label} · ${Math.round(game.gear.miles[id] || 0)} / ${shoe.maxMiles} mi`}</span>
+          </button>
+        );
+      })}
+      <Button className="gbc-btn" onClick={onClose}>Close</Button>
+    </Window>
+  );
+}
+
+export function BonkChoice({ gels, choiceIndex, onEat, onDecline, onHover }) {
+  return (
+    <Window title="Bonk" testId="bonk-choice">
+      <p>You are about to bonk mid-race! Eat a Stride Fuel gel before the bonk hits?</p>
+      <button
+        type="button"
+        className={choiceIndex === 0 ? "menu-row selected" : "menu-row"}
+        data-testid="bonk-eat"
+        onMouseEnter={() => onHover(0)}
+        onClick={onEat}
+      >
+        {`Eat Stride Fuel gel (${gels} left)`}
+      </button>
+      <button
+        type="button"
+        className={choiceIndex === 1 ? "menu-row selected" : "menu-row"}
+        data-testid="bonk-decline"
+        onMouseEnter={() => onHover(1)}
+        onClick={onDecline}
+      >
+        Tough it out (do not eat gel)
+      </button>
+    </Window>
+  );
 }

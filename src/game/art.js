@@ -10,7 +10,7 @@
  * edges crisp instead of blurry.
  */
 
-import { BUILDINGS, COLS, ROWS, TILE, buildWorld } from "@/game/town";
+import { BUILDINGS, CITY_SIGNS, COLS, ROWS, TILE, buildWorld } from "@/game/town";
 
 export const PALETTES = {
   male: {
@@ -618,6 +618,15 @@ function drawTrackSign(ctx) {
   paintMiniText(ctx, "5K", 26 * TILE + 4, 11 * TILE + 6, "#2a2118", 1);
 }
 
+function drawCityPost(ctx, tx, ty) {
+  const x = tx * TILE;
+  const y = ty * TILE;
+  ink(ctx, x + 7, y + 6, 3, 10, "#6b4428");
+  ink(ctx, x + 2, y + 1, 12, 8, "#f3e2c0");
+  ink(ctx, x + 2, y + 1, 12, 2, "#1d4ed8");
+  paintMiniText(ctx, "BC", x + 4, y + 4, "#1c1a16", 1);
+}
+
 function drawDepot(ctx) {
   const x = 19 * TILE + 2;
   const y = 16 * TILE;
@@ -675,6 +684,7 @@ export function renderWorld(state, waterFrame = 0) {
   drawParkSign(ctx);
   drawTrackSign(ctx);
   drawDepot(ctx);
+  for (const sign of CITY_SIGNS) drawCityPost(ctx, sign.tx, sign.ty);
   if (state?.milestones?.includes("banner")) drawBanner(ctx);
   if (state?.milestones?.includes("flowers")) drawExtraFlowers(ctx);
   if (state?.milestones?.includes("trail-marker")) drawTrailMarker(ctx);

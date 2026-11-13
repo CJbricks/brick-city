@@ -326,6 +326,52 @@ canvas {
   max-width: 100%;
 }
 
+.hud-progress {
+  margin-bottom: 4px;
+}
+
+.xp-row,
+.energy-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 8px;
+  margin-bottom: 3px;
+}
+
+.xp-bar {
+  flex: 1;
+  min-width: 36px;
+}
+
+.xp-fill {
+  background: #1d4ed8;
+}
+
+.energy-blocks {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+}
+
+.energy-on,
+.energy-off {
+  width: 8px;
+  height: 10px;
+  flex: none;
+  display: block;
+  box-sizing: border-box;
+  border: 1px solid #1c1a16;
+}
+
+.energy-on {
+  background: #f2c14e;
+}
+
+.energy-off {
+  background: #d9d0c0;
+}
+
 .hud-meta {
   display: flex;
   justify-content: space-between;
@@ -392,6 +438,13 @@ canvas {
   color: #1d4ed8;
 }
 
+.city-plaque {
+  margin: 0 0 8px;
+  color: #1d4ed8;
+  font-size: 8px;
+  line-height: 1.6;
+}
+
 .gbc-body {
   font-size: 9px;
   line-height: 1.6;
@@ -399,6 +452,7 @@ canvas {
 
 .gbc-body p {
   margin: 0 0 8px;
+  white-space: pre-line;
 }
 
 .menu-row {
@@ -463,18 +517,20 @@ canvas {
 .touch-bar {
   flex: none;
   display: grid;
-  grid-template-columns: 150px 1fr;
-  gap: 8px;
-  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 6px;
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
   background: #1c1915;
   border-top: 4px solid #2a241c;
   box-sizing: border-box;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .d-pad {
   display: grid;
-  grid-template-columns: repeat(3, 46px);
-  grid-template-rows: repeat(3, 46px);
+  grid-template-columns: repeat(3, 42px);
+  grid-template-rows: repeat(3, 42px);
   justify-content: center;
 }
 
@@ -500,28 +556,37 @@ canvas {
 .face-col {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: stretch;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .face-row,
 .sys-row {
   display: flex;
-  gap: 8px;
+  gap: 4px;
+  min-width: 0;
+}
+
+.face-row {
+  justify-content: flex-end;
 }
 
 .face-btn {
-  width: 64px;
-  height: 64px;
+  width: 56px;
+  height: 56px;
   font-size: 14px;
+  flex: none;
 }
 
 .sys-btn {
-  min-width: 72px;
-  height: 40px;
-  font-size: 8px;
-  padding: 0 8px;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 36px;
+  font-size: 7px;
+  padding: 0 2px;
+  line-height: 1.2;
 }
 
 .stat-grid {

@@ -73,6 +73,7 @@ export const RACES = {
     xp: { overall: 46, marathon: 30, versatile: 6 },
     attributes: { speed: 8, endurance: 4, mental: 2 },
     coins: 28,
+    energy: 1,
     peak: 6,
     endurance: 2,
     fatigue: 16,
@@ -92,6 +93,7 @@ export const RACES = {
     xp: { overall: 70, marathon: 48, ultra: 10, versatile: 8 },
     attributes: { speed: 8, endurance: 10, mental: 4 },
     coins: 46,
+    energy: 2,
     peak: 5,
     endurance: 5,
     fatigue: 22,
@@ -107,6 +109,7 @@ export const RIVAL = {
   title: "the track kicker",
   base: 26,
   slots: 1,
+  energy: 1,
   miles: 1,
   winXp: { overall: 24, marathon: 14, versatile: 4 },
   winAttributes: { speed: 6, mental: 3 },
@@ -193,29 +196,28 @@ export function fuelWarning(condition) {
 
 /**
  * roll is a number from 0 to 1. Tests pass it in so a bonk is reproducible.
- * The UI passes Math.random() at the moment you confirm, not during render.
+ * The UI passes Math.random() once, when you confirm, and reuses that same
+ * roll if you then choose to eat a gel or tough it out.
+ *
+ * This function only decides whether a bonk is coming. It does not eat a
+ * gel. Eating one is a choice the player makes after this returns bonk,
+ * in applyRace / applyRival, so a pocket gel can still save a sure DNF.
  */
-export function judgeBonk({ nutrition, sleepQuality, fatigue, gels, roll, km }) {
+export function judgeBonk({ nutrition, sleepQuality, fatigue, roll, km }) {
   const { lowFuel, poorSleep } = fuelState({ nutrition, sleepQuality, fatigue });
   if (lowFuel && poorSleep) {
-    return { bonk: true, dnf: true, usedGel: false, slowFinish: false, reason: "low-fuel-poor-sleep" };
+    return { bonk: true, dnf: true, slowFinish: false, reason: "low-fuel-poor-sleep" };
   }
-  if (lowFuel || poorSleep) {
-    if ((gels || 0) > 0) {
-      return { bonk: false, dnf: false, usedGel: true, slowFinish: false, reason: "gel-saved" };
-    }
-    if (roll < 0.45) {
-      const dnf = km >= 8;
-      return {
-        bonk: true,
-        dnf,
-        usedGel: false,
-        slowFinish: !dnf,
-        reason: "chance-bonk",
-      };
-    }
+  if ((lowFuel || poorSleep) && roll < 0.45) {
+    const dnf = km >= 8;
+    return {
+      bonk: true,
+      dnf,
+      slowFinish: !dnf,
+      reason: "chance-bonk",
+    };
   }
-  return { bonk: false, dnf: false, usedGel: false, slowFinish: false, reason: "ok" };
+  return { bonk: false, dnf: false, slowFinish: false, reason: "ok" };
 }
 
 export function readiness(state, race) {

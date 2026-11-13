@@ -12,6 +12,28 @@ export const SAVE_VERSION = 1;
 export const SLOTS = ["Morning", "Midday", "Afternoon", "Evening", "Night"];
 export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+/**
+ * A day is 10 energy blocks, not 5 action slots. Sleep fills the bar
+ * back to 10. Time of day is derived from how many blocks are left, so
+ * the sky still moves from morning to night as you spend the day.
+ */
+export const MAX_ENERGY = 10;
+export const GEL_ENERGY = 1;
+export const GEL_NUTRITION = 12;
+
+/**
+ * One city record. Later towns (Ridgeview, Lakeport, …) can be added
+ * beside Brick City and the signposts will read the same fields.
+ */
+export const CITIES = {
+  "brick-city": {
+    id: "brick-city",
+    name: "Brick City",
+    motto: "Every Mile Lays a Brick",
+  },
+};
+export const CITY_INFO = CITIES["brick-city"];
+
 export const START_COINS = 48;
 export const START_ENDURANCE = 24;
 export const START_PEAK = 20;

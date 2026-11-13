@@ -6,7 +6,7 @@
  * that sleep is. Sunday night writes the weekly summary.
  */
 
-import { SLOTS, WEEKDAYS } from "@/lib/constants";
+import { MAX_ENERGY, SLOTS, WEEKDAYS } from "@/lib/constants";
 
 export function slotLabel(slot) {
   if (slot >= SLOTS.length) return SLOTS[SLOTS.length - 1];
@@ -23,11 +23,23 @@ export function formatWhen(calendar) {
 
 /**
  * An activity fits if it finishes before the day rolls past Night.
- * Slot 4 plus a cost of 1 lands on 5, which means "Night is used up".
- * Anything that would land past 5 has to wait until tomorrow.
+ * Kept for the old slot math and the tests. Gameplay now spends energy
+ * blocks (see slotFromEnergy) instead of refusing work because the clock
+ * is late.
  */
 export function canFit(slot, cost) {
   return slot + cost <= SLOTS.length;
+}
+
+/**
+ * Energy left decides the time of day. A full bar is Morning. Every two
+ * blocks spent moves the clock one step. Zero blocks is "the night is
+ * spent" (slot 5), which is still labeled Night and counts as a late bedtime.
+ */
+export function slotFromEnergy(energy) {
+  const safe = Math.max(0, Math.min(MAX_ENERGY, typeof energy === "number" ? energy : MAX_ENERGY));
+  if (safe === 0) return 5;
+  return Math.min(4, Math.floor((MAX_ENERGY - safe) / 2));
 }
 
 /**

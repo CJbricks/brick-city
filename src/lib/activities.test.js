@@ -7,7 +7,9 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  applyEatGel,
   applyEquip,
+  applyNap,
   applyPurchase,
   applyRace,
   applyRival,
@@ -32,7 +34,8 @@ describe("runs, food, and shifts", () => {
     expect(result.state.condition.peak).toBe(21);
     expect(result.state.condition.endurance).toBe(26);
     expect(result.state.condition.nutrition).toBe(60);
-    expect(result.state.calendar.slot).toBe(1);
+    expect(result.state.energy).toBe(9);
+    expect(result.state.calendar.slot).toBe(0);
     expect(result.state.calendar.trainedToday).toBe(true);
     expect(result.state.xp.overall).toBe(12);
     expect(result.state.xp.versatile).toBe(4);
@@ -42,12 +45,13 @@ describe("runs, food, and shifts", () => {
     expect(result.ticker).toBe("+2 Endurance ▲  +1 Peak ▲  −10 Fatigue ▼  −10 Nutrition ▼");
   });
 
-  it("refuses a long run once night is the only slot left", () => {
+  it("refuses a long run when fewer than two energy blocks are left", () => {
     const state = fresh();
-    state.calendar.slot = 4;
+    state.energy = 1;
     const result = applyRun(state, "long-run");
     expect(result.ok).toBe(false);
     expect(result.state).toBe(state);
+    expect(result.lines.join(" ")).toMatch(/Sleep at Home/);
   });
 
   it("fills nutrition from a meal and taxes the next run after a snack", () => {
@@ -163,22 +167,38 @@ describe("races, rivals, and unlocks", () => {
     expect(blocked.ok).toBe(false);
   });
 
-  it("uses a gel to survive a shaky 5K and still DNFs when both sides are bad", () => {
-    const shaky = fresh();
-    shaky.condition.nutrition = 20;
-    shaky.gels = 1;
-    const saved = applyRace(shaky, "5k", 0.1);
-    expect(saved.state.progress.fiveKFinished).toBe(true);
-    expect(saved.state.gels).toBe(0);
-    expect(saved.state.coins).toBe(76);
-
+  it("pauses a bonk when a gel is pocketed, then saves the race only if you eat it", () => {
     const doomed = fresh();
     doomed.condition.nutrition = 15;
     doomed.condition.sleepQuality = "poor";
     doomed.gels = 1;
-    const dnf = applyRace(doomed, "5k", 0.99);
-    expect(dnf.state.progress.fiveKFinished).toBe(false);
-    expect(dnf.state.gels).toBe(1);
+    const paused = applyRace(doomed, "5k", 0.99);
+    expect(paused.needsChoice).toBe(true);
+    expect(paused.state).toBe(doomed);
+    expect(doomed.gels).toBe(1);
+    expect(doomed.progress.fiveKFinished).toBe(false);
+
+    const declined = applyRace(doomed, "5k", 0.99, "decline");
+    expect(declined.needsChoice).toBeFalsy();
+    expect(declined.state.progress.fiveKFinished).toBe(false);
+    expect(declined.state.gels).toBe(1);
+    expect(declined.state.coins).toBe(48);
+
+    const eaten = applyRace(doomed, "5k", 0.99, "eat");
+    expect(eaten.state.progress.fiveKFinished).toBe(true);
+    expect(eaten.state.gels).toBe(0);
+    expect(eaten.state.coins).toBe(76);
+    expect(eaten.state.energy).toBe(10);
+    expect(eaten.lines.join(" ")).toMatch(/gel/i);
+
+    const empty = fresh();
+    empty.condition.nutrition = 15;
+    empty.condition.sleepQuality = "poor";
+    empty.gels = 0;
+    const bonk = applyRace(empty, "5k", 0.99);
+    expect(bonk.needsChoice).toBeFalsy();
+    expect(bonk.state.progress.fiveKFinished).toBe(false);
+    expect(bonk.lines.join(" ")).toMatch(/gel could have saved/i);
   });
 
   it("loses to Remy on day one and beats him after speed work", () => {
@@ -226,5 +246,52 @@ describe("races, rivals, and unlocks", () => {
     const back = applyEquip(purchase.state, "starter");
     expect(back.state.gear.equipped).toBe("starter");
     expect(back.state.coins).toBe(20);
+  });
+});
+
+describe("energy blocks and gels", () => {
+  it("starts at 10, spends 1 or 2, and refills completely on sleep", () => {
+    const easy = applyRun(fresh(), "easy-run");
+    expect(easy.state.energy).toBe(9);
+    const long = applyRun(fresh(), "long-run");
+    expect(long.state.energy).toBe(8);
+    expect(long.state.calendar.slot).toBe(1);
+    const tired = fresh();
+    tired.energy = 2;
+    const slept = applySleep(tired);
+    expect(slept.state.energy).toBe(10);
+    expect(slept.state.calendar.slot).toBe(0);
+    expect(slept.state.nappedToday).toBe(false);
+  });
+
+  it("lets you nap once in the daytime without giving energy back", () => {
+    const first = applyNap(fresh());
+    expect(first.ok).toBe(true);
+    expect(first.state.energy).toBe(9);
+    expect(first.state.condition.fatigue).toBe(0);
+    expect(first.state.nappedToday).toBe(true);
+    const second = applyNap(first.state);
+    expect(second.ok).toBe(false);
+    const late = fresh();
+    late.energy = 4;
+    expect(applyNap(late).ok).toBe(false);
+  });
+
+  it("buys a gel for coins only, and eating one adds a single block", () => {
+    const bought = applyPurchase(fresh(), "gel");
+    expect(bought.ok).toBe(true);
+    expect(bought.state.gels).toBe(1);
+    expect(bought.state.energy).toBe(10);
+    expect(bought.state.coins).toBe(36);
+    const full = applyEatGel(bought.state);
+    expect(full.ok).toBe(false);
+    const hungry = bought.state;
+    hungry.energy = 8;
+    hungry.condition.nutrition = 40;
+    const eaten = applyEatGel(hungry);
+    expect(eaten.ok).toBe(true);
+    expect(eaten.state.energy).toBe(9);
+    expect(eaten.state.gels).toBe(0);
+    expect(eaten.state.condition.nutrition).toBe(52);
   });
 });

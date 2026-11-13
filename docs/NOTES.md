@@ -88,9 +88,23 @@ Race-day form uses the two meters, minus fatigue, plus whatever your shoes are d
 
 ## A day, a week, a rest day
 
-A day has five slots: Morning, Midday, Afternoon, Evening, Night. A long run takes two. If the run would go past the end of Night, the menu says so instead of starting it.
+The HUD clock still says Morning, Midday, Afternoon, Evening, or Night. What actually limits you is **10 energy blocks** (`MAX_ENERGY` in `src/lib/constants.js`). You start each morning at 10/10.
 
-Sleep ends the day no matter the slot. Evening sleep is the good 8-hour night. Going back to bed in the Morning still ends the day, but the quality is poor, and poor sleep is half of the bonk rule.
+| Action | Blocks |
+|---|---|
+| Easy run, park trail, yards, intervals, treadmill, strength, shift, meal, snack, nap, 5K, Remy | 1 |
+| Long run, ridge repeats, 10K | 2 |
+| Buying a Stride Fuel gel | 0 |
+
+If you don't have enough blocks, the menu says to sleep or eat a gel. The sky moves with the bar: two blocks spent is one step of the day. Zero blocks is a spent night. That slot is what `sleepPlan` still reads, so going to bed with a full bar is a short poor sleep, and going to bed after a real day is the good one.
+
+Sleep ends the day, refills energy to 10/10, and clears the "already napped" flag. Evening (a few blocks left) is the good 8-hour night. Going back to bed in the Morning still ends the day, but the quality is poor, and poor sleep is half of the bonk rule.
+
+A daytime nap is allowed only while the clock is still Morning, Midday, or Afternoon, and only once. It costs 1 block, drops fatigue by 14, and does not give the block back.
+
+Eating a gel from Inventory (or the `I` key) needs a gel and an open block. It gives +1 energy, capped at 10, and +12 nutrition. At 10/10 the button stays disabled so you save the gel.
+
+If a 5K, 10K, or mile against Remy is about to bonk and you have a gel, the game stops before the bonk finishes and asks. Eat the gel and you finish the race normally (the block you spent comes back, plus 12 nutrition). Tough it out and the bonk completes. With an empty pocket the bonk just happens, and the text says a gel could have saved it. The random roll is chosen once and reused for both answers, which is why the tests can force either ending.
 
 Sunday night (you go to bed while the weekday is Sunday) writes a weekly summary: miles, XP per track, average fatigue, average nutrition, average sleep, and whether the week cost you fitness. A kind week with some miles pays a small XP bonus. Several hard weeks in a row raise injury risk.
 
@@ -120,7 +134,7 @@ Finishing the 5K hangs a banner by the track. Reaching level 3 plants extra flow
 
 ## Saves
 
-`src/lib/save.js` writes one JSON blob to `localStorage` under `brick-city-save-v1`. The town auto-saves after each action and every couple of seconds while you walk. Home and the menu also have a Save entry. New Game overwrites that key when you confirm the name. Resume reads it back. If the JSON is junk or the version doesn't match, Resume hides itself instead of crashing.
+`src/lib/save.js` writes one JSON blob to `localStorage` under `brick-city-save-v1`. The town auto-saves after each action and every couple of seconds while you walk. Home, the menu, and the town map all have a Save entry. New Game overwrites that key when you confirm the name. Resume reads it back. If the JSON is junk or the version doesn't match, Resume hides itself instead of crashing. A save from before energy blocks existed is still valid: the missing bar is filled to 10 and the clock is set back to Morning so the sky matches.
 
 ## Why the quote waits until after mount
 
@@ -160,6 +174,7 @@ Walking is not stored in React on every frame. That would re-render the HUD 60 t
 | Confirm | Z, Enter, or Space | A |
 | Back | X or Esc | B |
 | Map | M | Map |
+| Inventory | I | Inventory |
 
 On a phone the D-pad and buttons are a bar under the map, not floating over it, so a 390 by 844 screen does not have to scroll to reach them. The page itself does not scroll while you are in town.
 

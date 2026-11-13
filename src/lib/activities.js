@@ -10,9 +10,12 @@
  * the same object you passed in.
  */
 
-import { canFit, formatWhen, isSunday, sleepPlan, summarizeWeek } from "@/lib/calendar";
+import { formatWhen, isSunday, sleepPlan, slotFromEnergy, summarizeWeek } from "@/lib/calendar";
 import {
+  GEL_ENERGY,
+  GEL_NUTRITION,
   HARD_WEEK_AVG_FATIGUE,
+  MAX_ENERGY,
   NAP_FATIGUE_RELIEF,
   NAP_PEAK_LOSS_IF_DETRAINING,
   OVERNIGHT_NUTRITION_DRAIN,
@@ -62,7 +65,7 @@ export const JOBS = {
   shoes: {
     id: "shoes",
     label: "Help a customer",
-    detail: "1 slot · shoe advice",
+    detail: "1 energy · shoe advice",
     speaker: "Customer",
     text: "I'm running the park dirt loop today. What should I buy?",
     choices: [
@@ -83,7 +86,7 @@ export const JOBS = {
   stock: {
     id: "stock",
     label: "Stock the gel wall",
-    detail: "1 slot · shelf work",
+    detail: "1 energy · shelf work",
     speaker: "Manager Nia",
     text: "The gel wall is a mess before the lunch crowd. How do you sort it?",
     choices: [
@@ -104,7 +107,7 @@ export const JOBS = {
   gait: {
     id: "gait",
     label: "Run a gait check",
-    detail: "1 slot · fitting stool",
+    detail: "1 energy · fitting stool",
     speaker: "Manager Nia",
     text: "A runner wants a gait check. What do you watch first?",
     choices: [
@@ -128,7 +131,7 @@ export const SHOP = {
   meal: {
     id: "meal",
     label: "Healthy meal",
-    detail: "18 coins · pasta and greens",
+    detail: "18 coins · 1 energy · pasta and greens",
     cost: 18,
     nutrition: 32,
     mealName: "Pasta and greens",
@@ -139,7 +142,7 @@ export const SHOP = {
   snack: {
     id: "snack",
     label: "Quick snack",
-    detail: "7 coins · counter pastry",
+    detail: "7 coins · 1 energy · counter pastry",
     cost: 7,
     nutrition: 14,
     mealName: "Counter pastry",
@@ -150,9 +153,10 @@ export const SHOP = {
   gel: {
     id: "gel",
     label: "Stride Fuel gel",
-    detail: "12 coins · race pocket",
+    detail: "12 coins · 0 energy",
     cost: 12,
-    lines: ["You tuck a gel in the pocket of your shorts. It can cover one shaky start."],
+    energy: 0,
+    lines: ["You tuck a gel in the pocket. It costs no energy. Eat it from Inventory for +1 block, or save it for a bonk."],
   },
 };
 
@@ -373,6 +377,8 @@ export function createNewGame({ name, gender }) {
       miles: { starter: 0 },
     },
     gels: 0,
+    energy: MAX_ENERGY,
+    nappedToday: false,
     progress: {
       parkTrailRuns: 0,
       trackRuns: 0,
@@ -423,15 +429,31 @@ function sample(state) {
   state.calendar.nutritionSamples.push(state.condition.nutrition);
 }
 
-function consumeSlots(state, cost, drain) {
-  for (let i = 0; i < cost; i += 1) {
-    if (drain) {
+export function readEnergy(state) {
+  return typeof state.energy === "number" ? state.energy : MAX_ENERGY;
+}
+
+const LOW_ENERGY = "Not enough energy. Sleep at Home, or eat a gel.";
+
+/**
+ * Spending a block is what moves the clock. Two blocks is one step of the
+ * day (Morning toward Night). Nutrition still drains once per block on a
+ * real effort, because the old "each slot makes you hungrier" rule now
+ * follows energy instead of a separate slot counter. A gel purchase passes
+ * cost 0 and leaves both the bar and the clock alone.
+ */
+function spendEnergy(state, cost, drain) {
+  const have = readEnergy(state);
+  if (cost > 0 && have < cost) return false;
+  state.energy = have - cost;
+  if (drain && cost > 0) {
+    for (let i = 0; i < cost; i += 1) {
       state.condition.nutrition = clampMeter(state.condition.nutrition - slotDrain(state.condition));
     }
-    state.calendar.slot += 1;
+    if (state.condition.junk) state.condition.junk = false;
   }
-  // A snack's junk flag only taxes the next effort, then it's gone.
-  if (drain && state.condition.junk) state.condition.junk = false;
+  state.calendar.slot = slotFromEnergy(state.energy);
+  return true;
 }
 
 function addXp(state, xp) {
@@ -513,8 +535,9 @@ export function applyRun(state, runId) {
   if (runId === "ridge-repeats" && !isMountainOpen(state)) {
     return refuse(state, ["The ranger hasn't opened the gate."]);
   }
-  if (!canFit(state.calendar.slot, activity.slots)) {
-    return refuse(state, ["That would run past the end of the night. Sleep, or pick something shorter."]);
+  const energyCost = activity.id === "long-run" || activity.id === "ridge-repeats" ? 2 : 1;
+  if (readEnergy(state) < energyCost) {
+    return refuse(state, [LOW_ENERGY]);
   }
   if (state.condition.injury && (runId === "intervals" || runId === "ridge-repeats")) {
     return refuse(state, [`Your ${state.condition.injury.name.toLowerCase()} says no to that session.`]);
@@ -543,7 +566,7 @@ export function applyRun(state, runId) {
   if (gear.wear === "worn out" && activity.miles > 0) {
     lines.push(`${gear.name} are worn out. Replace them at the Run Store.`);
   }
-  consumeSlots(next, activity.slots, true);
+  spendEnergy(next, energyCost, true);
   sample(next);
   if (activity.miles > 0) {
     lines.push(`${round1(activity.miles)} miles in the book.`);
@@ -645,8 +668,12 @@ export function applySleep(state) {
 
   next.calendar.day += 1;
   next.calendar.weekday = (next.calendar.weekday + 1) % 7;
-  next.calendar.slot = 0;
+  // Sleep is the only full refill. The clock goes back to Morning with it.
+  next.energy = MAX_ENERGY;
+  next.nappedToday = false;
+  next.calendar.slot = slotFromEnergy(MAX_ENERGY);
   next.calendar.trainedToday = false;
+  lines.push("Energy is back to 10/10.");
   sample(next);
 
   const result = finish(before, next, lines);
@@ -655,21 +682,28 @@ export function applySleep(state) {
 }
 
 export function applyNap(state) {
-  if (state.calendar.slot >= 3) {
+  // Daytime is Morning through Afternoon (slot 0-2), which is 5 or more
+  // energy blocks left. One nap a day. It spends a block and does not
+  // give any back. That is the difference between a nap and sleep.
+  if (slotFromEnergy(readEnergy(state)) >= 3) {
     return refuse(state, ["Too late for a nap. Sleep will end the day instead."]);
   }
-  if (!canFit(state.calendar.slot, 1)) {
-    return refuse(state, ["The day is already spent."]);
+  if (state.nappedToday) {
+    return refuse(state, ["You already napped today. Sleep will refill energy."]);
+  }
+  if (readEnergy(state) < 1) {
+    return refuse(state, [LOW_ENERGY]);
   }
   const before = state;
   const next = clone(state);
   next.condition.fatigue = clampMeter(next.condition.fatigue - NAP_FATIGUE_RELIEF);
-  const lines = ["You stretch out on the couch. A short nap, not a new day."];
+  next.nappedToday = true;
+  const lines = ["You stretch out on the couch. A short nap, not a new day. Energy stays spent."];
   if (next.calendar.daysSinceRun >= 3) {
     next.condition.peak = clampMeter(next.condition.peak - NAP_PEAK_LOSS_IF_DETRAINING);
     lines.push("Extra rest while you are already detraining nicks Peak Fitness.");
   }
-  consumeSlots(next, 1, true);
+  spendEnergy(next, 1, true);
   sample(next);
   return finish(before, next, lines);
 }
@@ -677,8 +711,10 @@ export function applyNap(state) {
 export function applyPurchase(state, itemId) {
   const item = SHOP[itemId];
   if (!item) return refuse(state, ["The shelf doesn't have that."]);
-  if (!canFit(state.calendar.slot, 1)) {
-    return refuse(state, ["The grocer is closing. Sleep and come back."]);
+  // A gel is pocket fuel. Buying it must not burn the block it is meant to restore.
+  const energyCost = itemId === "gel" ? 0 : 1;
+  if (readEnergy(state) < energyCost) {
+    return refuse(state, [LOW_ENERGY]);
   }
   if (state.coins < item.cost) {
     return refuse(state, [`You need ${item.cost} coins. A shift at the Run Store would cover it.`]);
@@ -694,9 +730,32 @@ export function applyPurchase(state, itemId) {
     next.condition.mealQuality = item.mealQuality;
     next.condition.junk = item.junk;
   }
-  consumeSlots(next, 1, false);
+  spendEnergy(next, energyCost, false);
   sample(next);
   return finish(before, next, [...item.lines]);
+}
+
+/**
+ * Eating a gel outside a race. The rule is strict on purpose: you need a
+ * gel, and you need an empty block. At 10/10 the gel stays in the pocket
+ * for a bonk. Nutrition still rises by 12 when the gel goes down.
+ */
+export function canEatGel(state) {
+  if ((state.gels || 0) <= 0) return { ok: false, reason: "No Stride Fuel gels in the pocket." };
+  if (readEnergy(state) >= MAX_ENERGY) return { ok: false, reason: "Energy is already 10/10. Save the gel for a bonk." };
+  return { ok: true, reason: "" };
+}
+
+export function applyEatGel(state) {
+  const check = canEatGel(state);
+  if (!check.ok) return refuse(state, [check.reason]);
+  const before = state;
+  const next = clone(state);
+  next.gels -= 1;
+  next.energy = Math.min(MAX_ENERGY, readEnergy(next) + GEL_ENERGY);
+  next.condition.nutrition = clampMeter(next.condition.nutrition + GEL_NUTRITION);
+  next.calendar.slot = slotFromEnergy(next.energy);
+  return finish(before, next, [`You eat a Stride Fuel gel. +${GEL_ENERGY} energy, +${GEL_NUTRITION} nutrition.`]);
 }
 
 export function applyShoe(state, shoeId) {
@@ -739,14 +798,14 @@ export function applyShift(state, jobId, choiceId) {
   if (!job) return refuse(state, ["That shift isn't on the board."]);
   const choice = job.choices.find((item) => item.id === choiceId);
   if (!choice) return refuse(state, ["Pick one of the options."]);
-  if (!canFit(state.calendar.slot, 1)) {
-    return refuse(state, ["The store is locking up. Come back tomorrow."]);
+  if (readEnergy(state) < 1) {
+    return refuse(state, [LOW_ENERGY]);
   }
   const before = state;
   const next = clone(state);
   next.coins += choice.coins;
   next.condition.fatigue = clampMeter(next.condition.fatigue + 4);
-  consumeSlots(next, 1, true);
+  spendEnergy(next, 1, true);
   sample(next);
   return finish(before, next, [choice.reply, `You earn ${choice.coins} coins.`]);
 }
@@ -759,36 +818,58 @@ function scaleXp(xp, factor) {
   return scaled;
 }
 
-export function applyRace(state, raceId, roll = 0.5) {
+const BONK_PROMPT = "You're about to bonk mid-race! Eat a Stride Fuel gel before the bonk hits?";
+
+function gelChoicePending(state, threat, choice) {
+  return Boolean(threat.bonk && (state.gels || 0) > 0 && choice !== "eat" && choice !== "decline");
+}
+
+/**
+ * The gel goes down after the effort is paid, then gives one block back
+ * (never past 10) and 12 nutrition. Calling it only on the "eat" choice
+ * keeps the decline path a pure bonk.
+ */
+function applyRescueGel(state) {
+  state.gels -= 1;
+  state.condition.nutrition = clampMeter(state.condition.nutrition + GEL_NUTRITION);
+  state.energy = Math.min(MAX_ENERGY, readEnergy(state) + GEL_ENERGY);
+  state.calendar.slot = slotFromEnergy(state.energy);
+}
+
+export function applyRace(state, raceId, roll = 0.5, choice) {
   const race = RACES[raceId];
   if (!race) return refuse(state, ["That race isn't on the calendar."]);
   if (raceId === "10k" && !isTenKOpen(state)) {
     return refuse(state, [`The Community 10K is still locked. ${describeNeeds(tenKStatus(state).needs)}`]);
   }
-  if (!canFit(state.calendar.slot, race.slots)) {
-    return refuse(state, ["There isn't enough day left to toe the line."]);
+  const energyCost = race.energy || 1;
+  if (readEnergy(state) < energyCost) {
+    return refuse(state, [LOW_ENERGY]);
   }
-  const before = state;
-  const next = clone(state);
-  const verdict = judgeBonk({
-    nutrition: next.condition.nutrition,
-    sleepQuality: next.condition.sleepQuality,
-    fatigue: next.condition.fatigue,
-    gels: next.gels,
+  const threat = judgeBonk({
+    nutrition: state.condition.nutrition,
+    sleepQuality: state.condition.sleepQuality,
+    fatigue: state.condition.fatigue,
     roll,
     km: race.km,
   });
-  if (verdict.usedGel) next.gels -= 1;
+  if (gelChoicePending(state, threat, choice)) {
+    return { ok: true, needsChoice: true, state, lines: [BONK_PROMPT], ticker: "", summary: null };
+  }
+  const rescued = Boolean(threat.bonk && choice === "eat" && (state.gels || 0) > 0);
+  const before = state;
+  const next = clone(state);
   const lines = [];
-  if (verdict.reason === "low-fuel-poor-sleep") {
+  if (threat.bonk && !rescued && threat.dnf) {
     lines.push("Your stomach drops halfway down Brick Street.");
     lines.push("The world narrows to your shoes. You walk. DNF.");
     lines.push("Fitness was never the problem. Fuel and sleep were.");
+    if ((state.gels || 0) === 0) lines.push("A Stride Fuel gel could have saved this.");
     addXp(next, race.dnfXp);
     next.condition.fatigue = clampMeter(next.condition.fatigue + race.dnfFatigue);
     next.condition.nutrition = clampMeter(next.condition.nutrition - 12);
     addMiles(next, round1(race.miles / 2));
-  } else if (verdict.slowFinish) {
+  } else if (threat.bonk && !rescued && threat.slowFinish) {
     lines.push("You bonk with the finish banner in sight and jog it in.");
     lines.push(`${flavorTime(race, 0, true)}. It counts, barely. Half credit, no prize purse.`);
     addXp(next, scaleXp(race.xp, 0.5));
@@ -800,17 +881,13 @@ export function applyRace(state, raceId, roll = 0.5) {
     addMiles(next, race.miles);
     if (raceId === "5k") next.progress.fiveKFinished = true;
     if (raceId === "10k") next.progress.tenKFinished = true;
-  } else if (verdict.dnf) {
-    lines.push("The bonk hits and you step off. DNF.");
-    addXp(next, race.dnfXp);
-    next.condition.fatigue = clampMeter(next.condition.fatigue + race.dnfFatigue);
-    next.condition.nutrition = clampMeter(next.condition.nutrition - 12);
-    addMiles(next, round1(race.miles / 2));
+    if ((state.gels || 0) === 0) lines.push("A Stride Fuel gel could have saved this.");
   } else {
     const form = raceFormScore(next, race);
     const time = flavorTime(race, form, false);
-    lines.push(`You finish the ${race.name} in ${time}.`);
-    if (verdict.usedGel) lines.push("The gel keeps the wheels on when your legs argue.");
+    lines.push(rescued
+      ? `The gel hits before the bonk does. You finish the ${race.name} in ${time}.`
+      : `You finish the ${race.name} in ${time}.`);
     lines.push("The result board gets your name, and your pockets get coins.");
     addXp(next, race.xp);
     addAttributes(next, race.attributes);
@@ -827,7 +904,8 @@ export function applyRace(state, raceId, roll = 0.5) {
   const sore = nextSoreness(next, { hard: true });
   next.condition.sore = sore.sore;
   next.condition.injury = sore.injury;
-  consumeSlots(next, race.slots, true);
+  spendEnergy(next, energyCost, true);
+  if (rescued) applyRescueGel(next);
   sample(next);
   return finish(before, next, lines);
 }
@@ -848,35 +926,41 @@ function raceFormScore(state, race) {
   );
 }
 
-export function applyRival(state, roll = 0.5) {
-  if (!canFit(state.calendar.slot, RIVAL.slots)) {
-    return refuse(state, ["Remy looks at the sky. Too late to race tonight."]);
+export function applyRival(state, roll = 0.5, choice) {
+  const energyCost = RIVAL.energy || 1;
+  if (readEnergy(state) < energyCost) {
+    return refuse(state, [LOW_ENERGY]);
   }
-  const before = state;
-  const next = clone(state);
-  const verdict = judgeBonk({
-    nutrition: next.condition.nutrition,
-    sleepQuality: next.condition.sleepQuality,
-    fatigue: next.condition.fatigue,
-    gels: next.gels,
+  const threat = judgeBonk({
+    nutrition: state.condition.nutrition,
+    sleepQuality: state.condition.sleepQuality,
+    fatigue: state.condition.fatigue,
     roll,
     km: 5,
   });
-  if (verdict.usedGel) next.gels -= 1;
+  if (gelChoicePending(state, threat, choice)) {
+    return { ok: true, needsChoice: true, state, lines: [BONK_PROMPT], ticker: "", summary: null };
+  }
+  const rescued = Boolean(threat.bonk && choice === "eat" && (state.gels || 0) > 0);
+  const before = state;
+  const next = clone(state);
   const lines = [`Remy Calder, ${RIVAL.title}, toes the line beside you.`];
   let win = false;
-  if (verdict.dnf || verdict.reason === "low-fuel-poor-sleep") {
+  if (threat.bonk && !rescued && threat.dnf) {
     lines.push("You bonk before the second bend. Remy jogs it in and waits, arms folded.");
     lines.push("DNF. Remy doesn't gloat. Much.");
+    if ((state.gels || 0) === 0) lines.push("A Stride Fuel gel could have saved this.");
+    addXp(next, RIVAL.loseXp);
+    next.progress.rivalLosses += 1;
+  } else if (threat.bonk && !rescued) {
+    lines.push("You bonk on the last straight and Remy nips you at the line.");
+    if ((state.gels || 0) === 0) lines.push("A Stride Fuel gel could have saved this.");
     addXp(next, RIVAL.loseXp);
     next.progress.rivalLosses += 1;
   } else {
     const scores = rivalScores(next, roll);
-    win = scores.win && !verdict.slowFinish;
-    if (verdict.slowFinish) {
-      lines.push("You bonk on the last straight and Remy nips you at the line.");
-      win = false;
-    }
+    win = scores.win;
+    if (rescued) lines.push("The gel lands before your stomach does. The mile is a race again.");
     if (win) {
       lines.push("You hold the bend and kick past the kicker. Remy laughs, out of breath.");
       lines.push("A win. Coins, pride, and a little Marathon XP.");
@@ -884,14 +968,11 @@ export function applyRival(state, roll = 0.5) {
       addAttributes(next, RIVAL.winAttributes);
       next.coins += RIVAL.coins;
       next.progress.rivalWins += 1;
-    } else if (!verdict.slowFinish) {
+    } else {
       lines.push("Remy kicks with 100 meters left and you don't have an answer.");
       lines.push("A loss still teaches. A little XP, and a reason to come back.");
       addXp(next, RIVAL.loseXp);
       addAttributes(next, RIVAL.loseAttributes);
-      next.progress.rivalLosses += 1;
-    } else {
-      addXp(next, RIVAL.loseXp);
       next.progress.rivalLosses += 1;
     }
   }
@@ -900,7 +981,8 @@ export function applyRival(state, roll = 0.5) {
   next.condition.peak = clampMeter(next.condition.peak + (win ? RIVAL.peak : 1));
   addMiles(next, RIVAL.miles);
   next.calendar.trainedToday = true;
-  consumeSlots(next, RIVAL.slots, true);
+  spendEnergy(next, energyCost, true);
+  if (rescued) applyRescueGel(next);
   sample(next);
   return finish(before, next, lines);
 }
@@ -929,9 +1011,11 @@ export function perform(state, action, roll = 0.5) {
     case "shift":
       return applyShift(state, action.job, action.choice);
     case "race":
-      return applyRace(state, action.id, roll);
+      return applyRace(state, action.id, roll, action.choice);
     case "rival":
-      return applyRival(state, roll);
+      return applyRival(state, roll, action.choice);
+    case "eat-gel":
+      return applyEatGel(state);
     default:
       return refuse(state, ["Nothing happens."]);
   }
@@ -941,21 +1025,33 @@ function item(label, detail, action, disabled, disabledReason) {
   return { label, detail, action, disabled: Boolean(disabled), disabledReason: disabledReason || "" };
 }
 
+function runEnergyCost(runId) {
+  return runId === "long-run" || runId === "ridge-repeats" ? 2 : 1;
+}
+
 function runItem(state, runId) {
   const run = RUNS[runId];
-  const late = !canFit(state.calendar.slot, run.slots);
+  const cost = runEnergyCost(runId);
+  const tired = readEnergy(state) < cost;
   const miles = run.miles > 0 ? `${round1(run.miles)} mi · ` : "";
   return item(
     run.name,
-    `${miles}${run.slots} slot${run.slots > 1 ? "s" : ""}`,
+    `${miles}${cost} energy`,
     { type: "run", id: runId },
-    late,
-    "Too late today.",
+    tired,
+    LOW_ENERGY,
   );
 }
 
 export function menuFor(locationId, state) {
-  const lateNap = state.calendar.slot >= 3;
+  const tooLateToNap = slotFromEnergy(readEnergy(state)) >= 3;
+  const alreadyNapped = Boolean(state.nappedToday);
+  const napBlocked = tooLateToNap || alreadyNapped || readEnergy(state) < 1;
+  const napReason = alreadyNapped
+    ? "You already napped today. Sleep will refill energy."
+    : tooLateToNap
+      ? "Naps are for daytime. Sleep instead."
+      : LOW_ENERGY;
   switch (locationId) {
     case "home":
       return {
@@ -963,13 +1059,13 @@ export function menuFor(locationId, state) {
         speaker: "Home",
         intro: "Shoes by the door. The couch knows your name.",
         items: [
-          item("Sleep", "End the day and shed fatigue", { type: "sleep" }),
+          item("Sleep", "End the day · refill energy to 10/10", { type: "sleep" }),
           item(
             "Daytime Nap",
-            "A short rest, not a new day",
+            "1 energy · sheds fatigue · does not refill energy",
             { type: "nap" },
-            lateNap,
-            "Naps are for daytime. Sleep instead.",
+            napBlocked,
+            napReason,
           ),
           item("Swap Shoes", "Closet", { type: "open-gear" }),
           item("Save Game", "This browser only", { type: "save" }),
@@ -992,7 +1088,7 @@ export function menuFor(locationId, state) {
         intro: "Manager Nia is lacing a demo shoe on the stool.",
         items: [
           ...Object.values(JOBS).map((job) =>
-            item(job.label, job.detail, { type: "open-shift", job: job.id }, !canFit(state.calendar.slot, 1), "Shop's closing."),
+            item(job.label, job.detail, { type: "open-shift", job: job.id }, readEnergy(state) < 1, LOW_ENERGY),
           ),
           item("Shop shoes", "Road, trail, and hybrid", { type: "open-shop" }),
         ],
@@ -1003,8 +1099,8 @@ export function menuFor(locationId, state) {
         speaker: "Grocery",
         intro: "The produce is better than the pastry case. Both are for sale.",
         items: [
-          item(SHOP.meal.label, SHOP.meal.detail, { type: "buy", id: "meal" }, state.coins < SHOP.meal.cost, "Not enough coins."),
-          item(SHOP.snack.label, SHOP.snack.detail, { type: "buy", id: "snack" }, state.coins < SHOP.snack.cost, "Not enough coins."),
+          item(SHOP.meal.label, SHOP.meal.detail, { type: "buy", id: "meal" }, state.coins < SHOP.meal.cost || readEnergy(state) < 1, state.coins < SHOP.meal.cost ? "Not enough coins." : LOW_ENERGY),
+          item(SHOP.snack.label, SHOP.snack.detail, { type: "buy", id: "snack" }, state.coins < SHOP.snack.cost || readEnergy(state) < 1, state.coins < SHOP.snack.cost ? "Not enough coins." : LOW_ENERGY),
           item(SHOP.gel.label, `${SHOP.gel.detail} · held ${state.gels}`, { type: "buy", id: "gel" }, state.coins < SHOP.gel.cost, "Not enough coins."),
         ],
       };

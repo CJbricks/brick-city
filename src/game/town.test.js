@@ -6,7 +6,8 @@
 
 import { describe, expect, it } from "vitest";
 import { createNewGame } from "@/lib/activities";
-import { buildWorld, canReach, homeSpawn, isBlocked, PLACES, TILE } from "@/game/town";
+import { CITY_SIGNS, DIR, buildWorld, canReach, homeSpawn, isBlocked, lookupInteract, PLACES, TILE, signCopy } from "@/game/town";
+import { CITY_INFO } from "@/lib/constants";
 
 describe("town paths", () => {
   it("starts at home on a walkable tile and can reach every place", () => {
@@ -19,5 +20,24 @@ describe("town paths", () => {
     for (const place of PLACES) {
       expect(canReach(world, homeTile, place), place.id).toBe(true);
     }
+  });
+
+  it("puts a solid city sign beside every place without sealing the mat", () => {
+    const world = buildWorld(createNewGame({ name: "Ada", gender: "female" }));
+    expect(CITY_SIGNS).toHaveLength(8);
+    for (const sign of CITY_SIGNS) {
+      expect(world.interact[sign.ty][sign.tx]).toBe(sign.id);
+      expect(isBlocked(world, sign.tx, sign.ty)).toBe(true);
+      const place = PLACES.find((item) => item.id === sign.placeId);
+      expect(isBlocked(world, place.tx, place.ty)).toBe(false);
+      const reachable = Object.values(DIR).some(([dx, dy]) => !isBlocked(world, sign.tx + dx, sign.ty + dy));
+      expect(reachable, sign.id).toBe(true);
+      const copy = signCopy(sign);
+      expect(copy.lines[0]).toContain("BRICK CITY");
+      expect(copy.lines[0]).toContain(`"${CITY_INFO.motto}"`);
+      expect(copy.lines[0]).toContain(sign.placeName);
+    }
+    expect(lookupInteract(world, 5, 7, "left")).toBe("sign-home");
+    expect(lookupInteract(world, 5, 7, "up")).toBe("home");
   });
 });

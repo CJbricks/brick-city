@@ -19,6 +19,18 @@ describe("save serialization", () => {
     expect(copy.xp.overall).toBeGreaterThan(0);
   });
 
+  it("gives an older v1 save a full energy bar when the field is missing", () => {
+    const state = createNewGame({ name: "Ada", gender: "female" });
+    delete state.energy;
+    delete state.nappedToday;
+    state.calendar.slot = 4;
+    const copy = deserialize(serialize(state));
+    expect(copy.energy).toBe(10);
+    expect(copy.nappedToday).toBe(false);
+    expect(copy.calendar.slot).toBe(0);
+    expect(copy.runner.name).toBe("ADA");
+  });
+
   it("rejects junk instead of loading a half save", () => {
     expect(deserialize("")).toBeNull();
     expect(deserialize("not json")).toBeNull();

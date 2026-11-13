@@ -30,7 +30,7 @@ function bindHold(dir, onHold) {
   };
 }
 
-export function TouchControls({ onHold, onA, onB, onMap, onMenu }) {
+export function TouchControls({ onHold, onA, onB, onMap, onInventory, onMenu }) {
   return (
     <div className="touch-bar" data-testid="touch-bar">
       <div className="d-pad" data-testid="d-pad">
@@ -51,6 +51,9 @@ export function TouchControls({ onHold, onA, onB, onMap, onMenu }) {
         <div className="sys-row">
           <button type="button" className="sys-btn" data-testid="btn-map" onClick={onMap}>
             MAP
+          </button>
+          <button type="button" className="sys-btn" data-testid="btn-inventory" onClick={onInventory}>
+            INVENTORY
           </button>
           <button type="button" className="sys-btn" data-testid="btn-menu" onClick={onMenu}>
             MENU

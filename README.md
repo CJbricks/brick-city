@@ -57,6 +57,8 @@ The game runs on a **calendar**. Each day is split into time slots, and fatigue 
 
 **Calendar screen**: a menu screen showing this week, upcoming races, sponsor goals, and past weekly summaries.
 
+**What v1 plays:** the clock still has those five names, but actions spend **10 daily energy blocks** instead of being capped by the slot count. Most runs, meals, shifts, the 5K, and the rival mile cost 1 block. A long run, ridge repeats, and the 10K cost 2. Buying a Stride Fuel gel costs 0. Sleep refills the bar to 10/10. A daytime nap costs 1 block, sheds fatigue, and does not refill energy (one nap a day). Time of day follows the blocks: two spent blocks move the sky one step, and 0 blocks is a spent night. Eating a gel outside a race gives +1 block (never past 10) and +12 nutrition. If a bonk is about to land and you are carrying a gel, the race pauses so you can eat it and finish, or tough it out. Each place in town has a city sign: **Brick City**, motto **Every Mile Lays a Brick**.
+
 ## 2b. Money, work, sleep, and detraining
 
 **Energy and recovery**

@@ -10,7 +10,10 @@
  * a door. Standing on it and pressing A opens that place.
  */
 
+import { CITY_INFO } from "@/lib/constants";
 import { isMountainOpen } from "@/lib/unlocks";
+
+export { CITY_INFO };
 
 export const TILE = 16;
 export const COLS = 36;
@@ -31,6 +34,30 @@ export const BUILDINGS = [
   { id: "gym", x: 2, y: 11, w: 7, h: 7, door: { x: 8, y: 14 } },
   { id: "store", x: 2, y: 23, w: 7, h: 5, door: { x: 5, y: 23 } },
 ];
+
+/**
+ * One signpost per place, on a tile that is not the door mat. The post
+ * itself is solid. The mat next to it stays walkable, so you face the
+ * sign and press A instead of standing on it.
+ */
+export const CITY_SIGNS = [
+  { id: "sign-home", placeId: "home", placeName: "Home", tx: 4, ty: 7 },
+  { id: "sign-grocery", placeId: "grocery", placeName: "Grocery", tx: 16, ty: 7 },
+  { id: "sign-gym", placeId: "gym", placeName: "Gym", tx: 9, ty: 13 },
+  { id: "sign-store", placeId: "store", placeName: "Run Store", tx: 4, ty: 22 },
+  { id: "sign-park", placeId: "park", placeName: "Park", tx: 19, ty: 22 },
+  { id: "sign-track", placeId: "track", placeName: "Local Track", tx: 26, ty: 10 },
+  { id: "sign-mountain", placeId: "mountain", placeName: "Mountain Gate", tx: 29, ty: 7 },
+  { id: "sign-depot", placeId: "depot", placeName: "World Depot", tx: 20, ty: 17 },
+];
+
+export function signCopy(sign) {
+  // One page, not three presses. The sign is a plaque: city, motto, place.
+  return {
+    speaker: "City sign",
+    lines: [`${CITY_INFO.name.toUpperCase()}\n"${CITY_INFO.motto}"\n${sign.placeName}`],
+  };
+}
 
 export const PLACES = [
   { id: "home", name: "Home", tx: 5, ty: 7, facing: "up" },
@@ -243,6 +270,10 @@ export function buildWorld(state) {
     blocked[npc.ty][npc.tx] = true;
     interact[npc.ty][npc.tx] = npc.location;
   }
+  for (const sign of CITY_SIGNS) {
+    blocked[sign.ty][sign.tx] = true;
+    interact[sign.ty][sign.tx] = sign.id;
+  }
 
   return {
     ground,
@@ -251,6 +282,7 @@ export function buildWorld(state) {
     npcs: NPCS,
     buildings: BUILDINGS,
     places: PLACES,
+    signs: CITY_SIGNS,
     mountainOpen,
   };
 }
