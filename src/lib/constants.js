@@ -4,6 +4,10 @@
  * without hunting through the rules. If a run feels too tiring, or level 8
  * (the mountain) feels too far away, this is the file to edit.
  * See docs/NOTES.md for what each group actually does in play.
+ *
+ * Nutrition caps live here too. The bar starts at 100. A running belt adds
+ * 5 and a trail vest adds 10. Sponsors do not raise this cap. They raise
+ * the floor and slow the drain, which is a different knob.
  */
 
 export const SAVE_KEY = "brick-city-save-v1";
@@ -53,6 +57,15 @@ export const ATTRIBUTE_POINTS_PER_LEVEL = 20;
 
 /** Specialty-track points per displayed rank (the panel, not a gate). */
 export const TRACK_POINTS_PER_RANK = 40;
+
+/**
+ * Base nutrition cap. Belts and vests add BELT_NUTRITION or VEST_NUTRITION
+ * on top. Do not bake 105 or 110 in anywhere else, or the HUD and the
+ * meal clamp will disagree.
+ */
+export const MAX_NUTRITION = 100;
+export const BELT_NUTRITION = 5;
+export const VEST_NUTRITION = 10;
 
 /** Passive nutrition lost each time slot, before extras. */
 export const SLOT_NUTRITION_DRAIN = 4;

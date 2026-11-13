@@ -4,6 +4,10 @@
  * These move every run, meal, and night of sleep. They are not the same
  * as attribute levels. A ticker line and the little HUD arrows both come
  * from the helpers here.
+ *
+ * clampMeter still tops out at 100 unless the caller passes a higher max.
+ * Only nutrition does that, and only while a belt or vest is equipped.
+ * Endurance, Peak, and Fatigue stay on the 0–100 scale.
  */
 
 import {
@@ -18,8 +22,8 @@ import {
   TREND_THRESHOLD,
 } from "@/lib/constants";
 
-export function clampMeter(value) {
-  return Math.max(0, Math.min(100, Math.round(value)));
+export function clampMeter(value, max = 100) {
+  return Math.max(0, Math.min(max, Math.round(value)));
 }
 
 export function readMeters(condition) {

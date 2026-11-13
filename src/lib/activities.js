@@ -8,6 +8,10 @@
  * A returned object always has { ok, state, lines, ticker }. `ok: false`
  * means the day was too short or the coins weren't there, and `state` is
  * the same object you passed in.
+ *
+ * Shoes, belts, vests, and sponsor deals are applied here too. The numbers
+ * live in catalog.js and sponsors.js. This file only decides what a button
+ * does to the save: buy, equip, sign, skip, sleep, run, race.
  */
 
 import { formatWhen, isSunday, sleepPlan, slotFromEnergy, summarizeWeek } from "@/lib/calendar";
@@ -35,17 +39,52 @@ import {
 import { clampMeter, formatTicker, meterDelta, readMeters, slotDrain } from "@/lib/condition";
 import { detrainingDelta, detrainingNote } from "@/lib/detrain";
 import {
+  carryById,
+  carryNutrition,
+  carryTradeText,
+  CARRY,
+  isKnownShoe,
+  maxNutritionFromGear,
+  shoeTradeText,
+  shoesOfStyle,
+  styleLabel,
+  wearPercent,
+} from "@/lib/catalog";
+import {
   RACES,
   RIVAL,
-  SHOES,
+  combinedMod,
   flavorTime,
   gearModForStyle,
   judgeBonk,
   rivalScores,
   shoeById,
   shoeWear,
-  replaceCost,
 } from "@/lib/race";
+import {
+  NUTRITION_SPONSOR_IDS,
+  SHOE_SPONSOR_IDS,
+  STANDING_ACCEPT,
+  STANDING_DROP,
+  STANDING_SKIP,
+  STANDING_START,
+  STANDING_WARN,
+  activeShoeSponsor,
+  clampStanding,
+  emptySponsors,
+  gateStatus,
+  nutritionPerkText,
+  nutritionTuning,
+  planObligation,
+  pricedCarry,
+  pricedGel,
+  pricedShoe,
+  shoePerkText,
+  sponsorById,
+  sponsorPace,
+  sponsorSummaryLines,
+  standingOf,
+} from "@/lib/sponsors";
 import {
   describeNeeds,
   halfStatus,
@@ -199,6 +238,8 @@ const RUNS = {
       "You settle into the long loop and stay there.",
       "This is the work that builds Overall Endurance.",
     ],
+    // Marathon shoes add fatigue here. A 5K does not count as a long ultra.
+    longUltra: true,
   },
   "park-trail": {
     id: "park-trail",
@@ -318,6 +359,7 @@ const RUNS = {
       "The gate creaks and the grade starts immediately.",
       "Climbing XP, and a view of Brick City the size of a postage stamp.",
     ],
+    longUltra: true,
   },
 };
 
@@ -377,7 +419,12 @@ export function createNewGame({ name, gender }) {
       equipped: "starter",
       owned: ["starter"],
       miles: { starter: 0 },
+      // One fuel slot. null means pockets only, max nutrition 100.
+      carry: null,
+      ownedCarry: [],
     },
+    // No deal on day one. The Sponsors menu explains what is still locked.
+    sponsors: emptySponsors(),
     gels: 0,
     energy: MAX_ENERGY,
     nappedToday: false,
@@ -447,18 +494,74 @@ const LOW_ENERGY = "Not enough energy. Sleep at Home, or eat a gel.";
  * follows energy instead of a separate slot counter. A gel purchase passes
  * cost 0 and leaves both the bar and the clock alone.
  */
+/**
+ * Nutrition uses the belt/vest cap. Every other meter stays at 100.
+ * A nutrition sponsor lowers the per-block drain. It does not raise the cap.
+ */
+function clampFood(state, value) {
+  return clampMeter(value, maxNutritionFromGear(state.gear));
+}
+
+function hungerDrain(state) {
+  const cut = nutritionTuning(state).drainCut;
+  return Math.max(0, slotDrain(state.condition) - cut);
+}
+
 function spendEnergy(state, cost, drain) {
   const have = readEnergy(state);
   if (cost > 0 && have < cost) return false;
   state.energy = have - cost;
   if (drain && cost > 0) {
     for (let i = 0; i < cost; i += 1) {
-      state.condition.nutrition = clampMeter(state.condition.nutrition - slotDrain(state.condition));
+      state.condition.nutrition = clampFood(state, state.condition.nutrition - hungerDrain(state));
     }
     if (state.condition.junk) state.condition.junk = false;
   }
   state.calendar.slot = slotFromEnergy(state.energy);
   return true;
+}
+
+const STYLE_TRACKS = {
+  road: ["marathon"],
+  trail: ["trail"],
+  versatile: ["versatile"],
+};
+
+/**
+ * Shoe and sponsor percents land on the specialty track for this effort.
+ * Overall XP is left alone so a pair of shoes cannot skip the level gates.
+ * A negative shoe mod is pace only. It is not also subtracted from XP,
+ * because worn-out pace and the readiness card already show that cost.
+ */
+function grantXp(state, xp, style) {
+  const tuned = { ...(xp || {}) };
+  if (style) {
+    const shoe = shoeById(state.gear?.equipped);
+    const shoeBoost = Math.max(0, shoe.mods?.[style] || 0);
+    const factor = 1 + shoeBoost + sponsorPace(state, style).mod;
+    if (factor !== 1) {
+      for (const key of STYLE_TRACKS[style] || []) {
+        if (tuned[key]) tuned[key] = Math.max(1, Math.round(tuned[key] * factor));
+      }
+    }
+  }
+  addXp(state, tuned);
+}
+
+function applyShoeSideEffects(state, activity) {
+  const shoe = shoeById(state.gear?.equipped);
+  const mods = shoe.mods || {};
+  if (activity.longUltra && mods.ultraFatigue) {
+    state.condition.fatigue = clampMeter(state.condition.fatigue + mods.ultraFatigue);
+  }
+  const extra = {};
+  if (activity.style === "trail" && mods.climbing && activity.attributes?.strength) {
+    extra.strength = Math.max(1, Math.round(activity.attributes.strength * mods.climbing));
+  }
+  if (activity.style === "road" && mods.speed && activity.attributes?.speed) {
+    extra.speed = Math.max(1, Math.round(activity.attributes.speed * mods.speed));
+  }
+  if (Object.keys(extra).length) addAttributes(state, extra);
 }
 
 function addXp(state, xp) {
@@ -526,7 +629,7 @@ function applyBody(state, activity) {
   state.condition.fatigue = clampMeter(state.condition.fatigue + activity.fatigue);
   state.condition.peak = clampMeter(state.condition.peak + (activity.peak || 0));
   state.condition.endurance = clampMeter(state.condition.endurance + (activity.endurance || 0));
-  state.condition.nutrition = clampMeter(state.condition.nutrition + (activity.nutrition || 0));
+  state.condition.nutrition = clampFood(state, state.condition.nutrition + (activity.nutrition || 0));
   // High fatigue blunts the peak you just earned. The design is explicit:
   // peak drops when fatigue stays high.
   if (state.condition.fatigue >= 75 && (activity.peak || 0) > 0) {
@@ -556,8 +659,9 @@ export function applyRun(state, runId) {
   }
   applyBody(next, activity);
   addMiles(next, activity.miles);
-  addXp(next, activity.xp);
+  grantXp(next, activity.xp, activity.style);
   addAttributes(next, activity.attributes);
+  applyShoeSideEffects(next, activity);
   markTraining(next, activity);
   const sore = nextSoreness(next, activity);
   next.condition.sore = sore.sore;
@@ -588,7 +692,14 @@ export function applySleep(state) {
   let overnight = OVERNIGHT_NUTRITION_DRAIN;
   if (next.condition.junk) overnight += 4;
   next.condition.junk = false;
-  next.condition.nutrition = clampMeter(next.condition.nutrition - overnight);
+  next.condition.nutrition = clampFood(next, next.condition.nutrition - overnight);
+  // The floor is a minimum after sleep, not a free refill up to the vest
+  // cap. A belt still decides the cap. The sponsor only stops the morning
+  // from opening under its promised line.
+  const floor = nutritionTuning(next).floor;
+  if (floor > 0 && next.condition.nutrition < floor) {
+    next.condition.nutrition = clampFood(next, floor);
+  }
   next.condition.sleepHours = plan.hours;
   next.condition.sleepQuality = plan.quality;
   if (next.condition.injury) {
@@ -681,6 +792,13 @@ export function applySleep(state) {
   next.calendar.slot = slotFromEnergy(MAX_ENERGY);
   next.calendar.trainedToday = false;
   lines.push("Energy is back to 10/10.");
+  const note = planObligation(next);
+  if (note) {
+    const brand = sponsorById(note.kind, note.sponsorId);
+    next.sponsors.obligation = note;
+    next.sponsors.seenObligation = true;
+    lines.push(`${brand ? brand.name : "A sponsor"} left a note: ${note.label}. Open Sponsors to accept or skip.`);
+  }
   sample(next);
 
   const result = finish(before, next, lines);
@@ -719,23 +837,27 @@ export function applyPurchase(state, itemId) {
   const item = SHOP[itemId];
   if (!item) return refuse(state, ["The shelf doesn't have that."]);
   // Food, gels, and gear are fueling. They cost coins, never an energy block,
-  // so eating cannot make you too tired to eat.
-  if (state.coins < item.cost) {
-    return refuse(state, [`You need ${item.cost} coins. A shift at the Run Store would cover it.`]);
+  // so eating cannot make you too tired to eat. A nutrition sponsor can
+  // discount the gel. The meal prices stay put.
+  const price = itemId === "gel" ? pricedGel(state, item.cost) : { cost: item.cost, name: null };
+  if (state.coins < price.cost) {
+    return refuse(state, [`You need ${price.cost} coins. A shift at the Run Store would cover it.`]);
   }
   const before = state;
   const next = clone(state);
-  next.coins -= item.cost;
+  next.coins -= price.cost;
+  const lines = [...item.lines];
   if (itemId === "gel") {
     next.gels += 1;
+    if (price.name) lines.push(`${price.name} covers part of the gel. You pay ${price.cost} coins.`);
   } else {
-    next.condition.nutrition = clampMeter(next.condition.nutrition + item.nutrition);
+    next.condition.nutrition = clampFood(next, next.condition.nutrition + item.nutrition);
     next.condition.mealName = item.mealName;
     next.condition.mealQuality = item.mealQuality;
     next.condition.junk = item.junk;
   }
   sample(next);
-  return finish(before, next, [...item.lines]);
+  return finish(before, next, lines);
 }
 
 const HOME_FOOD = {
@@ -772,7 +894,7 @@ export function applyHomeFood(state, kind) {
   }
   const before = state;
   const next = clone(state);
-  next.condition.nutrition = clampMeter(next.condition.nutrition + food.nutrition);
+  next.condition.nutrition = clampFood(next, next.condition.nutrition + food.nutrition);
   next.condition.mealName = food.mealName;
   next.condition.mealQuality = food.mealQuality;
   next.condition.junk = food.junk;
@@ -799,31 +921,87 @@ export function applyEatGel(state) {
   const next = clone(state);
   next.gels -= 1;
   next.energy = Math.min(MAX_ENERGY, readEnergy(next) + GEL_ENERGY);
-  next.condition.nutrition = clampMeter(next.condition.nutrition + GEL_NUTRITION);
+  const bonus = nutritionTuning(next).gelBonus;
+  const gain = GEL_NUTRITION + bonus;
+  next.condition.nutrition = clampFood(next, next.condition.nutrition + gain);
   next.calendar.slot = slotFromEnergy(next.energy);
-  return finish(before, next, [`You eat a Stride Fuel gel. +${GEL_ENERGY} energy, +${GEL_NUTRITION} nutrition.`]);
+  const extra = bonus ? ` ${nutritionTuning(next).name} adds ${bonus} more.` : "";
+  return finish(before, next, [`You eat a Stride Fuel gel. +${GEL_ENERGY} energy, +${gain} nutrition.${extra}`]);
 }
 
 export function applyShoe(state, shoeId) {
+  if (!isKnownShoe(shoeId)) return refuse(state, ["The shelf doesn't have that pair."]);
   const shoe = shoeById(shoeId);
   const owned = state.gear.owned.includes(shoeId);
-  const cost = owned ? replaceCost(shoeId) : shoe.price;
+  const wornOut = shoeWear(state.gear, shoeId).ratio >= 1;
+  const price = pricedShoe(state, shoeId, owned, wornOut);
   if (!owned && shoe.price <= 0) {
     return refuse(state, ["You already own the trainers you arrived in."]);
   }
-  if (state.coins < cost) {
-    return refuse(state, [`${shoe.name} costs ${cost} coins.`]);
+  if (state.coins < price.cost) {
+    return refuse(state, [`${shoe.name} costs ${price.cost} coins.`]);
   }
   const before = state;
   const next = clone(state);
-  next.coins -= cost;
+  next.coins -= price.cost;
   if (!owned) next.gear.owned = [...next.gear.owned, shoeId];
   next.gear.miles[shoeId] = 0;
   next.gear.equipped = shoeId;
+  const dealNote = price.free
+    ? " Your sponsor replaces them for free."
+    : price.deal
+      ? ` Sponsor price: ${price.cost} coins.`
+      : "";
   const lines = owned
-    ? [`You replace your ${shoe.name}. Miles reset, boosts come back.`]
-    : [`You buy the ${shoe.name} and put them on.`];
+    ? [`You replace your ${shoe.name}. Miles reset, boosts come back.${dealNote}`]
+    : [`You buy the ${shoe.name} and put them on.${dealNote}`];
   return finish(before, next, lines);
+}
+
+export function applyBuyCarry(state, carryId) {
+  const item = carryById(carryId);
+  if (!item) return refuse(state, ["The rack doesn't have that."]);
+  const owned = (state.gear.ownedCarry || []).includes(carryId);
+  const price = pricedCarry(state, carryId);
+  if (owned) return refuse(state, ["You already own that. Equip it from the closet."]);
+  if (state.coins < price.cost) {
+    return refuse(state, [`${item.name} costs ${price.cost} coins.`]);
+  }
+  const before = state;
+  const next = clone(state);
+  next.coins -= price.cost;
+  next.gear.ownedCarry = [...(next.gear.ownedCarry || []), carryId];
+  next.gear.carry = carryId;
+  // Switching to a smaller carry (vest to belt) has to pull nutrition
+  // back under the new cap or the bar would sit past its maximum.
+  next.condition.nutrition = clampFood(next, next.condition.nutrition);
+  const dealNote = price.deal ? ` Sponsor price: ${price.cost} coins.` : "";
+  return finish(before, next, [
+    `You buy the ${item.name} and put it on. ${carryTradeText(item)}.${dealNote}`,
+  ]);
+}
+
+export function applyEquipCarry(state, carryId) {
+  const item = carryById(carryId);
+  if (!item || !(state.gear.ownedCarry || []).includes(carryId)) {
+    return refuse(state, ["That isn't in the closet."]);
+  }
+  if (state.gear.carry === carryId) return refuse(state, ["You're already wearing that."]);
+  const before = state;
+  const next = clone(state);
+  next.gear.carry = carryId;
+  next.condition.nutrition = clampFood(next, next.condition.nutrition);
+  return finish(before, next, [`You put on the ${item.name}. ${carryTradeText(item)}.`]);
+}
+
+export function applyUnequipCarry(state) {
+  if (!state.gear?.carry) return refuse(state, ["You aren't wearing a belt or a vest."]);
+  const item = carryById(state.gear.carry);
+  const before = state;
+  const next = clone(state);
+  next.gear.carry = null;
+  next.condition.nutrition = clampFood(next, next.condition.nutrition);
+  return finish(before, next, [`You take off the ${item ? item.name : "fuel carry"}. Max nutrition is 100 again.`]);
 }
 
 export function applyEquip(state, shoeId) {
@@ -877,9 +1055,23 @@ function gelChoicePending(state, threat, choice) {
  */
 function applyRescueGel(state) {
   state.gels -= 1;
-  state.condition.nutrition = clampMeter(state.condition.nutrition + GEL_NUTRITION);
+  const bonus = nutritionTuning(state).gelBonus;
+  state.condition.nutrition = clampFood(state, state.condition.nutrition + GEL_NUTRITION + bonus);
   state.energy = Math.min(MAX_ENERGY, readEnergy(state) + GEL_ENERGY);
   state.calendar.slot = slotFromEnergy(state.energy);
+}
+
+function addRaceFuel(state) {
+  const bonus = nutritionTuning(state).raceFuel;
+  if (!bonus) return 0;
+  state.condition.nutrition = clampFood(state, state.condition.nutrition + bonus);
+  return bonus;
+}
+
+function raceStartNutrition(state) {
+  const bonus = nutritionTuning(state).raceFuel;
+  if (!bonus) return state.condition.nutrition;
+  return Math.min(maxNutritionFromGear(state.gear), state.condition.nutrition + bonus);
 }
 
 export function applyRace(state, raceId, roll = 0.5, choice) {
@@ -893,7 +1085,7 @@ export function applyRace(state, raceId, roll = 0.5, choice) {
     return refuse(state, [LOW_ENERGY]);
   }
   const threat = judgeBonk({
-    nutrition: state.condition.nutrition,
+    nutrition: raceStartNutrition(state),
     sleepQuality: state.condition.sleepQuality,
     fatigue: state.condition.fatigue,
     roll,
@@ -906,6 +1098,8 @@ export function applyRace(state, raceId, roll = 0.5, choice) {
   const before = state;
   const next = clone(state);
   const lines = [];
+  const fuel = addRaceFuel(next);
+  if (fuel) lines.push(`${nutritionTuning(next).name} tops you up with ${fuel} nutrition at the gun.`);
   if (threat.bonk && !rescued && threat.dnf) {
     lines.push("Your stomach drops halfway down Brick Street.");
     lines.push("The world narrows to your shoes. You walk. DNF.");
@@ -913,15 +1107,15 @@ export function applyRace(state, raceId, roll = 0.5, choice) {
     if ((state.gels || 0) === 0) lines.push("A Stride Fuel gel could have saved this.");
     addXp(next, race.dnfXp);
     next.condition.fatigue = clampMeter(next.condition.fatigue + race.dnfFatigue);
-    next.condition.nutrition = clampMeter(next.condition.nutrition - 12);
+    next.condition.nutrition = clampFood(next, next.condition.nutrition - 12);
     addMiles(next, round1(race.miles / 2));
   } else if (threat.bonk && !rescued && threat.slowFinish) {
     lines.push("You bonk with the finish banner in sight and jog it in.");
     lines.push(`${flavorTime(race, 0, true)}. It counts, barely. Half credit, no prize purse.`);
-    addXp(next, scaleXp(race.xp, 0.5));
+    grantXp(next, scaleXp(race.xp, 0.5), race.style);
     addAttributes(next, scaleAttributes(race.attributes, 0.5));
     next.condition.fatigue = clampMeter(next.condition.fatigue + race.fatigue);
-    next.condition.nutrition = clampMeter(next.condition.nutrition + race.nutrition);
+    next.condition.nutrition = clampFood(next, next.condition.nutrition + race.nutrition);
     next.condition.peak = clampMeter(next.condition.peak + Math.round(race.peak / 2));
     next.condition.endurance = clampMeter(next.condition.endurance + 1);
     addMiles(next, race.miles);
@@ -935,11 +1129,16 @@ export function applyRace(state, raceId, roll = 0.5, choice) {
       ? `The gel hits before the bonk does. You finish the ${race.name} in ${time}.`
       : `You finish the ${race.name} in ${time}.`);
     lines.push("The result board gets your name, and your pockets get coins.");
-    addXp(next, race.xp);
+    grantXp(next, race.xp, race.style);
     addAttributes(next, race.attributes);
     next.coins += race.coins;
+    const deal = activeShoeSponsor(next);
+    if (deal?.raceCoins) {
+      next.coins += deal.raceCoins;
+      lines.push(`${deal.name} adds ${deal.raceCoins} coins for the finish.`);
+    }
     next.condition.fatigue = clampMeter(next.condition.fatigue + race.fatigue);
-    next.condition.nutrition = clampMeter(next.condition.nutrition + race.nutrition);
+    next.condition.nutrition = clampFood(next, next.condition.nutrition + race.nutrition);
     next.condition.peak = clampMeter(next.condition.peak + race.peak);
     next.condition.endurance = clampMeter(next.condition.endurance + race.endurance);
     addMiles(next, race.miles);
@@ -965,10 +1164,14 @@ function scaleAttributes(attributes, factor) {
 }
 
 function raceFormScore(state, race) {
+  const pace = combinedMod(state, race.style, {
+    shortRoad: race.style === "road" && (race.km || 0) <= 5.5,
+  }).mod;
   return (
-    state.condition.endurance * race.ideal.endurance +
-    state.condition.peak * race.ideal.peak -
-    state.condition.fatigue * 0.3
+    (state.condition.endurance * race.ideal.endurance +
+      state.condition.peak * race.ideal.peak -
+      state.condition.fatigue * 0.3) *
+    (1 + pace)
   );
 }
 
@@ -978,7 +1181,7 @@ export function applyRival(state, roll = 0.5, choice) {
     return refuse(state, [LOW_ENERGY]);
   }
   const threat = judgeBonk({
-    nutrition: state.condition.nutrition,
+    nutrition: raceStartNutrition(state),
     sleepQuality: state.condition.sleepQuality,
     fatigue: state.condition.fatigue,
     roll,
@@ -991,6 +1194,8 @@ export function applyRival(state, roll = 0.5, choice) {
   const before = state;
   const next = clone(state);
   const lines = [`Remy Calder, ${RIVAL.title}, toes the line beside you.`];
+  const fuel = addRaceFuel(next);
+  if (fuel) lines.push(`${nutritionTuning(next).name} tops you up with ${fuel} nutrition at the gun.`);
   let win = false;
   if (threat.bonk && !rescued && threat.dnf) {
     lines.push("You bonk before the second bend. Remy jogs it in and waits, arms folded.");
@@ -1010,9 +1215,14 @@ export function applyRival(state, roll = 0.5, choice) {
     if (win) {
       lines.push("You hold the bend and kick past the kicker. Remy laughs, out of breath.");
       lines.push("A win. Coins, pride, and a little Marathon XP.");
-      addXp(next, RIVAL.winXp);
+      grantXp(next, RIVAL.winXp, "road");
       addAttributes(next, RIVAL.winAttributes);
       next.coins += RIVAL.coins;
+      const deal = activeShoeSponsor(next);
+      if (deal?.raceCoins) {
+        next.coins += deal.raceCoins;
+        lines.push(`${deal.name} adds ${deal.raceCoins} coins for the finish.`);
+      }
       next.progress.rivalWins += 1;
     } else {
       lines.push("Remy kicks with 100 meters left and you don't have an answer.");
@@ -1023,7 +1233,7 @@ export function applyRival(state, roll = 0.5, choice) {
     }
   }
   next.condition.fatigue = clampMeter(next.condition.fatigue + RIVAL.fatigue);
-  next.condition.nutrition = clampMeter(next.condition.nutrition + RIVAL.nutrition);
+  next.condition.nutrition = clampFood(next, next.condition.nutrition + RIVAL.nutrition);
   next.condition.peak = clampMeter(next.condition.peak + (win ? RIVAL.peak : 1));
   addMiles(next, RIVAL.miles);
   next.calendar.trainedToday = true;
@@ -1031,6 +1241,94 @@ export function applyRival(state, roll = 0.5, choice) {
   if (rescued) applyRescueGel(next);
   sample(next);
   return finish(before, next, lines);
+}
+
+function sponsorField(kind) {
+  return kind === "nutrition" ? "nutrition" : "shoe";
+}
+
+export function applySignSponsor(state, kind, id) {
+  const sponsor = sponsorById(kind, id);
+  if (!sponsor) return refuse(state, ["That brand is not offering a deal."]);
+  const status = gateStatus(state, sponsor);
+  if (!status.open) {
+    return refuse(state, [`Not yet. ${status.needs.filter((need) => !need.ok).map((need) => `${need.label} (${need.have})`).join(" ")}`]);
+  }
+  const field = sponsorField(kind);
+  if (state.sponsors?.[field] === id) {
+    return refuse(state, [`You already have a ${sponsor.name} deal.`]);
+  }
+  const before = state;
+  const next = clone(state);
+  if (!next.sponsors) next.sponsors = emptySponsors();
+  const previous = sponsorById(kind, next.sponsors[field]);
+  next.sponsors[field] = id;
+  // A dropped deal sits under STANDING_DROP. Signing again starts clean.
+  // Switching back to a deal you only paused keeps the standing you had.
+  const previousStanding = next.sponsors.standing?.[id];
+  if (typeof previousStanding !== "number" || previousStanding < STANDING_DROP) {
+    next.sponsors.standing[id] = STANDING_START;
+  }
+  if (next.sponsors.obligation && next.sponsors.obligation.kind === field && next.sponsors.obligation.sponsorId !== id) {
+    next.sponsors.obligation = null;
+  }
+  const lines = [];
+  if (previous) {
+    lines.push(`The ${previous.name} deal ends. Gear you already own stays in the closet.`);
+  }
+  lines.push(`You sign with ${sponsor.name}. Standing is ${next.sponsors.standing[id]}. Only one ${field === "shoe" ? "shoe" : "nutrition"} sponsor at a time.`);
+  lines.push(field === "nutrition" ? nutritionPerkText(sponsor) : shoePerkText(sponsor));
+  return finish(before, next, lines);
+}
+
+export function applyEndSponsor(state, kind) {
+  const field = sponsorField(kind);
+  const current = sponsorById(kind, state.sponsors?.[field]);
+  if (!current) return refuse(state, ["You don't have that kind of deal."]);
+  const before = state;
+  const next = clone(state);
+  next.sponsors[field] = null;
+  if (next.sponsors.obligation?.kind === field) next.sponsors.obligation = null;
+  return finish(before, next, [`You end the ${current.name} deal. Your closet stays as it is. You can sign again later.`]);
+}
+
+export function applyObligation(state, choice) {
+  const job = state.sponsors?.obligation;
+  if (!job) return refuse(state, ["No sponsor obligation today."]);
+  const sponsor = sponsorById(job.kind, job.sponsorId);
+  if (!sponsor) return refuse(state, ["That deal already ended."]);
+  if (choice === "accept") {
+    if (readEnergy(state) < 1) return refuse(state, [LOW_ENERGY]);
+    const before = state;
+    const next = clone(state);
+    const standing = clampStanding(standingOf(next, job.sponsorId) + STANDING_ACCEPT);
+    next.sponsors.standing[job.sponsorId] = standing;
+    next.sponsors.obligation = null;
+    next.coins += job.pay;
+    next.condition.fatigue = clampMeter(next.condition.fatigue + 3);
+    spendEnergy(next, 1, true);
+    sample(next);
+    return finish(before, next, [
+      `${job.label} for ${sponsor.name} is done.`,
+      `You earn ${job.pay} coins. Deal standing is ${standing}.`,
+    ]);
+  }
+  if (choice === "skip") {
+    const before = state;
+    const next = clone(state);
+    const standing = clampStanding(standingOf(next, job.sponsorId) - STANDING_SKIP);
+    next.sponsors.standing[job.sponsorId] = standing;
+    next.sponsors.obligation = null;
+    const lines = [`You skip the ${job.label.toLowerCase()}. ${sponsor.name} standing falls to ${standing}.`];
+    if (standing < STANDING_DROP) {
+      next.sponsors[sponsorField(job.kind)] = null;
+      lines.push(`${sponsor.name} drops the deal. You can sign again from the Sponsors menu.`);
+    } else if (standing < STANDING_WARN) {
+      lines.push(`${sponsor.name} warns you. Skip another and they may walk.`);
+    }
+    return finish(before, next, lines);
+  }
+  return refuse(state, ["Accept the obligation, or skip it."]);
 }
 
 export function acknowledgeWeek(state) {
@@ -1056,6 +1354,18 @@ export function perform(state, action, roll = 0.5) {
       return applyShoe(state, action.id);
     case "equip":
       return applyEquip(state, action.id);
+    case "buy-carry":
+      return applyBuyCarry(state, action.id);
+    case "equip-carry":
+      return applyEquipCarry(state, action.id);
+    case "unequip-carry":
+      return applyUnequipCarry(state);
+    case "sign-sponsor":
+      return applySignSponsor(state, action.kind, action.id);
+    case "end-sponsor":
+      return applyEndSponsor(state, action.kind);
+    case "obligation":
+      return applyObligation(state, action.choice);
     case "shift":
       return applyShift(state, action.job, action.choice);
     case "race":
@@ -1129,7 +1439,8 @@ export function menuFor(locationId, state) {
             Boolean(state.calendar.homeSnackUsed),
             "Already had your home snack today.",
           ),
-          item("Swap Shoes", "Closet", { type: "open-gear" }),
+          item("Closet", "Shoes, belts, vests", { type: "open-gear" }),
+          item("Sponsors", "Deals and obligations", { type: "open-sponsors" }),
           item("Save Game", "This browser only", { type: "save" }),
         ],
       };
@@ -1152,7 +1463,9 @@ export function menuFor(locationId, state) {
           ...Object.values(JOBS).map((job) =>
             item(job.label, job.detail, { type: "open-shift", job: job.id }, readEnergy(state) < 1, LOW_ENERGY),
           ),
-          item("Shop shoes", "Road, trail, and hybrid", { type: "open-shop" }),
+          item("Shop shoes", "Trail, Marathon, Backyard", { type: "open-shoe-categories" }),
+          item("Belts & vests", "+5 or +10 max nutrition", { type: "open-carry-shop" }),
+          item("Sponsors", "Sign, switch, or do an obligation", { type: "open-sponsors" }),
         ],
       };
     case "grocery":
@@ -1163,7 +1476,13 @@ export function menuFor(locationId, state) {
         items: [
           item(SHOP.meal.label, SHOP.meal.detail, { type: "buy", id: "meal" }, state.coins < SHOP.meal.cost, "Not enough coins."),
           item(SHOP.snack.label, SHOP.snack.detail, { type: "buy", id: "snack" }, state.coins < SHOP.snack.cost, "Not enough coins."),
-          item(SHOP.gel.label, `${SHOP.gel.detail} · held ${state.gels}`, { type: "buy", id: "gel" }, state.coins < SHOP.gel.cost, "Not enough coins."),
+          item(
+            SHOP.gel.label,
+            gelMenuDetail(state),
+            { type: "buy", id: "gel" },
+            state.coins < pricedGel(state, SHOP.gel.cost).cost,
+            "Not enough coins.",
+          ),
         ],
       };
     case "park":
@@ -1230,61 +1549,234 @@ export function jobScript(jobId) {
   return JOBS[jobId] || null;
 }
 
-export function shoeShopItems(state) {
-  const rows = [];
-  for (const shoe of Object.values(SHOES)) {
+function headerItem(label, detail) {
+  return { label, detail: detail || "", action: { type: "noop" }, disabled: false, disabledReason: "", header: true };
+}
+
+function gelMenuDetail(state) {
+  const price = pricedGel(state, SHOP.gel.cost);
+  const discount = price.name ? ` · ${price.name} deal` : "";
+  return `${price.cost} coins · 0 energy · held ${state.gels || 0}${discount}`;
+}
+
+function shoePriceDetail(state, shoe, owned) {
+  const worn = shoeWear(state.gear, shoe.id);
+  const price = pricedShoe(state, shoe.id, owned, worn.ratio >= 1);
+  const tag = `[${styleLabel(shoe.style)}]`;
+  const wear = `${wearPercent(state.gear, shoe.id)}% wear`;
+  if (!owned) {
+    const costText = price.deal ? `${price.cost} coins (was ${price.base})` : `${price.cost} coins`;
+    return {
+      label: `Buy ${tag} ${shoe.name}`,
+      detail: `${costText} · ${shoeTradeText(shoe)}`,
+      cost: price.cost,
+    };
+  }
+  const costText = price.free ? "free replacement" : price.deal ? `${price.cost} coins (sponsor)` : `${price.cost} coins`;
+  return {
+    label: `Replace ${tag} ${shoe.name}`,
+    detail: `${costText} · ${worn.label} · ${wear} · ${Math.round(state.gear.miles[shoe.id] || 0)}/${shoe.maxMiles} mi`,
+    cost: price.cost,
+  };
+}
+
+export function shoeCategoryItems() {
+  return [
+    item("Trail shoes", "Dirt and climbing. −Marathon and track pace", { type: "open-shop-style", style: "trail" }),
+    item("Marathon shoes", "Road pace and speed. −Trail, more long-ultra fatigue", { type: "open-shop-style", style: "road" }),
+    item("Backyard Ultra shoes", "Versatile. −Speed in short road races, −Trail on steep ridges", { type: "open-shop-style", style: "versatile" }),
+  ];
+}
+
+export function shoeStyleItems(state, style) {
+  const rows = [headerItem(styleLabel(style), "Boosts this style. The other lines are the cost.")];
+  for (const shoe of shoesOfStyle(style)) {
     const owned = state.gear.owned.includes(shoe.id);
     if (!owned && shoe.price <= 0) continue;
     const worn = shoeWear(state.gear, shoe.id);
+    const priced = shoePriceDetail(state, shoe, owned);
     if (!owned) {
-      rows.push(
-        item(
-          `Buy ${shoe.name}`,
-          `${shoe.price} coins · ${shoe.blurb}`,
-          { type: "shoe", id: shoe.id },
-          state.coins < shoe.price,
-          `Need ${shoe.price} coins.`,
-        ),
-      );
+      rows.push(item(
+        priced.label,
+        priced.detail,
+        { type: "shoe", id: shoe.id },
+        state.coins < priced.cost,
+        `Need ${priced.cost} coins.`,
+      ));
       continue;
     }
     const on = state.gear.equipped === shoe.id;
     if (!on) {
-      rows.push(
-        item(
-          `Wear ${shoe.name}`,
-          `${worn.label} · free to swap`,
-          { type: "equip", id: shoe.id },
-        ),
-      );
+      rows.push(item(
+        `Wear [${styleLabel(shoe.style)}] ${shoe.name}`,
+        `${worn.label} · ${wearPercent(state.gear, shoe.id)}% wear · free to swap`,
+        { type: "equip", id: shoe.id },
+      ));
     }
-    const cost = replaceCost(shoe.id);
-    rows.push(
-      item(
-        `Replace ${shoe.name}`,
-        `${cost} coins · ${worn.label} · ${Math.round(state.gear.miles[shoe.id] || 0)} mi`,
-        { type: "shoe", id: shoe.id },
-        state.coins < cost,
-        `Need ${cost} coins.`,
-      ),
-    );
+    rows.push(item(
+      priced.label,
+      priced.detail,
+      { type: "shoe", id: shoe.id },
+      state.coins < priced.cost,
+      `Need ${priced.cost} coins.`,
+    ));
   }
   return rows;
 }
 
+export function shoeShopItems(state) {
+  const rows = [...shoeCategoryItems()];
+  const equipped = shoeById(state.gear.equipped);
+  const priced = shoePriceDetail(state, equipped, true);
+  rows.unshift(item(
+    priced.label,
+    priced.detail,
+    { type: "shoe", id: equipped.id },
+    state.coins < priced.cost,
+    `Need ${priced.cost} coins.`,
+  ));
+  return rows;
+}
+
+export function carryShopItems(state) {
+  const rows = [
+    headerItem("Running belts", "+5 max nutrition. No speed penalty. Any style."),
+  ];
+  const belts = Object.values(CARRY).filter((entry) => entry.kind === "belt");
+  const vests = Object.values(CARRY).filter((entry) => entry.kind === "vest");
+  for (const entry of belts) rows.push(carryRow(state, entry));
+  rows.push(headerItem("Trail hydration vests", "+10 max nutrition. Small −speed in short road races."));
+  for (const entry of vests) rows.push(carryRow(state, entry));
+  return rows;
+}
+
+function carryRow(state, entry) {
+  const owned = (state.gear.ownedCarry || []).includes(entry.id);
+  const on = state.gear.carry === entry.id;
+  const price = pricedCarry(state, entry.id);
+  if (!owned) {
+    const costText = price.deal ? `${price.cost} coins (was ${price.base})` : `${price.cost} coins`;
+    return item(
+      `Buy ${entry.name}`,
+      `${costText} · +${carryNutrition(entry)} max nutrition · ${entry.kind === "belt" ? "no speed penalty" : "−speed in short road races"}`,
+      { type: "buy-carry", id: entry.id },
+      state.coins < price.cost,
+      `Need ${price.cost} coins.`,
+    );
+  }
+  if (on) {
+    return item(`Unequip ${entry.name}`, carryTradeText(entry), { type: "unequip-carry" });
+  }
+  return item(`Wear ${entry.name}`, carryTradeText(entry), { type: "equip-carry", id: entry.id });
+}
+
 export function closetItems(state) {
-  return state.gear.owned.map((id) => {
+  const rows = [];
+  const eat = canEatGel(state);
+  rows.push(item(
+    eat.ok ? "Eat 1 gel (+1 energy)" : "Eat a gel",
+    eat.ok ? "0 coins · +1 energy · +12 nutrition" : eat.reason,
+    { type: "eat-gel" },
+    !eat.ok,
+    eat.reason,
+  ));
+  rows.push(headerItem("Shoes", "One pair at a time."));
+  for (const id of state.gear.owned || []) {
     const shoe = shoeById(id);
     const worn = shoeWear(state.gear, id);
     const on = state.gear.equipped === id;
-    return item(
-      on ? `${shoe.name} (on)` : shoe.name,
-      `${worn.label} · ${Math.round(state.gear.miles[id] || 0)} / ${shoe.maxMiles} mi`,
+    rows.push(item(
+      on ? `[${styleLabel(shoe.style)}] ${shoe.name} (on)` : `Equip [${styleLabel(shoe.style)}] ${shoe.name}`,
+      `${shoeTradeText(shoe)} · ${worn.label} · ${wearPercent(state.gear, id)}% wear · ${Math.round(state.gear.miles[id] || 0)}/${shoe.maxMiles} mi`,
       { type: "equip", id },
       on,
       "Already wearing these.",
+    ));
+  }
+  rows.push(headerItem("Belts & vests", "One fuel-carry item. Belts +5, vests +10."));
+  const ownedCarry = state.gear.ownedCarry || [];
+  if (state.gear.carry) {
+    const wornItem = carryById(state.gear.carry);
+    rows.push(item(
+      `Unequip ${wornItem ? wornItem.name : "fuel carry"}`,
+      wornItem ? carryTradeText(wornItem) : "Back to max nutrition 100",
+      { type: "unequip-carry" },
+    ));
+  }
+  if (ownedCarry.length === 0) {
+    rows.push(item("No belt or vest yet", "The Run Store sells them", { type: "noop" }, true, "Buy one at the Run Store."));
+  }
+  for (const id of ownedCarry) {
+    if (id === state.gear.carry) continue;
+    const entry = carryById(id);
+    if (!entry) continue;
+    rows.push(item(
+      `Equip ${entry.name}`,
+      carryTradeText(entry),
+      { type: "equip-carry", id },
+    ));
+  }
+  rows.push(item("Sponsors", "Deals, standing, obligations", { type: "open-sponsors" }));
+  return rows;
+}
+
+function sponsorRows(state, kind, ids) {
+  const field = kind === "nutrition" ? "nutrition" : "shoe";
+  const active = state.sponsors?.[field] || null;
+  return ids.map((id) => {
+    const sponsor = sponsorById(kind, id);
+    const status = gateStatus(state, sponsor);
+    const perk = kind === "nutrition" ? nutritionPerkText(sponsor) : shoePerkText(sponsor);
+    const covered = kind === "nutrition" ? "" : `Covers ${sponsor.styles.map((style) => styleLabel(style)).join(", ")}. `;
+    if (!status.open) {
+      const needs = status.needs.filter((need) => !need.ok).map((need) => `${need.label} (${need.have})`).join(" · ");
+      return item(`${sponsor.name} · locked`, `${covered}${perk} · ${needs}`, { type: "noop" }, true, needs);
+    }
+    const standing = typeof state.sponsors?.standing?.[id] === "number" ? state.sponsors.standing[id] : null;
+    const standingText = standing === null ? "" : ` · standing ${standing}`;
+    if (active === id) {
+      return item(
+        `End ${sponsor.name} deal`,
+        `Active${standingText}. ${covered}${perk}`,
+        { type: "end-sponsor", kind },
+      );
+    }
+    const verb = active ? "Switch to" : "Sign";
+    return item(
+      `${verb} ${sponsor.name}`,
+      `${covered}${perk}${standingText}`,
+      { type: "sign-sponsor", kind, id },
     );
   });
+}
+
+export function sponsorMenuItems(state) {
+  const rows = [];
+  const job = state.sponsors?.obligation;
+  if (job) {
+    const brand = sponsorById(job.kind, job.sponsorId);
+    const name = brand ? brand.name : "your sponsor";
+    const tired = readEnergy(state) < 1;
+    rows.push(item(
+      `Do ${job.label}`,
+      `1 energy · +${job.pay} coins · ${name} standing up`,
+      { type: "obligation", choice: "accept" },
+      tired,
+      LOW_ENERGY,
+    ));
+    rows.push(item(
+      `Skip ${job.label}`,
+      `${name} standing goes down. Too many skips ends the deal.`,
+      { type: "obligation", choice: "skip" },
+    ));
+  } else if ((state.sponsors?.shoe || state.sponsors?.nutrition)) {
+    rows.push(headerItem("No obligation today", "The next note shows up after you sleep."));
+  }
+  rows.push(headerItem("Shoe sponsors", "One active shoe deal. Switching keeps your closet."));
+  rows.push(...sponsorRows(state, "shoe", SHOE_SPONSOR_IDS));
+  rows.push(headerItem("Nutrition sponsors", "One fuel deal. Stacks with a belt or vest. No speed penalty."));
+  rows.push(...sponsorRows(state, "nutrition", NUTRITION_SPONSOR_IDS));
+  return rows;
 }
 
 export function chatLines(locationId) {
@@ -1354,6 +1846,7 @@ export function calendarView(state) {
       },
     ],
     history: state.weeklyHistory,
+    sponsorNotes: sponsorSummaryLines(state),
   };
 }
 

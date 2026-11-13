@@ -7,8 +7,13 @@
  * v1 can actually start the 5K, the 10K (once earned), and the mountain
  * gate. The half marathon is a preview: you can see the requirements, and
  * the race itself arrives in a later build.
+ *
+ * The mountain used to look for the single id "trail". Any shoe whose
+ * style is trail counts now, including the house lugs and every brand
+ * trail shoe. A marathon shoe or a backyard shoe does not open the gate.
  */
 
+import { isTrailShoe } from "@/lib/catalog";
 import { levelFromXp } from "@/lib/xp";
 
 export function runnerLevel(state) {
@@ -18,7 +23,7 @@ export function runnerLevel(state) {
 export function mountainStatus(state) {
   const level = runnerLevel(state);
   const trails = state.progress.parkTrailRuns;
-  const shoes = state.gear.equipped === "trail";
+  const shoes = isTrailShoe(state.gear?.equipped);
   const needs = [
     { label: "Reach level 8", ok: level >= 8, have: `Lv ${level}` },
     { label: "Finish 5 park trail runs", ok: trails >= 5, have: `${trails}/5` },

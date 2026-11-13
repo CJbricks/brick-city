@@ -74,7 +74,7 @@ Almost every tunable number is in `src/lib/constants.js`.
 | What counts as a hard or recovery week | `HARD_WEEK_AVG_FATIGUE`, `RECOVERY_WEEK_AVG_FATIGUE` |
 | Starting coins and starting meters | the `START_*` constants |
 
-Run rewards (miles, fatigue, XP) are the `RUNS` object in `src/lib/activities.js`. Shoe prices and the road/trail trade-off are in `src/lib/race.js` (`SHOES` and `SHOE_STYLE`). Race ideals ("a 5K wants more Peak than Endurance") are on each race in `RACES`.
+Run rewards (miles, fatigue, XP) are the `RUNS` object in `src/lib/activities.js`. Shoe prices, belt and vest stats, and the style trade-offs are in `src/lib/catalog.js`. Sponsor percents and unlocks are in `src/lib/sponsors.js`. `src/lib/race.js` turns that gear into a pace percent for the race in front of you. Race ideals ("a 5K wants more Peak than Endurance") are on each race in `RACES`.
 
 If you change a number, run `npm test`. Several tests check exact results, like "an easy run from a fresh runner ends at fatigue 2". Update the test if you meant to change that result.
 
@@ -130,7 +130,7 @@ The roll is `Math.random()`, passed into `applyRace` at the moment you confirm. 
 |---|---|
 | Home, gym, store, grocery, park, track, 5K, Remy | Day one |
 | Community 10K | Level 3 and a finished 5K |
-| Mountain gate | Level 8, 5 park trail runs, trail shoes equipped |
+| Mountain gate | Level 8, 5 park trail runs, any trail-style shoe equipped |
 | Brick City Half | Shown, still locked. The requirements are listed. The race itself is a later build. |
 | Other cities | The depot sign explains them. The bus is not running yet. |
 
@@ -141,6 +141,67 @@ Finishing the 5K hangs a banner by the track. Reaching level 3 plants extra flow
 `src/lib/save.js` writes one JSON blob to `localStorage` under `brick-city-save-v1`. The town auto-saves after each action and every couple of seconds while you walk. Home, the menu, and the town map all have a Save entry. New Game overwrites that key when you confirm the name. Resume reads it back. If the JSON is junk or the version doesn't match, Resume hides itself instead of crashing. A save from before energy blocks existed is still valid: the missing bar is filled to 10 and the clock is set back to Morning so the sky matches.
 
 A save also remembers `tileSize`. v2 tiles are 32 pixels. v1 tiles were 16, and the saved `position.x` / `position.y` are pixels, not tile numbers. Loading an old save without `tileSize: 32` multiplies those two numbers by 2. That puts the runner back on the same mat. Skipping it would drop them halfway into the next tile, often inside a wall. A save that already says `tileSize: 32` is not doubled again.
+
+The save version stays `1`. Brand shoes, belts, vests, and sponsors were added without a new key, because an old browser save has to keep loading. `deserialize` fills whatever is missing:
+
+- No `gear.carry` means you are not wearing a belt or vest. Max nutrition stays 100.
+- No `sponsors` object means no shoe deal and no nutrition deal.
+- Shoe ids `road`, `trail`, and `hybrid` are the old house pairs (Tempo Daybreak, Peakline Lugger, Switchback Hybrid). They still exist. `resolveShoeId` in `src/lib/catalog.js` is the alias table. An id the catalog does not know becomes the starter trainers instead of crashing.
+- Nutrition is clamped to the cap the equipped carry item actually allows, so a broken number cannot sit past 110.
+
+## Brand shoes
+
+The closet is `src/lib/catalog.js`. The starter pair is still `starter`, Brickside Trainers. You do not buy it. You replace it when it wears out.
+
+Shoes have a `style`:
+
+| Style | What it helps | What it costs |
+|---|---|---|
+| `trail` | Trail pace and climbing | Marathon and track pace |
+| `road` | Marathon / road pace and speed | Trail pace, and extra fatigue on a long ultra |
+| `versatile` | Backyard and road ultras | A little speed in a short road race, a little trail pace on a steep ridge |
+
+The house pairs `road`, `trail`, and `hybrid` sit in those three styles too, so an old save that equipped `trail` is still wearing trail shoes. The mountain gate uses `style === "trail"`, not the single id `"trail"`. Nike ACG Ultrafly opens the gate. A marathon shoe does not. A backyard shoe does not.
+
+Each brand pair has its own percents. They are not copies. Worn shoes stack a flat pace penalty on top (`shoeWear`). At 100% of `maxMiles` the pair is worn out. A matching shoe sponsor replaces that pair for free. A fresh pair from the sponsor is only discounted.
+
+The Run Store groups the rack into Trail, Marathon, and Backyard Ultra. The closet shows the same groups, the wear percent, and the trade-off line.
+
+## Belts, vests, and the nutrition cap
+
+`MAX_NUTRITION` in `src/lib/constants.js` is 100. That number is the base, not the number the bar always uses.
+
+| Worn | Cap | Speed |
+|---|---|---|
+| Nothing | 100 | no change |
+| Any running belt | 105 | no change |
+| Any trail vest | 110 | small penalty in a short road race (the 5K and Remy's mile) |
+
+The bonus comes from the kind (`belt` or `vest`), not from a one-off number on each product. An easy jog is not a short road race, so a vest does not tax it. Meals, gels, and the home kitchen clamp to the current cap. Take the vest off while you are at 108 and the bar drops to 100 immediately, so it cannot display a number the rules will not allow.
+
+The HUD prints `FOOD 85 / 110` and fills the bar as a fraction of that cap. The readiness screen prints the same fraction before you start.
+
+## Sponsors
+
+`src/lib/sponsors.js` holds the deals. `activities.js` is what writes them onto the save when you press a button.
+
+You may hold **one shoe sponsor** and **one nutrition sponsor** at the same time. Signing a second shoe sponsor ends the first shoe deal. Shoes you already bought stay in the closet. The same rule applies to nutrition deals. You can end a deal from the menu and sign it again later.
+
+Shoe-sponsor perks: a discount at the Run Store on that brand (shoes and matching belts or vests), a free replacement when that pair is worn out, bonus coins on a clean race finish, and a percent on the styles that brand covers. Styles they do not cover take a small penalty. Hoka and Adidas cover all three styles, so their trade-off is a small short-road penalty instead.
+
+Nutrition-sponsor perks do **not** raise the 100 / 105 / 110 cap. They stack with a belt or vest by other means:
+
+- a morning floor, so sleep will not drop nutrition below that line
+- a smaller drain each energy block
+- a gel discount, a little extra food from a gel, or a few points of nutrition at the start of a race
+
+There is no speed penalty on a nutrition deal.
+
+Deals unlock early (about level 2 to 4, plus a short milestone such as a track workout, a park trail, the 5K, or a real meal) so you can find the menu in a first session. The locked row lists what is left.
+
+Standing starts at 80. An obligation (photo shoot, store appearance, expo booth, community run) shows up the morning after you sign, then every 4th day. Accepting it spends 1 energy and pays better than a shift, and standing rises. Skipping drops standing by 22. Under 45 the sponsor warns you. Under 25 they drop the deal. You can sign again. A new signature after a drop starts standing back at 80. Switching away and back keeps the standing you had, as long as it never fell that low.
+
+Open Sponsors from the Run Store, from the pause menu, from the closet, or from the button on Runner Status. The list is a normal menu, so the d-pad and A/B buttons work on a phone.
 
 ## Why the quote waits until after mount
 
@@ -232,6 +293,6 @@ In a menu, the D-pad moves the highlight instead of walking. A confirms. B close
 - **Run:** add an entry to `RUNS` in `src/lib/activities.js`, then add a `runItem(state, "your-id")` line in `menuFor` for the building that should offer it.
 - **Building:** the grid is `src/game/town.js`. Tiles are letters (`r` road, `d` dirt, `t` tree, …). A place needs a walkable mat tile and an entry in `PLACES`. Drawing is `src/game/art.js`. There is a test that walks from Home to every place. If you wall someone in, that test fails.
 
-## What v1 does not do yet
+## What this build does not do yet
 
-Sponsors, the half marathon itself, backyard race events, the other cities, and real-life run logging are in the design and not in this build. The menus mention the locked ones so the path is visible.
+The half marathon itself, backyard race events, the other cities, and real-life run logging are in the design and not in this build. The menus mention the locked ones so the path is visible. Shoe sponsors and nutrition sponsors are in this private prototype. The fictional brand ladder in the README is the public-release plan.

@@ -1,11 +1,17 @@
 /**
  * save.js
- * Browser save for v1. The whole runner is one JSON blob in localStorage.
- * There is no account and no Strava token. Never put a secret in this file.
+ * Browser save for v1. The whole runner is one JSON blob in localStorage
+ * under brick-city-save-v1. There is no account and no Strava token.
+ * Never put a secret in this file.
  *
  * serialize / deserialize are pure so tests can round-trip a state without
  * a browser. loadSave / writeSave / clearSave are the thin localStorage
  * wrappers the screens call after mount (never during server render).
+ *
+ * The version number stays 1 on purpose. Brand shoes, belts, vests, and
+ * sponsors were added later, but an older blob is still this save. We fill
+ * the new fields instead of rejecting the file. A wrong version (not 1)
+ * still means "no save", so the title screen offers New Game.
  *
  * v2 widened every tile from 16px to 32px. A position is stored in pixels,
  * so an old save's x/y would land on the wrong half of the new tile and
@@ -16,6 +22,8 @@
 import { MAX_ENERGY, SAVE_KEY, SAVE_VERSION } from "@/lib/constants";
 import { slotFromEnergy } from "@/lib/calendar";
 import { TILE } from "@/game/town";
+import { maxNutritionFromGear, normalizeGear } from "@/lib/catalog";
+import { normalizeSponsors } from "@/lib/sponsors";
 
 export function serialize(state) {
   return JSON.stringify(state);
@@ -40,6 +48,16 @@ export function deserialize(raw) {
     if (typeof data.gels !== "number") data.gels = 0;
     if (typeof data.calendar.homeMealUsed !== "boolean") data.calendar.homeMealUsed = false;
     if (typeof data.calendar.homeSnackUsed !== "boolean") data.calendar.homeSnackUsed = false;
+    // Gear and sponsors are filled in, not required. A v1 closet that only
+    // knows starter / road / trail / hybrid still loads. The house ids are
+    // aliases, so those pairs stay equipped. Nutrition is pulled back
+    // inside the cap the equipped belt or vest actually allows.
+    data.gear = normalizeGear(data.gear);
+    data.sponsors = normalizeSponsors(data.sponsors);
+    if (typeof data.condition.nutrition === "number") {
+      const cap = maxNutritionFromGear(data.gear);
+      data.condition.nutrition = Math.max(0, Math.min(cap, Math.round(data.condition.nutrition)));
+    }
     // Doubling keeps the runner on the same tile. floor(old / 16) is the
     // same tile as floor((old * 2) / 32). Saves that already say tileSize
     // 32 are left alone, or Resume would walk them through a wall.
