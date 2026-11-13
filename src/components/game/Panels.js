@@ -4,6 +4,10 @@
  * town map, race readiness, the Sunday summary, and the runner sheet.
  * They are Chakra boxes styled like GBC windows. Keyboard and the touch
  * A/B buttons drive the same selection the click does.
+ *
+ * Race readiness and the runner sheet also show the equipped shoes, the
+ * belt or vest, both sponsors, and the nutrition cap (100, 105, or 110).
+ * The long sponsor list is a normal menu, so the d-pad can reach it.
  */
 
 "use client";
@@ -13,11 +17,11 @@ import { Box, Button, Stack, Text } from "@chakra-ui/react";
 import { renderWorld } from "@/game/art";
 import { Icon } from "@/components/game/Hud";
 import { COLS, PLACES, ROWS, placeIsLocked, spawnFor } from "@/game/town";
-import { ATTRIBUTES, CITY_INFO, MAX_ENERGY, TRACKS } from "@/lib/constants";
-import { RACES, readiness, shoeById, shoeWear } from "@/lib/race";
+import { ATTRIBUTES, CITY_INFO, TRACKS } from "@/lib/constants";
+import { RACES, describeLoadout, readiness } from "@/lib/race";
 import { attributeLevel, levelProgress, trackRank } from "@/lib/xp";
 import { runnerLevel, mountainStatus, describeNeeds } from "@/lib/unlocks";
-import { calendarView, canEatGel } from "@/lib/activities";
+import { calendarView } from "@/lib/activities";
 
 function Window({ title, children, testId }) {
   return (
@@ -37,21 +41,32 @@ function CityPlaque() {
 }
 
 export function MenuList({ title, intro, items, index, onPick, testId }) {
+  const listRef = useRef(null);
+  useEffect(() => {
+    const selected = listRef.current?.querySelector(".selected");
+    selected?.scrollIntoView({ block: "nearest" });
+  }, [index, items]);
   return (
     <Window title={title} testId={testId || "menu"}>
       <CityPlaque />
       {intro ? <p>{intro}</p> : null}
-      {items.map((item, itemIndex) => (
-        <button
-          key={`${item.label}-${itemIndex}`}
-          type="button"
-          className={itemIndex === index ? "menu-row selected" : "menu-row"}
-          onClick={() => onPick(itemIndex)}
-        >
-          {item.label}
-          {item.detail ? <span className="menu-detail">{item.detail}</span> : null}
-        </button>
-      ))}
+      <div ref={listRef}>
+        {items.map((item, itemIndex) => (
+          <button
+            key={`${item.label}-${itemIndex}`}
+            type="button"
+            className={
+              item.header
+                ? `menu-header${itemIndex === index ? " selected" : ""}`
+                : `menu-row${itemIndex === index ? " selected" : ""}`
+            }
+            onClick={() => onPick(itemIndex)}
+          >
+            {item.label}
+            {item.detail ? <span className="menu-detail">{item.detail}</span> : null}
+          </button>
+        ))}
+      </div>
       <p className="menu-detail">A confirm · B back</p>
     </Window>
   );
@@ -94,7 +109,9 @@ export function RaceView({ game, raceId, onRun, onBack }) {
     <Window title={race.name} testId="race-ready">
       <p>{`Ideal mix: ${card.idealLabel}`}</p>
       <p>{`You are about ${share}% Endurance / ${100 - share}% Peak.`}</p>
-      <p>{card.gearText}</p>
+      {(card.loadout || [card.gearText]).map((line) => (
+        <p key={line}>{line}</p>
+      ))}
       <p className={card.warning.severe ? "warn" : undefined}>{card.warning.text}</p>
       {game.gels > 0 ? <p>{`Gels in pocket: ${game.gels}. One is used if a bonk is only a chance.`}</p> : null}
       <Stack gap="2" mt="2">
@@ -168,10 +185,9 @@ export function travelSpawn(place) {
   return spawnFor(place.id);
 }
 
-export function StatusView({ game, onClose }) {
+export function StatusView({ game, onClose, onSponsors }) {
   const level = levelProgress(game.xp.overall);
-  const shoe = shoeById(game.gear.equipped);
-  const wear = shoeWear(game.gear);
+  const loadout = describeLoadout(game, "road");
   return (
     <Window title={`${game.runner.name} · Lv ${level.level}`} testId="status">
       <p>{`Last sleep: ${game.condition.sleepHours}h (${game.condition.sleepQuality})`}</p>
@@ -189,11 +205,16 @@ export function StatusView({ game, onClose }) {
       {TRACKS.filter((track) => track.id !== "overall").map((track) => (
         <p key={track.id}>{`${track.name}: rank ${trackRank(game.xp[track.id])} · ${game.xp[track.id]} XP`}</p>
       ))}
-      <p>{`${shoe.name} · ${wear.label} · ${Math.round(game.gear.miles[game.gear.equipped] || 0)} / ${shoe.maxMiles} mi`}</p>
+      {loadout.lines.map((line) => (
+        <p key={line}>{line}</p>
+      ))}
       <p className="coin-count">
         <Icon kind="coin" />
         <span>{`${game.coins} coins · Gels ${game.gels} · Miles ${game.progress.totalMiles}`}</span>
       </p>
+      {onSponsors ? (
+        <Button className="gbc-btn" data-testid="status-sponsors" onClick={onSponsors}>Sponsors</Button>
+      ) : null}
       <Button className="gbc-btn" onClick={onClose}>Close</Button>
     </Window>
   );
@@ -208,6 +229,9 @@ export function WeekView({ game, onClose }) {
       <p>{`Hard weeks in a row: ${view.hardWeeks}`}</p>
       {view.races.map((race) => (
         <p key={race.name}>{`${race.name} · ${race.status}. ${race.detail}`}</p>
+      ))}
+      {(view.sponsorNotes || []).map((line) => (
+        <p key={line}>{line}</p>
       ))}
       {view.history.length === 0 ? <p>No Sunday summary yet. Sleep through a Sunday night.</p> : null}
       {view.history.map((summary) => (
@@ -242,6 +266,8 @@ export function HelpView({ onClose }) {
       <p>Walk up to a door or a person and press A.</p>
       <p>Sleep at home ends the day. Sunday night writes the weekly summary.</p>
       <p>Low nutrition and poor sleep together will bonk you out of a race.</p>
+      <p>Shoes change one style and cost you in the others. A belt is +5 max nutrition. A vest is +10, with a small penalty in short road races.</p>
+      <p>You can sign one shoe sponsor and one nutrition sponsor. Switch anytime. Obligations pay coins and cost an energy block.</p>
       <Button className="gbc-btn" onClick={onClose}>Close</Button>
     </Window>
   );
@@ -249,45 +275,6 @@ export function HelpView({ onClose }) {
 
 export function levelLabel(game) {
   return runnerLevel(game);
-}
-
-export function InventoryView({ game, onEat, onEquip, onClose }) {
-  const energy = typeof game.energy === "number" ? game.energy : MAX_ENERGY;
-  const eat = canEatGel(game);
-  return (
-    <Window title="Inventory" testId="inventory">
-      <CityPlaque />
-      <p className="coin-count">
-        <Icon kind="coin" />
-        <span>{`${game.coins} coins`}</span>
-      </p>
-      <p data-testid="inventory-energy">{`Energy ${energy} / ${MAX_ENERGY}`}</p>
-      <p data-testid="inventory-gels">{`Stride Fuel gels: ${game.gels || 0}`}</p>
-      <p className="menu-detail">Eat a gel for +1 energy and +12 nutrition. At 10/10 energy the gel stays in your pocket.</p>
-      <Button className="gbc-btn" data-testid="eat-gel" disabled={!eat.ok} onClick={onEat}>
-        {eat.ok ? "Eat 1 gel (+1 energy)" : eat.reason}
-      </Button>
-      <p>Shoes</p>
-      {(game.gear?.owned || []).map((id) => {
-        const shoe = shoeById(id);
-        const worn = shoeWear(game.gear, id);
-        const on = game.gear.equipped === id;
-        return (
-          <button
-            key={id}
-            type="button"
-            className="menu-row"
-            disabled={on}
-            onClick={() => onEquip(id)}
-          >
-            {on ? `${shoe.name} (on)` : `Equip ${shoe.name}`}
-            <span className="menu-detail">{`${worn.label} · ${Math.round(game.gear.miles[id] || 0)} / ${shoe.maxMiles} mi`}</span>
-          </button>
-        );
-      })}
-      <Button className="gbc-btn" onClick={onClose}>Close</Button>
-    </Window>
-  );
 }
 
 export function BonkChoice({ gels, choiceIndex, onEat, onDecline, onHover }) {

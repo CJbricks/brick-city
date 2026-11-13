@@ -1,64 +1,38 @@
 /**
  * race.js
- * Race readiness, gear, and the bonk / DNF rule.
+ * Race readiness, gear pace, and the bonk / DNF rule.
  *
  * Fitness alone does not finish a race. The readiness screen compares your
  * Endurance meter and Peak meter with the mix that race wants, then checks
  * fuel and sleep. Low nutrition AND poor sleep is a sure bonk (DNF, no
- * prize). Only one of the two being low is a chance, and a Stride Fuel gel
- * removes that chance. A gel cannot save the sure thing.
+ * prize). Only one of the two being low is a chance. Eating a gel is a
+ * choice the player makes after the warning, so a pocket gel can still
+ * save the day.
  *
  * A 5K that only *chances* a bonk becomes a slow finish (you do cross the
  * line, for half credit). A 10K that chances a bonk is a DNF. The sure
  * bonk is a DNF at either distance. That matches the design note that a
  * short race can be "just slow" while an under-fueled, under-slept start
  * ends the race.
+ *
+ * Shoe stats live in catalog.js. This file turns them into a pace percent
+ * for the race in front of you, then adds the sponsor and the vest.
  */
 
-import { SHOE_REPLACE_RATIO, STARTER_REPLACE_COST } from "@/lib/constants";
 import { attributeLevel, levelFromXp } from "@/lib/xp";
+import {
+  carryById,
+  carryTradeText,
+  maxNutritionFromGear,
+  shoeById,
+  shoeTradeText,
+  shoeWear,
+  styleLabel,
+} from "@/lib/catalog";
+import { nutritionTuning, sponsorPace, sponsorSummaryLines } from "@/lib/sponsors";
 
-export const SHOES = {
-  starter: {
-    id: "starter",
-    name: "Brickside Trainers",
-    price: 0,
-    maxMiles: 80,
-    blurb: "The pair you showed up in. Honest, and they wear out.",
-  },
-  road: {
-    id: "road",
-    name: "Tempo Daybreak",
-    price: 80,
-    maxMiles: 140,
-    blurb: "Light road racers. Quick on the track, slick in the mud.",
-  },
-  trail: {
-    id: "trail",
-    name: "Peakline Lugger",
-    price: 90,
-    maxMiles: 120,
-    blurb: "Grippy lugs for the dirt loop and the ridge.",
-  },
-  hybrid: {
-    id: "hybrid",
-    name: "Switchback Hybrid",
-    price: 85,
-    maxMiles: 130,
-    blurb: "Road-to-trail. A little slow at the sharp end, stuck nowhere.",
-  },
-};
-
-/**
- * Style bonus (+) or penalty (-) as a fraction of pace.
- * Worn-out shoes stack a flat penalty on top, in shoeWearMod.
- */
-const SHOE_STYLE = {
-  starter: { road: 0, trail: 0, versatile: 0 },
-  road: { road: 0.08, trail: -0.05, versatile: 0 },
-  trail: { road: -0.05, trail: 0.08, versatile: 0 },
-  hybrid: { road: -0.03, trail: -0.03, versatile: 0.07 },
-};
+export { shoeById, shoeMiles, shoeWear } from "@/lib/catalog";
+export { SHOES, CARRY, replaceCost } from "@/lib/catalog";
 
 export const RACES = {
   "5k": {
@@ -121,47 +95,72 @@ export const RIVAL = {
   peak: 4,
 };
 
-export function shoeById(id) {
-  return SHOES[id] || SHOES.starter;
-}
-
-export function shoeMiles(gear, id = gear.equipped) {
-  return gear.miles?.[id] || 0;
-}
-
-export function shoeWear(gear, id = gear.equipped) {
-  const shoe = shoeById(id);
-  const miles = shoeMiles(gear, id);
-  const ratio = miles / shoe.maxMiles;
-  if (ratio >= 1) return { label: "worn out", mod: -0.08, ratio };
-  if (ratio >= 0.75) return { label: "worn", mod: -0.04, ratio };
-  return { label: "fresh", mod: 0, ratio };
-}
-
-export function replaceCost(id) {
-  const shoe = shoeById(id);
-  if (shoe.price <= 0) return STARTER_REPLACE_COST;
-  return Math.round(shoe.price * SHOE_REPLACE_RATIO);
+/**
+ * style is "road", "trail", or "versatile" — the thing you are about to do,
+ * not the shoe's category. Worn-out shoes stack a flat penalty on top.
+ * shortRoad and steepTrail stay off unless the caller says this effort is
+ * one of those. An easy jog is not a 5K, and a park trail is not the ridge.
+ */
+export function gearModForStyle(gear, style, options = {}) {
+  const shoe = shoeById(gear?.equipped);
+  const wear = shoeWear(gear, shoe.id);
+  const row = shoe.mods || {};
+  let mod = (row[style] || 0) + wear.mod;
+  if (options.shortRoad) mod += row.shortRoad || 0;
+  if (options.steep) mod += row.steepTrail || 0;
+  return { mod, wear: wear.label, name: shoe.name, shoe, wearMod: wear.mod };
 }
 
 /**
- * style is "road", "trail", or "versatile".
- * The fraction comes back as gearMod (0.08 means +8%).
+ * Shoes, plus the vest's short-road tax, plus the shoe sponsor.
+ * gearModForStyle stays shoe-only so a test can still read the pair by itself.
  */
-export function gearModForStyle(gear, style) {
-  const shoe = shoeById(gear.equipped);
-  const wear = shoeWear(gear);
-  const row = SHOE_STYLE[shoe.id] || SHOE_STYLE.starter;
-  const mod = (row[style] || 0) + wear.mod;
-  return { mod, wear: wear.label, name: shoe.name, shoe };
+export function combinedMod(state, style, options = {}) {
+  const gear = gearModForStyle(state.gear, style, options);
+  let mod = gear.mod;
+  const carry = carryById(state.gear?.carry);
+  if (options.shortRoad && carry?.shortRoad) mod += carry.shortRoad;
+  const deal = sponsorPace(state, style, options);
+  mod += deal.mod;
+  return { ...gear, mod, carry, sponsorMod: deal.mod, sponsorName: deal.name };
 }
 
-export function gearLine(gear, style) {
-  const info = gearModForStyle(gear, style);
+export function gearLine(gear, style, options) {
+  const info = gearModForStyle(gear, style, options);
   const pct = Math.round(info.mod * 100);
   if (pct === 0) return `${info.name} (${info.wear}): no pace change`;
   const signed = pct > 0 ? `+${pct}%` : `−${Math.abs(pct)}%`;
   return `${info.name} (${info.wear}): ${signed} ${style} pace`;
+}
+
+function signedPace(fraction) {
+  const pct = Math.round(fraction * 100);
+  if (pct === 0) return "no change";
+  return pct > 0 ? `+${pct}%` : `−${Math.abs(pct)}%`;
+}
+
+/**
+ * The block the readiness screen and the status sheet both print.
+ * One number at the bottom is the sum, so a vest and a sponsor cannot
+ * hide inside the shoe line.
+ */
+export function describeLoadout(state, style = "road", options = {}) {
+  const shoe = shoeById(state.gear?.equipped);
+  const wear = shoeWear(state.gear, shoe.id);
+  const info = combinedMod(state, style, options);
+  const max = maxNutritionFromGear(state.gear);
+  const food = nutritionTuning(state);
+  const lines = [
+    `${shoe.name} · ${styleLabel(shoe.style)} · ${wear.label} · ${shoeTradeText(shoe)}`,
+    carryTradeText(info.carry),
+    `Nutrition ${state.condition?.nutrition ?? 0} / ${max}`,
+    ...sponsorSummaryLines(state),
+  ];
+  if (food.name) {
+    lines.push(`${food.name}: sleep floor ${food.floor}, drain −${food.drainCut}${food.raceFuel ? `, +${food.raceFuel} at the gun` : ""}`);
+  }
+  lines.push(`Combined ${styleLabel(style)} pace: ${signedPace(info.mod)}`);
+  return { lines, mod: info.mod, max, shoe, wear };
 }
 
 export function fuelState(condition) {
@@ -226,7 +225,9 @@ export function readiness(state, race) {
   const total = Math.max(1, endurance + peak);
   const endShare = endurance / total;
   const mismatch = Math.abs(endShare - race.ideal.endurance);
-  const gear = gearModForStyle(state.gear, race.style);
+  const options = { shortRoad: (race.km || 0) <= 5.5 && race.style === "road" };
+  const gear = combinedMod(state, race.style, options);
+  const loadout = describeLoadout(state, race.style, options);
   const balance = endurance * race.ideal.endurance + peak * race.ideal.peak;
   const blister = state.condition.injury ? 4 : 0;
   const score =
@@ -239,7 +240,8 @@ export function readiness(state, race) {
     peakShare: 1 - endShare,
     mismatch,
     gearMod: gear.mod,
-    gearText: gearLine(state.gear, race.style),
+    gearText: gearLine(state.gear, race.style, options),
+    loadout: loadout.lines,
     warning: fuelWarning(state.condition),
     idealLabel: race.idealLabel,
   };
@@ -253,6 +255,10 @@ export function rivalScores(state, roll) {
   const speed = attributeLevel(state.attributes.speed);
   const mental = attributeLevel(state.attributes.mental);
   const blister = state.condition.injury ? 4 : 0;
+  // The mile is a short road race, so a vest or a backyard shoe shows up
+  // here. Starter shoes and an empty sponsor slot add zero, which keeps
+  // a fresh runner's result the same as before the gear rack existed.
+  const pace = combinedMod(state, "road", { shortRoad: true }).mod;
   const player =
     speed * 8 +
     mental * 2 +
@@ -260,6 +266,7 @@ export function rivalScores(state, roll) {
     state.condition.endurance * 0.12 -
     state.condition.fatigue * 0.3 -
     blister +
+    pace * 20 +
     (roll - 0.5) * 8;
   const rival = RIVAL.base + Math.max(0, levelFromXp(state.xp.overall) - 1) * 1.5;
   return { player, rival, win: player >= rival };

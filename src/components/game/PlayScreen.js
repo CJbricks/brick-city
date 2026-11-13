@@ -6,7 +6,9 @@
  * what that tile is, then run a pure function from src/lib/activities.js
  * and show the result. Park and the mountain trail still need A.
  *
- * Saves go to localStorage. There is no server and no Strava.
+ * The closet, the Run Store racks, and the Sponsors list are the same kind
+ * of menu, so the d-pad and the A/B buttons drive them. Saves go to
+ * localStorage. There is no server and no Strava.
  */
 
 "use client";
@@ -18,7 +20,6 @@ import {
   BonkChoice,
   DialogueView,
   HelpView,
-  InventoryView,
   MapView,
   MenuList,
   RaceView,
@@ -31,20 +32,24 @@ import { TouchControls } from "@/components/game/TouchControls";
 import { CITY_SIGNS, PLACES, placeIsLocked, signCopy } from "@/game/town";
 import {
   acknowledgeWeek,
+  carryShopItems,
   chatLines,
   closetItems,
   jobScript,
   menuFor,
   perform,
-  shoeShopItems,
+  shoeCategoryItems,
+  shoeStyleItems,
+  sponsorMenuItems,
 } from "@/lib/activities";
 import { describeNeeds, isMountainOpen, mountainStatus } from "@/lib/unlocks";
 import { writeSave } from "@/lib/save";
 
 const SYSTEM = [
-  { label: "Runner status", detail: "Meters, attributes, gear", action: { type: "open-status" } },
+  { label: "Runner status", detail: "Meters, attributes, gear, sponsors", action: { type: "open-status" } },
+  { label: "Sponsors", detail: "Shoe deals and fuel deals", action: { type: "open-sponsors" } },
   { label: "This week", detail: "Miles, races, old summaries", action: { type: "open-week" } },
-  { label: "Shoes", detail: "Closet", action: { type: "open-gear" } },
+  { label: "Closet", detail: "Shoes, belts, vests", action: { type: "open-gear" } },
   { label: "How to play", detail: "Buttons", action: { type: "open-help" } },
   { label: "Save game", detail: "This browser", action: { type: "save" } },
   { label: "Title screen", detail: "Leave the town", action: { type: "title" } },
@@ -135,6 +140,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
 
   function activate(item) {
     if (!item) return;
+    if (item.header) return;
     if (item.disabled) {
       setPanel({
         type: "dialogue",
@@ -158,11 +164,29 @@ export function PlayScreen({ game, setGame, onTitle }) {
       return;
     }
     if (action.type === "open-gear") {
-      setPanel({ type: "list", title: "Shoes", items: closetItems(currentState()), index: 0 });
+      setPanel({ type: "list", title: "Closet", items: closetItems(currentState()), index: 0 });
       return;
     }
-    if (action.type === "open-shop") {
-      setPanel({ type: "list", title: "Shoes", items: shoeShopItems(currentState()), index: 0 });
+    if (action.type === "open-sponsors") {
+      setPanel({ type: "list", title: "Sponsors", items: sponsorMenuItems(currentState()), index: 0, testId: "sponsors" });
+      return;
+    }
+    if (action.type === "open-shoe-categories" || action.type === "open-shop") {
+      setPanel({ type: "list", title: "Shoes", items: shoeCategoryItems(), index: 0 });
+      return;
+    }
+    if (action.type === "open-shop-style") {
+      const titles = { trail: "Trail shoes", road: "Marathon shoes", versatile: "Backyard Ultra" };
+      setPanel({
+        type: "list",
+        title: titles[action.style] || "Shoes",
+        items: shoeStyleItems(currentState(), action.style),
+        index: 0,
+      });
+      return;
+    }
+    if (action.type === "open-carry-shop") {
+      setPanel({ type: "list", title: "Belts & vests", items: carryShopItems(currentState()), index: 0 });
       return;
     }
     if (action.type === "open-shift") {
@@ -346,7 +370,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
   }
 
   function openInventory() {
-    setPanel({ type: "inventory" });
+    setPanel({ type: "list", title: "Inventory", items: closetItems(currentState()), index: 0, testId: "inventory" });
   }
 
   function saveFromMap() {
@@ -443,6 +467,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
               intro={panel.intro}
               items={panel.items}
               index={panel.index}
+              testId={panel.testId}
               onPick={(itemIndex) => activate(panel.items[itemIndex])}
             />
           ) : null}
@@ -474,14 +499,6 @@ export function PlayScreen({ game, setGame, onTitle }) {
               saveNote={mapNote}
             />
           ) : null}
-          {panel?.type === "inventory" ? (
-            <InventoryView
-              game={game}
-              onEat={() => run({ type: "eat-gel" })}
-              onEquip={(id) => run({ type: "equip", id })}
-              onClose={() => setPanel(null)}
-            />
-          ) : null}
           {panel?.type === "bonk" ? (
             <BonkChoice
               gels={panel.gels}
@@ -491,7 +508,19 @@ export function PlayScreen({ game, setGame, onTitle }) {
               onDecline={() => run({ ...panel.action, choice: "decline" }, panel.roll)}
             />
           ) : null}
-          {panel?.type === "status" ? <StatusView game={game} onClose={() => setPanel(null)} /> : null}
+          {panel?.type === "status" ? (
+            <StatusView
+              game={game}
+              onSponsors={() => setPanel({
+                type: "list",
+                title: "Sponsors",
+                items: sponsorMenuItems(currentState()),
+                index: 0,
+                testId: "sponsors",
+              })}
+              onClose={() => setPanel(null)}
+            />
+          ) : null}
           {panel?.type === "week" ? <WeekView game={game} onClose={() => setPanel(null)} /> : null}
           {panel?.type === "help" ? <HelpView onClose={() => setPanel(null)} /> : null}
           {game.pendingSummary && !panel ? (

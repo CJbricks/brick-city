@@ -253,7 +253,11 @@ Brands "notice you" once you reach a level **and** finish a key event. A brand r
 - Perks are real gameplay effects: cheaper gear, stat boosts, better recovery, or cash to spend in town.
 - Some brands are rivals. Signing with Tempo Athletics might mean Peakline won't sign you until that deal ends.
 - Getting a sponsor can unlock a building in town, like a Stride Fuel pop-up or a Peakline shop at the mountain base.
-- All brands are fictional. No real company names or logos.
+- The public-release plan keeps every brand fictional. No company logos are used in either build.
+
+### Private prototype: real brands
+
+This build is a private prototype. The owner asked for real running brands here so the gear, fuel-carry, and sponsor loop can be played before the public release. The fictional table above is still the plan for that release. The playable deals are Nike, Adidas, Hoka, Brooks, Norda, Speedland, Mount to Coast, Salomon, and Satisfy for shoes, plus BPN, Honey Stinger, Maurten, and Precision for nutrition. You wear one shoe sponsor and one nutrition sponsor. Belts add 5 max nutrition. Vests add 10 and cost a little speed in short road races. `docs/NOTES.md` explains how the save migrates.
 
 ### Gear and trade-offs
 

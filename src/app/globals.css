@@ -5,6 +5,10 @@
  * no blurry scaling. The loading-screen rules are the Marathon City spec
  * (docs/LOADING_SCREEN.md). Do not smooth the loading bar; steps(6, end)
  * is what makes it chunky.
+ *
+ * Sponsor lists and the shoe rack are long. The window scrolls instead of
+ * growing under the touch bar. Section labels in a menu use .menu-header
+ * so they don't look like buttons you can buy.
  */
 
 html,
@@ -440,7 +444,10 @@ canvas {
   box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
   padding: 10px;
   max-width: 520px;
+  max-height: 100%;
+  overflow: auto;
   margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .gbc-title {
@@ -487,6 +494,29 @@ canvas {
 
 .menu-row:disabled {
   opacity: 0.55;
+}
+
+.menu-header {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: #1d4ed8;
+  font-family: var(--font-pixel), monospace;
+  font-size: 8px;
+  line-height: 1.5;
+  padding: 8px 2px 2px;
+  cursor: default;
+}
+
+.menu-header.selected {
+  background: #f2c14e;
+}
+
+.food-line {
+  display: block;
+  font-size: 8px;
+  margin: 0 0 4px;
 }
 
 .menu-detail {

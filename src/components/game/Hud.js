@@ -5,6 +5,10 @@
  * with yesterday. On a narrow phone the card collapses to mini bars so
  * the town stays visible. Tap the card for the full breakdown.
  *
+ * The food bar is a fraction of the current cap, not of 100. A belt makes
+ * the cap 105 and a vest makes it 110, so 85 / 110 fills most of the bar
+ * and the number next to it says so.
+ *
  * The little pictures (heart, bolt, zzz, apple, coin) are 8×8 canvases
  * painted with fillRect. They are not image files. CSS keeps them
  * pixelated, same as the town.
@@ -16,6 +20,7 @@ import { useEffect, useRef } from "react";
 import { TREND_ARROW, fatigueColor, trendsFor } from "@/lib/condition";
 import { formatWhen } from "@/lib/calendar";
 import { MAX_ENERGY } from "@/lib/constants";
+import { maxNutritionFromGear } from "@/lib/catalog";
 import { levelProgress } from "@/lib/xp";
 
 const METERS = [
@@ -80,14 +85,15 @@ export function Icon({ kind }) {
   return <canvas ref={ref} className="hud-icon" width={8} height={8} aria-hidden="true" />;
 }
 
-function Meter({ meter, value, arrow }) {
+function Meter({ meter, value, max = 100, arrow }) {
   const color = meter.color || fatigueColor(value);
+  const width = Math.max(0, Math.min(100, (value / Math.max(1, max)) * 100));
   return (
     <div className="meter-row">
       <Icon kind={meter.icon} />
       <span>{meter.short}</span>
       <div className="bar" aria-hidden="true">
-        <div className="bar-fill" style={{ width: `${value}%`, background: color }} />
+        <div className="bar-fill" style={{ width: `${width}%`, background: color }} />
       </div>
       <span aria-hidden="true">{arrow}</span>
     </div>
@@ -134,16 +140,20 @@ function LevelAndEnergy({ game }) {
 export function Hud({ game, onOpen }) {
   const trends = trendsFor(game.condition, game.yesterday);
   const when = formatWhen(game.calendar);
+  const foodMax = maxNutritionFromGear(game.gear);
+  const foodNow = game.condition.nutrition;
   return (
     <div className="hud-wrap">
       <button type="button" className="hud-card" data-testid="hud" onClick={onOpen}>
         <LevelAndEnergy game={game} />
+        <span className="food-line" data-testid="hud-nutrition">{`FOOD ${foodNow} / ${foodMax}`}</span>
         <div className="hud-desktop">
           {METERS.map((meter) => (
             <Meter
               key={meter.key}
               meter={meter}
               value={game.condition[meter.key]}
+              max={meter.key === "nutrition" ? foodMax : 100}
               arrow={TREND_ARROW[trends[meter.key]]}
             />
           ))}
@@ -161,7 +171,13 @@ export function Hud({ game, onOpen }) {
                 <div className="mini-meter" key={meter.key}>
                   <Icon kind={meter.icon} />
                   <div className="bar">
-                    <div className="bar-fill" style={{ width: `${game.condition[meter.key]}%`, background: color }} />
+                    <div
+                      className="bar-fill"
+                      style={{
+                        width: `${Math.max(0, Math.min(100, (game.condition[meter.key] / (meter.key === "nutrition" ? foodMax : 100)) * 100))}%`,
+                        background: color,
+                      }}
+                    />
                   </div>
                   <span>{TREND_ARROW[trends[meter.key]]}</span>
                 </div>

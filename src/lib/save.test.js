@@ -3,10 +3,14 @@
  * A save is just JSON. Bad data, the wrong version, and broken text must
  * come back as "no save" so the title screen offers New Game instead of
  * crashing on Resume.
+ *
+ * Version stays 1. A closet from before belts and sponsors existed is
+ * filled in here, and the old shoe ids still resolve.
  */
 
 import { describe, expect, it } from "vitest";
 import { createNewGame, applyRun } from "@/lib/activities";
+import { shoeById } from "@/lib/catalog";
 import { deserialize, serialize } from "@/lib/save";
 
 describe("save serialization", () => {
@@ -58,6 +62,29 @@ describe("save serialization", () => {
     const kept = deserialize(serialize(modern));
     expect(kept.position).toEqual(modern.position);
     expect(kept.tileSize).toBe(32);
+  });
+
+  it("fills belts, sponsors, and legacy shoe ids on an old v1 blob", () => {
+    const legacy = createNewGame({ name: "Ada", gender: "female" });
+    delete legacy.sponsors;
+    delete legacy.gear.carry;
+    delete legacy.gear.ownedCarry;
+    legacy.gear.equipped = "trail";
+    legacy.gear.owned = ["starter", "road", "trail", "hybrid", "made-up"];
+    legacy.gear.miles = { trail: 12, road: 4, hybrid: 1 };
+    legacy.condition.nutrition = 140;
+    const migrated = deserialize(serialize(legacy));
+    expect(migrated.gear.equipped).toBe("trail");
+    expect(shoeById(migrated.gear.equipped).style).toBe("trail");
+    expect(migrated.gear.owned).toEqual(["starter", "road", "trail", "hybrid"]);
+    expect(migrated.gear.miles.trail).toBe(12);
+    expect(migrated.gear.carry).toBeNull();
+    expect(migrated.gear.ownedCarry).toEqual([]);
+    expect(migrated.sponsors.shoe).toBeNull();
+    expect(migrated.sponsors.nutrition).toBeNull();
+    expect(migrated.sponsors.obligation).toBeNull();
+    expect(migrated.condition.nutrition).toBe(100);
+    expect(migrated.version).toBe(1);
   });
 
   it("rejects junk instead of loading a half save", () => {
