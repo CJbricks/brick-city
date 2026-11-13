@@ -6,10 +6,16 @@
  * serialize / deserialize are pure so tests can round-trip a state without
  * a browser. loadSave / writeSave / clearSave are the thin localStorage
  * wrappers the screens call after mount (never during server render).
+ *
+ * v2 widened every tile from 16px to 32px. A position is stored in pixels,
+ * so an old save's x/y would land on the wrong half of the new tile and
+ * often inside a wall. New games stamp tileSize: 32. A save without that
+ * stamp is treated as 16px and doubled once on load.
  */
 
 import { MAX_ENERGY, SAVE_KEY, SAVE_VERSION } from "@/lib/constants";
 import { slotFromEnergy } from "@/lib/calendar";
+import { TILE } from "@/game/town";
 
 export function serialize(state) {
   return JSON.stringify(state);
@@ -34,6 +40,19 @@ export function deserialize(raw) {
     if (typeof data.gels !== "number") data.gels = 0;
     if (typeof data.calendar.homeMealUsed !== "boolean") data.calendar.homeMealUsed = false;
     if (typeof data.calendar.homeSnackUsed !== "boolean") data.calendar.homeSnackUsed = false;
+    // Doubling keeps the runner on the same tile. floor(old / 16) is the
+    // same tile as floor((old * 2) / 32). Saves that already say tileSize
+    // 32 are left alone, or Resume would walk them through a wall.
+    if (data.tileSize !== TILE) {
+      if (data.position && typeof data.position.x === "number" && typeof data.position.y === "number") {
+        data.position = {
+          ...data.position,
+          x: Math.round(data.position.x * (TILE / 16)),
+          y: Math.round(data.position.y * (TILE / 16)),
+        };
+      }
+      data.tileSize = TILE;
+    }
     return data;
   } catch {
     return null;

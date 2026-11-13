@@ -22,12 +22,18 @@ function Preview({ gender, scale = 4 }) {
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
+    // 32×40 is the v2 runner frame (v1 was 16×20). Scale by a whole
+    // number, then blit, so the preview stays as blocky as the town.
+    const frameW = 32;
+    const frameH = 40;
     const tiny = document.createElement("canvas");
-    tiny.width = 16;
-    tiny.height = 20;
-    drawRunnerSprite(tiny.getContext("2d"), 0, 0, "down", 0, gender, gender);
-    canvas.width = 16 * scale;
-    canvas.height = 20 * scale;
+    tiny.width = frameW;
+    tiny.height = frameH;
+    const tinyCtx = tiny.getContext("2d");
+    tinyCtx.imageSmoothingEnabled = false;
+    drawRunnerSprite(tinyCtx, 0, 0, "down", 0, gender, gender);
+    canvas.width = frameW * scale;
+    canvas.height = frameH * scale;
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(tiny, 0, 0, canvas.width, canvas.height);

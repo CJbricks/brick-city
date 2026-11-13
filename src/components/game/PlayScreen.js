@@ -2,8 +2,9 @@
  * PlayScreen.js
  * The town, once a runner exists. This component owns the windows (menus,
  * dialogue, map, races) and the keyboard. The canvas owns walking. They
- * meet when you press A: we ask the canvas what tile you're facing, then
- * run a pure function from src/lib/activities.js and show the result.
+ * meet when you press A, or when a step lands on a building mat: we ask
+ * what that tile is, then run a pure function from src/lib/activities.js
+ * and show the result. Park and the mountain trail still need A.
  *
  * Saves go to localStorage. There is no server and no Strava.
  */
@@ -65,6 +66,13 @@ export function PlayScreen({ game, setGame, onTitle }) {
       game,
       frozen,
       mountainOpen: isMountainOpen(game),
+      onEnter(id) {
+        // Ignore the callback if a window is already up. Closing it with
+        // B leaves you standing on the mat; the walk code will not fire
+        // again until you step off and back on. A still reopens it.
+        if (panelRef.current || gameRef.current.pendingSummary) return;
+        openLocation(id);
+      },
     });
   });
 

@@ -8,6 +8,10 @@
  * Coordinates are tiles. (0, 0) is the top-left tree border. Y grows
  * downward, same as the screen. A "mat" is the walkable tile in front of
  * a door. Standing on it and pressing A opens that place.
+ *
+ * TILE is 32 source pixels. v1 used 16. A saved position is a pixel,
+ * not a tile, so an old save has to be doubled on load (see save.js)
+ * or the runner spawns halfway into the next tile and often in a wall.
  */
 
 import { CITY_INFO } from "@/lib/constants";
@@ -15,7 +19,7 @@ import { isMountainOpen } from "@/lib/unlocks";
 
 export { CITY_INFO };
 
-export const TILE = 16;
+export const TILE = 32;
 export const COLS = 36;
 export const ROWS = 30;
 
@@ -26,7 +30,7 @@ export const DIR = {
   right: [1, 0],
 };
 
-const WALK = new Set(["r", "d", "k", "i", "x"]);
+const WALK = new Set(["r", "d", "k", "i", "x", "s"]);
 
 export const BUILDINGS = [
   { id: "home", x: 2, y: 2, w: 7, h: 5, door: { x: 5, y: 6 } },
@@ -156,16 +160,8 @@ export function createGround() {
   vRoad(grid, 10, 2, 27);
   vRoad(grid, 24, 2, 27);
 
-  // Stoops and sidewalks so every door actually touches the street.
-  grid[7][5] = "d";
-  grid[7][17] = "d";
-  grid[7][4] = "f";
-  grid[7][6] = "f";
   // Gym mat sits just west of the west street (x 9, y 14). grid is [y][x].
-  grid[14][9] = "d";
   fillRect(grid, 26, 11, 1, 8, "d");
-  grid[22][5] = "d";
-  grid[22][18] = "d";
 
   // Center plaza, touching all four roads so you can cut across town.
   fillRect(grid, 12, 10, 12, 10, "d");
@@ -214,7 +210,55 @@ export function createGround() {
     "..kkk..",
   ], { k: "k", i: "i" });
 
+  // Concrete sidewalks. Each one shares an edge with the road and with
+  // the door tile, so the walk meets the threshold. Trees, roads, water,
+  // and the track are left alone. Signs sit on these tiles and stay solid.
+  const pave = (x, y) => {
+    if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return;
+    const code = grid[y][x];
+    if (code === "g" || code === "f" || code === "d") grid[y][x] = "s";
+  };
+  for (let x = 2; x <= 9; x += 1) pave(x, 7);
+  for (let x = 12; x <= 23; x += 1) pave(x, 7);
+  for (let y = 10; y <= 19; y += 1) pave(9, y);
+  for (let x = 2; x <= 9; x += 1) pave(x, 22);
+  for (let x = 12; x <= 23; x += 1) pave(x, 22);
+  for (let y = 10; y <= 19; y += 1) pave(26, y);
+  pave(30, 7);
+  for (let y = 17; y <= 19; y += 1) pave(19, y);
+
   return grid;
+}
+
+const BUILDING_DOORS = new Set(["home", "grocery", "gym", "store"]);
+
+/**
+ * The walkable mat in front of a building door. Park, the track, the
+ * depot, and the mountain gate are not in this set: those still wait
+ * for the A button.
+ */
+export function entranceAt(tx, ty) {
+  const place = PLACES.find((item) => item.tx === tx && item.ty === ty);
+  if (!place || !BUILDING_DOORS.has(place.id)) return null;
+  return place.id;
+}
+
+/**
+ * Decides whether walking onto a tile should open a building menu.
+ * previous is null the first time we look (spawn or a freshly loaded
+ * save): we remember the tile and do not open anything, or Home would
+ * pop its menu the moment a new game starts. moved is false for a
+ * teleport such as the town map. Only a real step onto a new mat opens.
+ */
+export function noteArrival(previous, next, moved) {
+  if (!next) return { previous: null, entered: null };
+  if (!previous || previous.tx !== next.tx || previous.ty !== next.ty) {
+    return {
+      previous: next,
+      entered: previous && moved ? entranceAt(next.tx, next.ty) : null,
+    };
+  }
+  return { previous, entered: null };
 }
 
 export function tileCenter(tx, ty) {

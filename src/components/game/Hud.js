@@ -4,6 +4,10 @@
  * Nutrition (labeled FOOD, like the concept). Arrows compare each meter
  * with yesterday. On a narrow phone the card collapses to mini bars so
  * the town stays visible. Tap the card for the full breakdown.
+ *
+ * The little pictures (heart, bolt, zzz, apple, coin) are 8×8 canvases
+ * painted with fillRect. They are not image files. CSS keeps them
+ * pixelated, same as the town.
  */
 
 "use client";
@@ -21,12 +25,13 @@ const METERS = [
   { key: "nutrition", short: "FOOD", color: "#3dba5d", icon: "apple" },
 ];
 
-function Icon({ kind }) {
+export function Icon({ kind }) {
   const ref = useRef(null);
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, 8, 8);
     ctx.fillStyle = "#1c1a16";
     if (kind === "heart") {
@@ -47,6 +52,24 @@ function Icon({ kind }) {
       ctx.fillRect(0, 1, 4, 1);
       ctx.fillRect(2, 2, 2, 1);
       ctx.fillRect(0, 3, 4, 1);
+    } else if (kind === "coin") {
+      // Dark rim first. On the cream card a gold disc with no outline
+      // turns into a yellow smudge. The vertical dark pixels are the
+      // slot that makes this read as a coin, not a square.
+      ctx.fillRect(1, 0, 6, 1);
+      ctx.fillRect(1, 7, 6, 1);
+      ctx.fillRect(0, 1, 1, 6);
+      ctx.fillRect(7, 1, 1, 6);
+      ctx.fillStyle = "#f2c14e";
+      ctx.fillRect(1, 1, 6, 6);
+      ctx.fillStyle = "#fff4c2";
+      ctx.fillRect(2, 1, 2, 1);
+      ctx.fillRect(1, 2, 1, 1);
+      ctx.fillStyle = "#8a5a12";
+      ctx.fillRect(3, 2, 1, 3);
+      ctx.fillStyle = "#c48a1e";
+      ctx.fillRect(5, 5, 1, 1);
+      ctx.fillRect(6, 4, 1, 2);
     } else {
       ctx.fillStyle = "#3dba5d";
       ctx.fillRect(3, 0, 1, 2);
@@ -68,6 +91,17 @@ function Meter({ meter, value, arrow }) {
       </div>
       <span aria-hidden="true">{arrow}</span>
     </div>
+  );
+}
+
+function CoinCount({ coins }) {
+  // The icon replaces the old "c". The letter and the picture together
+  // ("48c" plus a coin) crowded the phone row next to SORE.
+  return (
+    <span className="coin-count" data-testid="coin-count" aria-label={`${coins} coins`}>
+      <Icon kind="coin" />
+      <span aria-hidden="true">{coins}</span>
+    </span>
   );
 }
 
@@ -116,7 +150,7 @@ export function Hud({ game, onOpen }) {
           {game.condition.sore ? <div className="sore-flag">SORE</div> : null}
           <div className="hud-meta">
             <span>{when}</span>
-            <span>{`${game.coins} c`}</span>
+            <CoinCount coins={game.coins} />
           </div>
         </div>
         <div className="hud-mobile">
@@ -136,7 +170,7 @@ export function Hud({ game, onOpen }) {
           </div>
           <div className="hud-meta">
             <span>{when}</span>
-            <span>{`${game.coins}c`}</span>
+            <CoinCount coins={game.coins} />
             {game.condition.sore ? <span className="sore-flag">SORE</span> : null}
           </div>
         </div>

@@ -140,6 +140,8 @@ Finishing the 5K hangs a banner by the track. Reaching level 3 plants extra flow
 
 `src/lib/save.js` writes one JSON blob to `localStorage` under `brick-city-save-v1`. The town auto-saves after each action and every couple of seconds while you walk. Home, the menu, and the town map all have a Save entry. New Game overwrites that key when you confirm the name. Resume reads it back. If the JSON is junk or the version doesn't match, Resume hides itself instead of crashing. A save from before energy blocks existed is still valid: the missing bar is filled to 10 and the clock is set back to Morning so the sky matches.
 
+A save also remembers `tileSize`. v2 tiles are 32 pixels. v1 tiles were 16, and the saved `position.x` / `position.y` are pixels, not tile numbers. Loading an old save without `tileSize: 32` multiplies those two numbers by 2. That puts the runner back on the same mat. Skipping it would drop them halfway into the next tile, often inside a wall. A save that already says `tileSize: 32` is not doubled again.
+
 ## Why the quote waits until after mount
 
 `prototype/quotes.json` is the only quote file. `src/lib/quotes.js` turns it into a list and exports `randomQuote()`.
@@ -160,15 +162,55 @@ The title shows that same string with no quotation marks around it.
 
 ## Why the pixels stay sharp
 
-The town is drawn at 1 game pixel = 1 canvas pixel, then scaled up by a whole number (2x, 3x, …). Three things have to agree:
+The town is drawn at 1 game pixel = 1 canvas pixel, then scaled up by a whole number (1x, 2x, 3x, …). Three things have to agree:
 
-1. Pixi textures use nearest-neighbor filtering, not smoothing.
-2. Sprites and the camera sit on whole pixels (`roundPixels`).
+1. Pixi textures use nearest-neighbor filtering, not smoothing (`scaleMode: "nearest"`).
+2. Sprites and the camera sit on whole pixels (`roundPixels: true`).
 3. The CSS on the canvas says `image-rendering: pixelated`.
 
-A fractional scale, or the browser's default smooth scaling, turns the bricks into mush. `src/components/game/Overworld.js` is the file that chooses the integer scale. It picks the biggest scale that still shows at least 10 by 8 tiles, so a phone is not a tiny window and a desktop is not a single bush filling the screen.
+A fractional scale, or the browser's default smooth scaling, turns the bricks into mush. `chooseScale` in `src/components/game/Overworld.js` picks the whole-number scale whose tiles are closest to about 72 screen pixels wide, and it refuses a scale that would show fewer than 8 tiles across or 6 down.
+
+v2 tiles are 32 source pixels (v1 was 16). Doubling the tile and cutting the scale in half shows the same amount of town:
+
+- A phone around 390×844 keeps scale 1. The canvas is roughly 390×700 after the touch bar, about 12 tiles across. That matches v1, which used scale 2 on 16px tiles (also 32 screen pixels per tile).
+- A desktop around 1280×800 lands on scale 2. The canvas is roughly 1280×660, about 20 tiles across and 10 down, so you see several blocks instead of one roof.
+
+Walking speed and the foot collision box are multiplied by the same ratio (`TILE / 16`). v1 moved at 72 pixels a second, which was about 4.5 tiles a second. v2 moves at 144 pixels a second so a street still takes the same time to cross. The foot box used to be about 8 pixels wide on a 16px tile. It is 16 pixels wide now, the same fraction of a tile, so you can still slide along a wall.
 
 Walking is not stored in React on every frame. That would re-render the HUD 60 times a second. Pixi moves you. React asks for the position when you talk, travel, or save.
+
+## v2 graphics: sprites, shadows, and the sky
+
+The pictures are still code. `src/game/art.js` paints every tile and every runner. There is no sprite PNG, and nothing is copied from Nintendo or Game Freak.
+
+**Tiles are 32×32.** Grass has a few blade clusters and, sometimes, a wildflower. Roads are asphalt with a curb, a dashed center line, and a zebra crosswalk where two streets cross (the only road tiles with roads on all four sides). The plaza is cobblestone. Park trails and the mountain path are pebble dirt. Water has ripples and a lily pad. The track is red with white lane lines. Trees are round, with a dark side and a highlight. Rocks are boulders with a light face and a dark crack.
+
+**Runners are 32×40.** `drawRunnerSprite` paints one frame. `makeRunnerSheet` lines up 12 of them: down, up, and side, and each of those has four frames. The four frames are idle, stride A, idle, stride B. Frame 0 and frame 2 are the same standing pose on purpose. Holding that pose between the two steps is what makes it read as a walk instead of two pictures flickering. The overworld does `Math.floor(anim / 140) % 4` while you move, and uses frame 0 when you stop. Side-facing art looks right. Left is that art flipped (`scale.x = -1`) around the sprite's center, so we do not draw a second picture. The title screen wave and the New Game preview use the same outlined body.
+
+**Shadows, dust, and shimmer** are Pixi graphics, not part of the map texture. An oval is drawn under your feet and under each neighbor so they sit on the tile. While you walk, small tan puffs spawn behind you and fade. The pond and the fountain also get a few white pixels that bob. Those are cleared and redrawn every frame. The map itself is only redrawn when milestones change, plus a second copy of the water so the ripples can blink.
+
+**Time of day** lives in `src/lib/lighting.js`. The calendar slot picks a mood:
+
+| Slot | HUD name | What you see |
+|---|---|---|
+| 0 | Morning | a little blue sky at the top |
+| 1 | Midday | a warm, light wash |
+| 2 | Afternoon | deeper gold |
+| 3 | Evening | Golden Sunset |
+| 4 | Night | Dusk, and the lamps turn on |
+| 5 | Night (no energy left) | darker Night, brighter lamps |
+
+The grade is a vertical gradient over the whole screen: sky color at the top, ground color at the bottom. It is one Pixi fill, not a flat rectangle of one color. Dusk and night then draw a second layer on top: warm circles on the windows, the storefront lanterns, and the streetlamps at the intersections. That layer is drawn *after* the grade and uses additive blending (`'add'`, which is `"lighter"` on a canvas). If the lamps were under the grade, the night wash would paint them dark too. The window rectangles in `townLights()` are the same rectangles `art.js` uses for the glass, so the glow stays on the pane.
+
+## HUD icons
+
+The hearts, bolts, and the coin next to your money are not image files. `Icon` in `src/components/game/Hud.js` paints an 8×8 canvas with `fillRect`, one rectangle per pixel. The coin is a dark ring, a gold fill, a light pixel in the corner, and a short dark slot. The ring is what keeps it visible on the cream card. CSS sets `image-rendering: pixelated` and puts the coin in an inline flex row with a 3px gap, so it sits on the same line as the number. The number is just the count. The picture is the "c", which keeps the phone row from crowding the SORE flag.
+
+## Sidewalks and walking into a building
+
+Sidewalk tiles are the letter `s` in `src/game/town.js`. They are walkable, like roads. Each run of sidewalk shares one edge with the street and the other with a door, so you are not stepping across a grass gap to get inside. The door pictures in `src/game/art.js` are lined up with that same edge.
+
+Home, the Grocery, the Gym, and the Run Store open when you step onto their mat. The check is in `noteArrival`. The first time the game looks at your tile (a new game starts on Home's mat, and a save can too) it only remembers the tile. A jump from the town map does the same. The menu opens on the step that changes the tile. Closing it with B leaves you standing there, and it does not open again until you walk off and come back. A still works if you want the menu without leaving. Park and the mountain trail are not in that list, so you still face the sign and press A.
 
 ## Controls
 

@@ -35,6 +35,31 @@ describe("save serialization", () => {
     expect(copy.runner.name).toBe("ADA");
   });
 
+  it("doubles a v1 16px position and leaves a 32px position alone", () => {
+    const modern = createNewGame({ name: "Ada", gender: "female" });
+    expect(modern.tileSize).toBe(32);
+    expect(modern.position).toMatchObject({ x: 176, y: 240, facing: "up" });
+
+    const legacy = createNewGame({ name: "Ada", gender: "female" });
+    delete legacy.tileSize;
+    // Home mat in the old 16px map: tile (5, 7), center (5.5 * 16, 7.5 * 16).
+    legacy.position = { x: 88, y: 120, facing: "up" };
+    const migrated = deserialize(serialize(legacy));
+    expect(migrated.tileSize).toBe(32);
+    expect(migrated.position).toEqual({ x: 176, y: 240, facing: "up" });
+
+    const stamped = createNewGame({ name: "Ada", gender: "male" });
+    stamped.tileSize = 16;
+    stamped.position = { x: 40, y: 50, facing: "left" };
+    const fromSixteen = deserialize(serialize(stamped));
+    expect(fromSixteen.position).toEqual({ x: 80, y: 100, facing: "left" });
+    expect(fromSixteen.tileSize).toBe(32);
+
+    const kept = deserialize(serialize(modern));
+    expect(kept.position).toEqual(modern.position);
+    expect(kept.tileSize).toBe(32);
+  });
+
   it("rejects junk instead of loading a half save", () => {
     expect(deserialize("")).toBeNull();
     expect(deserialize("not json")).toBeNull();
