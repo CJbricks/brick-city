@@ -737,20 +737,22 @@ export function applyPurchase(state, itemId) {
 
 const HOME_FOOD = {
   meal: {
-    nutrition: 28,
-    mealName: "Home pasta",
+    nutrition: 24,
+    mealName: "Kitchen oatmeal",
     mealQuality: "good",
     junk: false,
     flag: "homeMealUsed",
-    lines: ["You cook at home. Free, and it is a real meal."],
+    used: "Already ate your home meal today.",
+    lines: ["Kitchen oatmeal. Free, and it is a real meal."],
   },
   snack: {
-    nutrition: 14,
-    mealName: "Kitchen leftover",
+    nutrition: 12,
+    mealName: "Pantry snack",
     mealQuality: "poor",
     junk: true,
     flag: "homeSnackUsed",
-    lines: ["A quick bite from the kitchen. It fills you, then it fades."],
+    used: "Already had your home snack today.",
+    lines: ["A pantry snack. It fills you, then it fades."],
   },
 };
 
@@ -763,7 +765,7 @@ export function applyHomeFood(state, kind) {
   const food = HOME_FOOD[kind];
   if (!food) return refuse(state, ["The kitchen does not have that."]);
   if (state.calendar[food.flag]) {
-    return refuse(state, ["The kitchen is done for today. The grocery is still open."]);
+    return refuse(state, [food.used]);
   }
   const before = state;
   const next = clone(state);
@@ -1112,17 +1114,17 @@ export function menuFor(locationId, state) {
           ),
           item(
             "Eat healthy meal",
-            state.calendar.homeMealUsed ? "Used today" : "Free · +28 Nutrition (1/day)",
+            state.calendar.homeMealUsed ? "Used today" : "Free · +24 Nutrition (1/day)",
             { type: "home-food", id: "meal" },
             Boolean(state.calendar.homeMealUsed),
-            "The kitchen meal is used. Sleep, or buy food at the grocery.",
+            "Already ate your home meal today.",
           ),
           item(
             "Eat quick snack",
-            state.calendar.homeSnackUsed ? "Used today" : "Free · +14 Nutrition (1/day)",
+            state.calendar.homeSnackUsed ? "Used today" : "Free · +12 Nutrition (1/day)",
             { type: "home-food", id: "snack" },
             Boolean(state.calendar.homeSnackUsed),
-            "The kitchen snack is used. Sleep, or buy food at the grocery.",
+            "Already had your home snack today.",
           ),
           item("Swap Shoes", "Closet", { type: "open-gear" }),
           item("Save Game", "This browser only", { type: "save" }),

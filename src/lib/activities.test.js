@@ -284,21 +284,27 @@ describe("energy blocks and gels", () => {
     start.energy = 3;
     const meal = applyHomeFood(start, "meal");
     expect(meal.ok).toBe(true);
-    expect(meal.state.condition.nutrition).toBe(68);
+    expect(meal.state.condition.nutrition).toBe(64);
+    expect(meal.state.condition.mealName).toBe("Kitchen oatmeal");
     expect(meal.state.condition.mealQuality).toBe("good");
     expect(meal.state.condition.junk).toBe(false);
     expect(meal.state.energy).toBe(3);
     expect(meal.state.coins).toBe(48);
     expect(meal.state.calendar.homeMealUsed).toBe(true);
-    expect(applyHomeFood(meal.state, "meal").ok).toBe(false);
+    const secondMeal = applyHomeFood(meal.state, "meal");
+    expect(secondMeal.ok).toBe(false);
+    expect(secondMeal.lines[0]).toBe("Already ate your home meal today.");
 
     const snack = applyHomeFood(meal.state, "snack");
     expect(snack.ok).toBe(true);
-    expect(snack.state.condition.nutrition).toBe(82);
+    expect(snack.state.condition.nutrition).toBe(76);
+    expect(snack.state.condition.mealName).toBe("Pantry snack");
     expect(snack.state.condition.mealQuality).toBe("poor");
     expect(snack.state.condition.junk).toBe(true);
     expect(snack.state.energy).toBe(3);
-    expect(applyHomeFood(snack.state, "snack").ok).toBe(false);
+    const secondSnack = applyHomeFood(snack.state, "snack");
+    expect(secondSnack.ok).toBe(false);
+    expect(secondSnack.lines[0]).toBe("Already had your home snack today.");
 
     const morning = applySleep(snack.state);
     expect(morning.state.calendar.homeMealUsed).toBe(false);
@@ -313,6 +319,10 @@ describe("energy blocks and gels", () => {
     expect(bought.ok).toBe(true);
     expect(bought.state.energy).toBe(1);
     expect(bought.state.coins).toBe(30);
+    const snack = applyPurchase(bought.state, "snack");
+    expect(snack.ok).toBe(true);
+    expect(snack.state.energy).toBe(1);
+    expect(snack.state.coins).toBe(23);
   });
 
   it("buys a gel for coins only, and eating one adds a single block", () => {

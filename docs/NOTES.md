@@ -102,7 +102,7 @@ If you don't have enough blocks, the menu says to sleep or eat a gel. The sky mo
 
 Sleep ends the day, refills energy to 10/10, clears the "already napped" flag, and restocks the home kitchen. Evening (a few blocks left) is the good 8-hour night. Going back to bed in the Morning still ends the day, but the quality is poor, and poor sleep is half of the bonk rule.
 
-Home can serve one healthy meal (+28 nutrition, good quality) and one quick snack (+14, poor quality, and the next effort drains faster) each day. Both are free and cost no energy. After that the menu says the kitchen is used, and the grocery is the place for another plate. The grocery also costs no energy. It costs coins, and it is not limited to one meal, which is why it still matters on a 10-block training day.
+Home can serve one healthy meal (+24 nutrition, kitchen oatmeal, good quality) and one quick snack (+12, pantry snack, poor quality, and the next effort drains faster) each day. Both are free and cost no energy. After that the menu says "Already ate your home meal today." or "Already had your home snack today." The grocery also costs no energy. It costs coins, and it is not limited to one plate, which is why it still matters on a 10-block training day.
 
 A daytime nap is allowed only while the clock is still Morning, Midday, or Afternoon, and only once. It costs 1 block, drops fatigue by 14, and does not give the block back.
 
