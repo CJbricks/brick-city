@@ -26,6 +26,8 @@ npm start         # serve the production build
 
 `npm test` uses Vitest. The tests live next to the code they cover, named `*.test.js`. They do not open a browser. They call the same functions the menus call.
 
+The pictures CJ drew for the look of the game live in `docs/concepts/`: the title screen, the two runners, the town, and the HUD. They are reference, not files the game loads.
+
 ## Folder map
 
 ```
@@ -34,7 +36,7 @@ src/components/     screens and panels (React + Chakra)
 src/game/           pixels and the town grid (canvas + Pixi)
 src/lib/            rules: XP, fatigue, races, saves (plain JS)
 prototype/quotes.json   the 15 lines under the logo
-docs/               this note and the loading-screen spec
+docs/               this note, the loading-screen spec, and docs/concepts/
 ```
 
 `src/app/page.js` is the only page. It renders `GameApp`, which decides which screen you are on.
@@ -92,19 +94,21 @@ The HUD clock still says Morning, Midday, Afternoon, Evening, or Night. What act
 
 | Action | Blocks |
 |---|---|
-| Easy run, park trail, yards, intervals, treadmill, strength, shift, meal, snack, nap, 5K, Remy | 1 |
+| Easy run, park trail, yards, intervals, treadmill, strength, shift, nap, 5K, Remy | 1 |
 | Long run, ridge repeats, 10K | 2 |
-| Buying a Stride Fuel gel | 0 |
+| Grocery food, gels, shoes, eating a gel, home kitchen | 0 |
 
 If you don't have enough blocks, the menu says to sleep or eat a gel. The sky moves with the bar: two blocks spent is one step of the day. Zero blocks is a spent night. That slot is what `sleepPlan` still reads, so going to bed with a full bar is a short poor sleep, and going to bed after a real day is the good one.
 
-Sleep ends the day, refills energy to 10/10, and clears the "already napped" flag. Evening (a few blocks left) is the good 8-hour night. Going back to bed in the Morning still ends the day, but the quality is poor, and poor sleep is half of the bonk rule.
+Sleep ends the day, refills energy to 10/10, clears the "already napped" flag, and restocks the home kitchen. Evening (a few blocks left) is the good 8-hour night. Going back to bed in the Morning still ends the day, but the quality is poor, and poor sleep is half of the bonk rule.
+
+Home can serve one healthy meal (+28 nutrition, good quality) and one quick snack (+14, poor quality, and the next effort drains faster) each day. Both are free and cost no energy. After that the menu says the kitchen is used, and the grocery is the place for another plate. The grocery also costs no energy. It costs coins, and it is not limited to one meal, which is why it still matters on a 10-block training day.
 
 A daytime nap is allowed only while the clock is still Morning, Midday, or Afternoon, and only once. It costs 1 block, drops fatigue by 14, and does not give the block back.
 
 Eating a gel from Inventory (or the `I` key) needs a gel and an open block. It gives +1 energy, capped at 10, and +12 nutrition. At 10/10 the button stays disabled so you save the gel.
 
-If a 5K, 10K, or mile against Remy is about to bonk and you have a gel, the game stops before the bonk finishes and asks. Eat the gel and you finish the race normally (the block you spent comes back, plus 12 nutrition). Tough it out and the bonk completes. With an empty pocket the bonk just happens, and the text says a gel could have saved it. The random roll is chosen once and reused for both answers, which is why the tests can force either ending.
+If a 5K, 10K, or mile against Remy is about to bonk and you have a gel, the game stops before the bonk finishes and asks: eat the gel, or push through. Eat it and you finish normally (the block you spent comes back, plus 12 nutrition). Push through and the bonk completes. With an empty pocket the bonk just happens, and the text says a gel could have saved it. The random roll is chosen once and reused for both answers, which is why the tests can force either ending.
 
 Sunday night (you go to bed while the weekday is Sunday) writes a weekly summary: miles, XP per track, average fatigue, average nutrition, average sleep, and whether the week cost you fitness. A kind week with some miles pays a small XP bonus. Several hard weeks in a row raise injury risk.
 
@@ -114,8 +118,8 @@ Detraining does not happen because you took a rest day. One or two days without 
 
 Before the 5K, the 10K, or Remy's mile, a readiness screen shows your Endurance/Peak mix against what that race wants, plus your shoes.
 
-- Nutrition under 40 **and** poor sleep (or fatigue at 80+) is a sure bonk. You DNF. A gel does not save this one. The screen warns: `⚠ Low fuel + poor sleep: high DNF risk`.
-- Only one of those is bad: you might bonk. A roll under 0.45 bonks you. A 5K becomes a slow finish (half credit). A longer race is a DNF. Carrying a Stride Fuel gel from the grocery spends one gel and cancels that chance.
+- Nutrition under 40 **and** poor sleep (or fatigue at 80+) is a sure bonk. You DNF unless you eat a gel when the game asks. The readiness screen still warns: `⚠ Low fuel + poor sleep: high DNF risk`.
+- Only one of those is bad: a roll under 0.45 bonks you. A 5K becomes a slow finish (half credit). A longer race is a DNF. The same gel question appears if you are carrying one.
 - Neither is bad: you just race.
 
 The roll is `Math.random()`, passed into `applyRace` at the moment you confirm. The rule functions never call `Math.random` themselves, so tests can force a bonk or a win by passing `0.1` or `0.9`.

@@ -32,6 +32,8 @@ export function deserialize(raw) {
     }
     if (typeof data.nappedToday !== "boolean") data.nappedToday = false;
     if (typeof data.gels !== "number") data.gels = 0;
+    if (typeof data.calendar.homeMealUsed !== "boolean") data.calendar.homeMealUsed = false;
+    if (typeof data.calendar.homeSnackUsed !== "boolean") data.calendar.homeSnackUsed = false;
     return data;
   } catch {
     return null;

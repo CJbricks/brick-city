@@ -23,11 +23,15 @@ describe("save serialization", () => {
     const state = createNewGame({ name: "Ada", gender: "female" });
     delete state.energy;
     delete state.nappedToday;
+    delete state.calendar.homeMealUsed;
+    delete state.calendar.homeSnackUsed;
     state.calendar.slot = 4;
     const copy = deserialize(serialize(state));
     expect(copy.energy).toBe(10);
     expect(copy.nappedToday).toBe(false);
     expect(copy.calendar.slot).toBe(0);
+    expect(copy.calendar.homeMealUsed).toBe(false);
+    expect(copy.calendar.homeSnackUsed).toBe(false);
     expect(copy.runner.name).toBe("ADA");
   });
 

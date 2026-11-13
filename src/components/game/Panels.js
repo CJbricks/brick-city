@@ -286,7 +286,7 @@ export function InventoryView({ game, onEat, onEquip, onClose }) {
 export function BonkChoice({ gels, choiceIndex, onEat, onDecline, onHover }) {
   return (
     <Window title="Bonk" testId="bonk-choice">
-      <p>You are about to bonk mid-race! Eat a Stride Fuel gel before the bonk hits?</p>
+      <p>You are starting to bonk! Eat a Stride Fuel gel before the bonk completes?</p>
       <button
         type="button"
         className={choiceIndex === 0 ? "menu-row selected" : "menu-row"}
@@ -303,7 +303,7 @@ export function BonkChoice({ gels, choiceIndex, onEat, onDecline, onHover }) {
         onMouseEnter={() => onHover(1)}
         onClick={onDecline}
       >
-        Tough it out (do not eat gel)
+        Push through (let bonk hit)
       </button>
     </Window>
   );

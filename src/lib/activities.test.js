@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyEatGel,
   applyEquip,
+  applyHomeFood,
   applyNap,
   applyPurchase,
   applyRace,
@@ -275,6 +276,43 @@ describe("energy blocks and gels", () => {
     const late = fresh();
     late.energy = 4;
     expect(applyNap(late).ok).toBe(false);
+  });
+
+  it("cooks once a day at home for free, then the kitchen closes until sleep", () => {
+    const start = fresh();
+    start.condition.nutrition = 40;
+    start.energy = 3;
+    const meal = applyHomeFood(start, "meal");
+    expect(meal.ok).toBe(true);
+    expect(meal.state.condition.nutrition).toBe(68);
+    expect(meal.state.condition.mealQuality).toBe("good");
+    expect(meal.state.condition.junk).toBe(false);
+    expect(meal.state.energy).toBe(3);
+    expect(meal.state.coins).toBe(48);
+    expect(meal.state.calendar.homeMealUsed).toBe(true);
+    expect(applyHomeFood(meal.state, "meal").ok).toBe(false);
+
+    const snack = applyHomeFood(meal.state, "snack");
+    expect(snack.ok).toBe(true);
+    expect(snack.state.condition.nutrition).toBe(82);
+    expect(snack.state.condition.mealQuality).toBe("poor");
+    expect(snack.state.condition.junk).toBe(true);
+    expect(snack.state.energy).toBe(3);
+    expect(applyHomeFood(snack.state, "snack").ok).toBe(false);
+
+    const morning = applySleep(snack.state);
+    expect(morning.state.calendar.homeMealUsed).toBe(false);
+    expect(morning.state.calendar.homeSnackUsed).toBe(false);
+    expect(morning.state.energy).toBe(10);
+  });
+
+  it("buys grocery food without spending an energy block", () => {
+    const state = fresh();
+    state.energy = 1;
+    const bought = applyPurchase(state, "meal");
+    expect(bought.ok).toBe(true);
+    expect(bought.state.energy).toBe(1);
+    expect(bought.state.coins).toBe(30);
   });
 
   it("buys a gel for coins only, and eating one adds a single block", () => {

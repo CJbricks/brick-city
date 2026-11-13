@@ -131,7 +131,7 @@ export const SHOP = {
   meal: {
     id: "meal",
     label: "Healthy meal",
-    detail: "18 coins · 1 energy · pasta and greens",
+    detail: "18 coins · 0 energy · pasta and greens",
     cost: 18,
     nutrition: 32,
     mealName: "Pasta and greens",
@@ -142,7 +142,7 @@ export const SHOP = {
   snack: {
     id: "snack",
     label: "Quick snack",
-    detail: "7 coins · 1 energy · counter pastry",
+    detail: "7 coins · 0 energy · counter pastry",
     cost: 7,
     nutrition: 14,
     mealName: "Counter pastry",
@@ -364,6 +364,8 @@ export function createNewGame({ name, gender }) {
       fatigueSamples: [START_FATIGUE],
       nutritionSamples: [START_NUTRITION],
       sleepSamples: [],
+      homeMealUsed: false,
+      homeSnackUsed: false,
       trainedToday: false,
       daysSinceRun: 0,
       hardWeeks: 0,
@@ -671,6 +673,8 @@ export function applySleep(state) {
   // Sleep is the only full refill. The clock goes back to Morning with it.
   next.energy = MAX_ENERGY;
   next.nappedToday = false;
+  next.calendar.homeMealUsed = false;
+  next.calendar.homeSnackUsed = false;
   next.calendar.slot = slotFromEnergy(MAX_ENERGY);
   next.calendar.trainedToday = false;
   lines.push("Energy is back to 10/10.");
@@ -711,11 +715,8 @@ export function applyNap(state) {
 export function applyPurchase(state, itemId) {
   const item = SHOP[itemId];
   if (!item) return refuse(state, ["The shelf doesn't have that."]);
-  // A gel is pocket fuel. Buying it must not burn the block it is meant to restore.
-  const energyCost = itemId === "gel" ? 0 : 1;
-  if (readEnergy(state) < energyCost) {
-    return refuse(state, [LOW_ENERGY]);
-  }
+  // Food, gels, and gear are fueling. They cost coins, never an energy block,
+  // so eating cannot make you too tired to eat.
   if (state.coins < item.cost) {
     return refuse(state, [`You need ${item.cost} coins. A shift at the Run Store would cover it.`]);
   }
@@ -730,9 +731,49 @@ export function applyPurchase(state, itemId) {
     next.condition.mealQuality = item.mealQuality;
     next.condition.junk = item.junk;
   }
-  spendEnergy(next, energyCost, false);
   sample(next);
   return finish(before, next, [...item.lines]);
+}
+
+const HOME_FOOD = {
+  meal: {
+    nutrition: 28,
+    mealName: "Home pasta",
+    mealQuality: "good",
+    junk: false,
+    flag: "homeMealUsed",
+    lines: ["You cook at home. Free, and it is a real meal."],
+  },
+  snack: {
+    nutrition: 14,
+    mealName: "Kitchen leftover",
+    mealQuality: "poor",
+    junk: true,
+    flag: "homeSnackUsed",
+    lines: ["A quick bite from the kitchen. It fills you, then it fades."],
+  },
+};
+
+/**
+ * The kitchen is free and costs no energy, once a day for each dish.
+ * The grocery stays useful because it is not limited to one plate, and
+ * because a gel still has to be bought. Sleep clears both flags.
+ */
+export function applyHomeFood(state, kind) {
+  const food = HOME_FOOD[kind];
+  if (!food) return refuse(state, ["The kitchen does not have that."]);
+  if (state.calendar[food.flag]) {
+    return refuse(state, ["The kitchen is done for today. The grocery is still open."]);
+  }
+  const before = state;
+  const next = clone(state);
+  next.condition.nutrition = clampMeter(next.condition.nutrition + food.nutrition);
+  next.condition.mealName = food.mealName;
+  next.condition.mealQuality = food.mealQuality;
+  next.condition.junk = food.junk;
+  next.calendar[food.flag] = true;
+  sample(next);
+  return finish(before, next, [...food.lines]);
 }
 
 /**
@@ -818,7 +859,7 @@ function scaleXp(xp, factor) {
   return scaled;
 }
 
-const BONK_PROMPT = "You're about to bonk mid-race! Eat a Stride Fuel gel before the bonk hits?";
+const BONK_PROMPT = "You're starting to bonk! Eat a Stride Fuel gel before the bonk completes?";
 
 function gelChoicePending(state, threat, choice) {
   return Boolean(threat.bonk && (state.gels || 0) > 0 && choice !== "eat" && choice !== "decline");
@@ -1004,6 +1045,8 @@ export function perform(state, action, roll = 0.5) {
       return applyNap(state);
     case "buy":
       return applyPurchase(state, action.id);
+    case "home-food":
+      return applyHomeFood(state, action.id);
     case "shoe":
       return applyShoe(state, action.id);
     case "equip":
@@ -1067,6 +1110,20 @@ export function menuFor(locationId, state) {
             napBlocked,
             napReason,
           ),
+          item(
+            "Eat healthy meal",
+            state.calendar.homeMealUsed ? "Used today" : "Free · +28 Nutrition (1/day)",
+            { type: "home-food", id: "meal" },
+            Boolean(state.calendar.homeMealUsed),
+            "The kitchen meal is used. Sleep, or buy food at the grocery.",
+          ),
+          item(
+            "Eat quick snack",
+            state.calendar.homeSnackUsed ? "Used today" : "Free · +14 Nutrition (1/day)",
+            { type: "home-food", id: "snack" },
+            Boolean(state.calendar.homeSnackUsed),
+            "The kitchen snack is used. Sleep, or buy food at the grocery.",
+          ),
           item("Swap Shoes", "Closet", { type: "open-gear" }),
           item("Save Game", "This browser only", { type: "save" }),
         ],
@@ -1099,8 +1156,8 @@ export function menuFor(locationId, state) {
         speaker: "Grocery",
         intro: "The produce is better than the pastry case. Both are for sale.",
         items: [
-          item(SHOP.meal.label, SHOP.meal.detail, { type: "buy", id: "meal" }, state.coins < SHOP.meal.cost || readEnergy(state) < 1, state.coins < SHOP.meal.cost ? "Not enough coins." : LOW_ENERGY),
-          item(SHOP.snack.label, SHOP.snack.detail, { type: "buy", id: "snack" }, state.coins < SHOP.snack.cost || readEnergy(state) < 1, state.coins < SHOP.snack.cost ? "Not enough coins." : LOW_ENERGY),
+          item(SHOP.meal.label, SHOP.meal.detail, { type: "buy", id: "meal" }, state.coins < SHOP.meal.cost, "Not enough coins."),
+          item(SHOP.snack.label, SHOP.snack.detail, { type: "buy", id: "snack" }, state.coins < SHOP.snack.cost, "Not enough coins."),
           item(SHOP.gel.label, `${SHOP.gel.detail} · held ${state.gels}`, { type: "buy", id: "gel" }, state.coins < SHOP.gel.cost, "Not enough coins."),
         ],
       };
