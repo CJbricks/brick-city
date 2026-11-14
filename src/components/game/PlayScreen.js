@@ -15,9 +15,10 @@
  * also unlocks the audio clock in that same turn, which is what phones
  * require before any note can play.
  *
- * The only sign interaction is the welcome post beside Home. Pressing
- * A on it opens the city name and motto. Building name boards are
- * paint, so they never reach this function.
+ * The only city-plaque interaction is the welcome post beside Home.
+ * Pressing A on it opens the city name and motto. The HOME / GROCERY
+ * boards are paint. The 5K board and the TRACK name are not: town.js
+ * marks those tiles as the track, so A opens the workout menu.
  */
 
 "use client";

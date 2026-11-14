@@ -24,6 +24,9 @@
  * only) the window and streetlamp glows. The glows are last so the dark
  * grade does not paint over the lamps. Win confetti is a screen-space
  * layer on top of that, and it does not take clicks.
+ *
+ * A small "A" floats over your head only while your feet are on a gold
+ * mat. The mat list is activationTiles(), the same squares the map paints.
  */
 
 "use client";
@@ -33,6 +36,7 @@ import { RUNNER_FRAMES, RUNNER_H, RUNNER_W, makeRunnerSheet, renderWorld, runner
 import { CONFETTI_MS, pieceCount, spawnPieces, stepPieces } from "@/game/confetti";
 import {
   TILE,
+  activationTiles,
   buildWorld,
   footBlocked,
   lookupInteract,
@@ -240,6 +244,37 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
       const player = new PIXI.Sprite({ roundPixels: true });
       player.anchor.set(0.5, 1);
       actors.addChild(player);
+      // World-space, so the camera carries it. eventMode none so it
+      // never eats a tap on the map. One letter, only while you stand
+      // on a mat, so a phone screen is not full of prompts.
+      const prompt = new PIXI.Graphics();
+      prompt.eventMode = "none";
+      actors.addChild(prompt);
+      let padKeys = new Set();
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      function drawPrompt(x, y) {
+        prompt.clear();
+        // 5×5 gold A with a dark lip. 2px blocks, so it stays a pixel
+        // letter after the camera's integer scale.
+        const cells = [
+          [1, 0], [2, 0], [3, 0],
+          [0, 1], [4, 1],
+          [0, 2], [1, 2], [2, 2], [3, 2], [4, 2],
+          [0, 3], [4, 3],
+          [0, 4], [4, 4],
+        ];
+        const ox = Math.round(x) - 5;
+        const oy = Math.round(y);
+        for (const [cx, cy] of cells) {
+          prompt.beginPath();
+          prompt.rect(ox + cx * 2 - 1, oy + cy * 2 - 1, 4, 4).fill({ color: 0x3e1c10 });
+        }
+        for (const [cx, cy] of cells) {
+          prompt.beginPath();
+          prompt.rect(ox + cx * 2, oy + cy * 2, 2, 2).fill({ color: 0xfff1c2 });
+        }
+      }
 
       let arrival = null;
       let mapKey = "";
@@ -278,6 +313,7 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
         const game = propsRef.current.game;
         if (!game) return;
         worldRef.current = buildWorld(game);
+        padKeys = new Set(activationTiles(worldRef.current).map((tile) => `${tile.tx},${tile.ty}`));
         sparkles = shimmerSpots(worldRef.current.ground);
         for (const sprite of npcSprites) sprite.destroy();
         npcSprites.length = 0;
@@ -383,6 +419,19 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
         player.y = pos.current.y + FOOT_DROP;
 
         fxMs += ticker.deltaMS;
+        const feet = tileOf(pos.current.x, pos.current.y);
+        const onPad = !frozen && padKeys.has(`${feet.tx},${feet.ty}`);
+        if (onPad) {
+          // One pixel of bob. Reduced-motion keeps the letter still.
+          const bob = reduceMotion ? 0 : Math.round(Math.sin(fxMs / 280));
+          // Beside the head, not above it. Name boards sit on the same
+          // tile, and an A over the cap disappears behind the letters.
+          actors.addChild(prompt);
+          const side = pos.current.facing === "left" ? -22 : 18;
+          drawPrompt(player.x + side, player.y - 30 + bob);
+        } else {
+          prompt.clear();
+        }
         shadows.clear();
         for (const foot of npcFeet) paintShadow(foot.x, foot.y);
         paintShadow(player.x, player.y);

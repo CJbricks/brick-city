@@ -3,6 +3,10 @@
  * The week, played as data. These tests run the same functions the menus
  * call: an easy run, three rest days, Sunday's summary, a bonked 5K, a
  * clean 5K, the rival, and the unlock checks.
+ *
+ * Track and park workouts are in here too. Threshold and Interval Run
+ * have to raise Peak more than Endurance and cost two energy blocks.
+ * Zone 2 raises both meters about evenly and costs one.
  */
 
 import { describe, expect, it } from "vitest";
@@ -19,6 +23,8 @@ import {
   applyShoe,
   applySleep,
   createNewGame,
+  menuFor,
+  perform,
 } from "@/lib/activities";
 import { isMountainOpen, isTenKOpen, mountainStatus } from "@/lib/unlocks";
 import { xpToReachLevel } from "@/lib/xp";
@@ -341,5 +347,110 @@ describe("energy blocks and gels", () => {
     expect(eaten.state.energy).toBe(9);
     expect(eaten.state.gels).toBe(0);
     expect(eaten.state.condition.nutrition).toBe(52);
+  });
+});
+
+function meterGain(runId) {
+  const before = fresh();
+  const result = applyRun(before, runId);
+  return {
+    result,
+    peak: result.state.condition.peak - before.condition.peak,
+    endurance: result.state.condition.endurance - before.condition.endurance,
+    fatigue: result.state.condition.fatigue - before.condition.fatigue,
+    energy: before.energy - result.state.energy,
+  };
+}
+
+function menuIds(locationId) {
+  return menuFor(locationId, fresh()).items
+    .map((entry) => entry.action?.id)
+    .filter(Boolean);
+}
+
+describe("track, treadmill, and park workouts", () => {
+  it("puts threshold and interval runs on the track and the treadmill, and zone 2 on the park", () => {
+    expect(menuIds("track")).toEqual(expect.arrayContaining(["intervals", "threshold", "interval-run", "5k"]));
+    expect(menuIds("gym")).toEqual(expect.arrayContaining(["treadmill", "threshold", "interval-run"]));
+    expect(menuIds("park")).toContain("zone-2");
+    expect(menuIds("gym")).not.toContain("zone-2");
+    expect(menuIds("park")).not.toContain("threshold");
+    expect(menuIds("track")).not.toContain("zone-2");
+
+    const track = menuFor("track", fresh());
+    expect(track.items.find((entry) => entry.action.id === "threshold").label).toBe("Threshold Run");
+    expect(track.items.find((entry) => entry.action.id === "interval-run").label).toBe("Interval Run");
+    expect(menuFor("park", fresh()).items.find((entry) => entry.action.id === "zone-2").label).toBe("Zone 2 Run");
+  });
+
+  it("runs every track workout to the end, including the 5K", () => {
+    const menu = menuFor("track", fresh());
+    for (const id of ["intervals", "threshold", "interval-run"]) {
+      const item = menu.items.find((entry) => entry.action.id === id);
+      const done = perform(fresh(), item.action, 0.9, () => 0.9);
+      expect(done.ok, id).toBe(true);
+      expect(done.lines.length, id).toBeGreaterThan(0);
+      expect(done.state.energy, id).toBeLessThan(10);
+      expect(done.state.xp.overall, id).toBeGreaterThan(0);
+      expect(done.state.progress.totalMiles, id).toBeGreaterThan(0);
+      expect(done.state.condition.peak, id).toBeGreaterThan(20);
+    }
+    const raceItem = menu.items.find((entry) => entry.action.id === "5k");
+    expect(raceItem.action).toEqual({ type: "open-race", id: "5k" });
+    const raced = applyRace(fresh(), "5k", 0.9);
+    expect(raced.ok).toBe(true);
+    expect(raced.state.progress.fiveKFinished).toBe(true);
+    expect(raced.state.energy).toBe(9);
+    expect(raced.state.xp.overall).toBeGreaterThan(0);
+  });
+
+  it("makes threshold and interval runs raise Peak more than Endurance", () => {
+    for (const id of ["threshold", "interval-run"]) {
+      const gain = meterGain(id);
+      expect(gain.result.ok, id).toBe(true);
+      expect(gain.endurance, id).toBeGreaterThan(0);
+      expect(gain.peak, id).toBeGreaterThan(gain.endurance);
+      expect(gain.fatigue, id).toBeGreaterThan(meterGain("easy-run").fatigue);
+      expect(gain.energy, id).toBe(2);
+      expect(gain.result.state.calendar.trainedToday, id).toBe(true);
+    }
+    // One block left is not enough for a heavy session. The menu says so
+    // before the run starts, and the run itself refuses.
+    const tired = fresh();
+    tired.energy = 1;
+    const row = menuFor("track", tired).items.find((entry) => entry.action.id === "threshold");
+    expect(row.disabled).toBe(true);
+    expect(row.detail).toMatch(/2 energy/);
+    const refused = applyRun(tired, "interval-run");
+    expect(refused.ok).toBe(false);
+    expect(refused.state).toBe(tired);
+    expect(tired.energy).toBe(1);
+  });
+
+  it("counts a hard speed session toward soreness and leaves zone 2 easy", () => {
+    const cooked = fresh();
+    cooked.condition.fatigue = 70;
+    expect(applyRun(cooked, "threshold").state.condition.sore).toBe(true);
+    const also = fresh();
+    also.condition.fatigue = 70;
+    expect(applyRun(also, "interval-run").state.condition.sore).toBe(true);
+    const easy = fresh();
+    easy.condition.fatigue = 70;
+    expect(applyRun(easy, "zone-2").state.condition.sore).toBe(false);
+  });
+
+  it("makes a zone 2 run raise Endurance and Peak about evenly", () => {
+    const gain = meterGain("zone-2");
+    expect(gain.result.ok).toBe(true);
+    expect(gain.endurance).toBeGreaterThan(0);
+    expect(gain.peak).toBeGreaterThan(0);
+    expect(Math.abs(gain.endurance - gain.peak)).toBeLessThanOrEqual(1);
+    expect(gain.energy).toBe(1);
+    expect(gain.fatigue).toBeGreaterThan(0);
+    expect(gain.fatigue).toBeLessThan(meterGain("threshold").fatigue);
+    expect(gain.result.lines.join(" ")).toMatch(/Endurance and Peak/);
+    const broke = fresh();
+    broke.energy = 0;
+    expect(applyRun(broke, "zone-2").ok).toBe(false);
   });
 });

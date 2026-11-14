@@ -22,6 +22,10 @@
  * do not share a tile. The 5K board used to sit under the west rail of
  * the track, which also hid the gate onto the oval.
  *
+ * Gold mats are not a second map. paintActivationPads reads
+ * activationTiles() from town.js, which is the same grid A checks.
+ * A mat is only drawn where you can stand and press A.
+ *
  * Runner letters (the pictures are drawn as text so the outline is easy
  * to see in the source):
  *   o outline   C cap   P panel   B brim   H hair
@@ -32,7 +36,7 @@
  * lit edge and the shaded edge. That is the 3-tone shading.
  */
 
-import { BUILDINGS, CITY_SIGNS, COLS, ROWS, TILE, buildWorld } from "@/game/town";
+import { BUILDINGS, CITY_SIGNS, COLS, ROWS, TILE, activationTiles, buildWorld } from "@/game/town";
 import { townLights } from "@/lib/lighting";
 import { applyBrandOutfit } from "@/game/brandColors";
 
@@ -1383,6 +1387,36 @@ function drawTrailMarker(ctx) {
   box(ctx, 16 * TILE + 2, 23 * TILE - 22, 16, 10, "#f2c14e", "#fff1c2", "#8a5a20");
 }
 
+/**
+ * A warm paver, one tile, original pixels. Sidewalk is pale gray
+ * (#d7d0c3). This is brick red with a gold lip so it still reads when
+ * the dusk wash darkens the whole map: the lip is light gold, and the
+ * courses stay darker than that lip in every slot.
+ */
+function drawActivationPad(ctx, tx, ty) {
+  const px = tx * TILE;
+  const py = ty * TILE;
+  ink(ctx, px, py, TILE, TILE, "#3e1c10");
+  ink(ctx, px + 2, py + 2, TILE - 4, TILE - 4, "#f2c14e");
+  ink(ctx, px + 4, py + 4, TILE - 8, TILE - 8, "#c4512c");
+  ink(ctx, px + 4, py + 14, TILE - 8, 2, "#8d3a28");
+  ink(ctx, px + 4, py + 24, TILE - 8, 2, "#8d3a28");
+  ink(ctx, px + 14, py + 4, 2, 10, "#8d3a28");
+  ink(ctx, px + 22, py + 16, 2, 8, "#8d3a28");
+  ink(ctx, px + 6, py + 6, 10, 2, "#fff1c2");
+  ink(ctx, px + 6, py + 8, 2, 4, "#f6d7a2");
+}
+
+/**
+ * Paint every stand-here square. Returns the same list the grid uses,
+ * so a test can compare the rects to the interaction tiles.
+ */
+export function paintActivationPads(ctx, world) {
+  const tiles = activationTiles(world);
+  for (const tile of tiles) drawActivationPad(ctx, tile.tx, tile.ty);
+  return tiles;
+}
+
 function drawAreaFences(ctx, scene) {
   for (const fence of scene.fences) {
     if (fence.id.startsWith("park") || fence.id.startsWith("track")) paintFence(ctx, fence);
@@ -1408,6 +1442,9 @@ export function renderWorld(state, waterFrame = 0) {
       drawTile(ctx, world.ground[y][x], x, y, world.ground, waterFrame);
     }
   }
+  // After the ground, before buildings and signs. The 5K letters paint
+  // later, so they sit on the mat instead of hiding under it.
+  paintActivationPads(ctx, world);
   for (const building of BUILDINGS) {
     const px = building.x * TILE;
     const py = building.y * TILE;

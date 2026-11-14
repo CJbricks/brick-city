@@ -26,6 +26,16 @@
  * next to the west lane. art.js must not paint a fence on those tiles
  * or on the 5K board.
  *
+ * Pressing A opens the track from the race booth and from the painted
+ * signs. The 5K board is the sidewalk tile (26, 11). The TRACK name
+ * board sits on the road above the north rail and covers two tiles.
+ * Those pictures moved in the oval rebuild. The button used to listen
+ * only to the booth, so standing on a sign did nothing.
+ *
+ * activationTiles() is the list of squares you can stand on to press A.
+ * art.js paints those squares as gold mats. It does not keep a second
+ * list of coordinates, so the mat cannot drift off the button again.
+ *
  * cityMaps() is the list of overworlds that actually exist. Brick City
  * is the only one. Ridgeview, Lakeport, Mesa Verde Flats, Flatland, and
  * Summit Hollow are names in the design. They are in UNBUILT_CITIES and
@@ -114,6 +124,22 @@ export const TRACK_GATE = [
   { tx: 27, ty: 15 },
 ];
 
+/**
+ * Painted signs that open the same menu as the race booth (PLACES
+ * "track" at 26, 12). id matches sceneryLayout() in art.js so a test
+ * can check the picture and the button still share a tile.
+ *
+ * "5k" is one sidewalk tile. "track" is the TRACK name on the road,
+ * wide enough to spill into the next tile. Both stay walkable. A looks
+ * at the tile you face, then the tile under your feet, so the sign
+ * itself has to be in this list or standing on it is a dead button.
+ */
+export const TRACK_SIGN_TILES = [
+  { id: "5k", tx: 26, ty: 11 },
+  { id: "track", tx: 27, ty: 9 },
+  { id: "track", tx: 28, ty: 9 },
+];
+
 export function trackLaneTiles() {
   const tiles = [];
   TRACK_ROWS.forEach((row, yy) => {
@@ -155,6 +181,10 @@ const NPCS = [
     palette: "rival",
     gender: "male",
     location: "rival",
+    // His own square is solid. This is the sidewalk tile just north of
+    // him, the one you reach walking down from the booth. Standing on
+    // it and pressing A opens the race, same as facing him.
+    stand: { tx: 26, ty: 15 },
   },
   {
     id: "juniper",
@@ -362,12 +392,23 @@ export function buildWorld(state) {
   for (const place of PLACES) {
     interact[place.ty][place.tx] = place.id;
   }
+  // Booth is already "track". The signs are separate tiles. Without
+  // this, the 5K board (one step north of the booth) and the TRACK
+  // name on the road ignore A.
+  for (const tile of TRACK_SIGN_TILES) {
+    interact[tile.ty][tile.tx] = "track";
+  }
   for (const building of BUILDINGS) {
     interact[building.door.y][building.door.x] = building.id;
   }
   for (const npc of NPCS) {
     blocked[npc.ty][npc.tx] = true;
     interact[npc.ty][npc.tx] = npc.location;
+    // A mat in front of a person, only when that square is not already
+    // a door or a sign. The person's own square stays solid.
+    if (npc.stand && !interact[npc.stand.ty][npc.stand.tx]) {
+      interact[npc.stand.ty][npc.stand.tx] = npc.location;
+    }
   }
   // Only the welcome post is solid and readable. The old per-place
   // posts are not in CITY_SIGNS, so those tiles are not blocked here
@@ -454,6 +495,26 @@ export function footBlocked(world, x, y) {
     const tile = tileOf(px, py);
     return isBlocked(world, tile.tx, tile.ty);
   });
+}
+
+/**
+ * Squares a runner can stand on that answer A. Blocked interaction
+ * squares (a person, a door buried in a building, the welcome post)
+ * are targets you face. They are not mats, because you cannot stand
+ * on them. The painter and the "press A" hint both read this list.
+ */
+export function activationTiles(world) {
+  const tiles = [];
+  if (!world?.interact) return tiles;
+  for (let ty = 0; ty < world.interact.length; ty += 1) {
+    const row = world.interact[ty];
+    for (let tx = 0; tx < row.length; tx += 1) {
+      const id = row[tx];
+      if (!id || world.blocked[ty][tx]) continue;
+      tiles.push({ tx, ty, id });
+    }
+  }
+  return tiles;
 }
 
 /**
