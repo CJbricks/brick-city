@@ -6,12 +6,14 @@
  * per building, and that an old brick-city-save-v1 blob still loads.
  * The track test walks the oval with the same foot box as the runner,
  * and it refuses a fence that shares a tile with a sign or the gate.
+ * It also presses A on the 5K board and the TRACK name: the tile under
+ * you, and every neighbor facing the sign, has to open the track.
  */
 
 import { describe, expect, it } from "vitest";
 import { createNewGame } from "@/lib/activities";
-import { sceneryLayout, tilesTouchedBy } from "@/game/art";
-import { COLS, DIR, ROWS, TRACK_GATE, UNBUILT_CITIES, buildWorld, canReach, cityMaps, entranceAt, footBlocked, homeSpawn, isBlocked, lookupInteract, noteArrival, PLACES, TILE, signCopy, trackLaneTiles, worldPixelSize } from "@/game/town";
+import { paintActivationPads, sceneryLayout, tilesTouchedBy } from "@/game/art";
+import { COLS, DIR, ROWS, TRACK_GATE, TRACK_SIGN_TILES, UNBUILT_CITIES, activationTiles, buildWorld, canReach, cityMaps, entranceAt, footBlocked, homeSpawn, isBlocked, lookupInteract, noteArrival, PLACES, TILE, signCopy, trackLaneTiles, worldPixelSize } from "@/game/town";
 import { deserialize } from "@/lib/save";
 
 function citySignsOnMap(world) {
@@ -214,6 +216,115 @@ function walkFeet(world, from, to) {
   }
   expect({ x, y }).toEqual(to);
 }
+
+const OPPOSITE = { up: "down", down: "up", left: "right", right: "left" };
+
+/**
+ * A checks the tile you are facing, then the tile under your feet.
+ * Both have to come back as the same place, or standing on a sign
+ * only works when you happen to face the old booth.
+ */
+function expectSignOpens(world, tile, id) {
+  for (const facing of Object.keys(DIR)) {
+    expect(lookupInteract(world, tile.tx, tile.ty, facing), `on ${tile.tx},${tile.ty} facing ${facing}`).toBe(id);
+  }
+  for (const facing of Object.keys(DIR)) {
+    const [dx, dy] = DIR[facing];
+    const nx = tile.tx + dx;
+    const ny = tile.ty + dy;
+    const toward = OPPOSITE[facing];
+    expect(lookupInteract(world, nx, ny, toward), `from ${nx},${ny} facing ${toward}`).toBe(id);
+  }
+}
+
+describe("track sign interaction", () => {
+  it("opens the track from the 5K board, the TRACK name, and the booth", () => {
+    const world = buildWorld(createNewGame({ name: "Ada", gender: "female" }));
+    const scene = sceneryLayout();
+    // The picture and the button have to name the same tiles. Moving
+    // the board in art.js without moving TRACK_SIGN_TILES fails here.
+    for (const id of ["5k", "track"]) {
+      const painted = tilesTouchedBy(scene.signs.find((sign) => sign.id === id));
+      const listed = TRACK_SIGN_TILES.filter((tile) => tile.id === id);
+      expect(painted.map((tile) => `${tile.tx},${tile.ty}`).sort()).toEqual(
+        listed.map((tile) => `${tile.tx},${tile.ty}`).sort(),
+      );
+      for (const tile of painted) {
+        expect(world.interact[tile.ty][tile.tx], `${id} ${tile.tx},${tile.ty}`).toBe("track");
+        expect(isBlocked(world, tile.tx, tile.ty), `${id} sign is solid`).toBe(false);
+        expectSignOpens(world, tile, "track");
+      }
+    }
+    const booth = PLACES.find((place) => place.id === "track");
+    expect(booth).toMatchObject({ tx: 26, ty: 12 });
+    expectSignOpens(world, booth, "track");
+    // East of the 5K board is the west rail, not a path. A still
+    // resolves if a later edit opens that grass. You just cannot
+    // walk there today.
+    expect(isBlocked(world, 27, 11)).toBe(true);
+    expect(lookupInteract(world, 27, 11, "left")).toBe("track");
+  });
+
+  it("still opens the other doorsteps and people", () => {
+    const world = buildWorld(createNewGame({ name: "Ada", gender: "female" }));
+    for (const place of PLACES) {
+      expect(lookupInteract(world, place.tx, place.ty, place.facing), place.id).toBe(place.id);
+      // Standing on the mat and looking away still counts. The feet
+      // are the doorstep. Facing the door is the other way in.
+      expect(lookupInteract(world, place.tx, place.ty, "down"), `${place.id} feet`).toBe(place.id);
+    }
+    // Remy stands on the sidewalk south of the booth. Face him.
+    expect(lookupInteract(world, 25, 16, "right")).toBe("rival");
+    expect(lookupInteract(world, 26, 15, "down")).toBe("rival");
+  });
+});
+
+describe("activation mats", () => {
+  it("paints a pad on every tile you can stand on to press A, and nowhere else", () => {
+    const world = buildWorld(createNewGame({ name: "Ada", gender: "female" }));
+    const standable = [];
+    for (let ty = 0; ty < world.interact.length; ty += 1) {
+      for (let tx = 0; tx < world.interact[ty].length; tx += 1) {
+        if (world.interact[ty][tx] && !isBlocked(world, tx, ty)) {
+          standable.push({ tx, ty, id: world.interact[ty][tx] });
+        }
+      }
+    }
+    const pads = activationTiles(world);
+    expect(pads).toEqual(standable);
+    // The painter stamps those squares and no others. A full-tile rect
+    // is the mat's outline. Anything else would be a second list.
+    const stamped = [];
+    const ctx = {
+      fillStyle: "",
+      fillRect(x, y, w, h) {
+        if (w === TILE && h === TILE) stamped.push({ tx: x / TILE, ty: y / TILE });
+      },
+    };
+    const painted = paintActivationPads(ctx, world);
+    expect(painted).toEqual(pads);
+    expect(stamped).toEqual(pads.map(({ tx, ty }) => ({ tx, ty })));
+    for (const pad of pads) {
+      expect(world.interact[pad.ty][pad.tx], `${pad.tx},${pad.ty}`).toBe(pad.id);
+      expect(isBlocked(world, pad.tx, pad.ty), `${pad.tx},${pad.ty}`).toBe(false);
+    }
+    const key = (tile) => `${tile.tx},${tile.ty}`;
+    const padKeys = new Set(pads.map(key));
+    for (const tile of TRACK_SIGN_TILES) expect(padKeys.has(key(tile)), key(tile)).toBe(true);
+    const booth = PLACES.find((place) => place.id === "track");
+    expect(padKeys.has(key(booth))).toBe(true);
+    for (const id of ["park", "gym", "mountain", "home", "grocery", "store", "depot"]) {
+      const place = PLACES.find((item) => item.id === id);
+      expect(pads).toContainEqual({ tx: place.tx, ty: place.ty, id });
+    }
+    // Remy's mat is the sidewalk just north of him, not the square he blocks.
+    expect(pads).toContainEqual({ tx: 26, ty: 15, id: "rival" });
+    expect(padKeys.has("26,16")).toBe(false);
+    expect(pads.some((pad) => pad.id === "sign-city")).toBe(false);
+    expect(lookupInteract(world, 26, 15, "up")).toBe("rival");
+    expect(lookupInteract(world, 26, 17, "up")).toBe("rival");
+  });
+});
 
 describe("track gate and signs", () => {
   it("joins the lane into one oval and keeps fences off signs and the gate", () => {

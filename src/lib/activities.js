@@ -13,6 +13,11 @@
  * Shoes, belts, vests, and sponsor deals are applied here too. The numbers
  * live in catalog.js and sponsors.js. This file only decides what a button
  * does to the save: buy, equip, sign, skip, sleep, run, race.
+ *
+ * Workouts are the RUNS table. `slots` is the energy cost. 2 is a heavy
+ * session. `peak` and `endurance` on a workout are the HUD meters (the
+ * orange bolt and the blue heart), not the Speed or Endurance attribute
+ * levels. `hard: true` is one strike toward soreness.
  */
 
 import { formatWhen, isSunday, sleepPlan, slotFromEnergy, summarizeWeek } from "@/lib/calendar";
@@ -304,6 +309,70 @@ const RUNS = {
     lines: [
       "Fast, jog, fast, jog. The oval rings.",
       "Peak Fitness jumps. That's the sharp stuff.",
+    ],
+  },
+  // Tempo. Two blocks, like the long run. Peak is the point. Endurance
+  // moves, but by less. Fatigue sits with the other hard sessions, well
+  // above an easy jog (that one actually lowers fatigue).
+  threshold: {
+    id: "threshold",
+    name: "Threshold Run",
+    slots: 2,
+    miles: 5,
+    fatigue: 17,
+    nutrition: -12,
+    peak: 10,
+    endurance: 4,
+    xp: { overall: 28, marathon: 20 },
+    attributes: { speed: 10, endurance: 4 },
+    hard: true,
+    training: true,
+    style: "road",
+    lines: [
+      "Comfortably hard. A word, not a sentence.",
+      "Peak climbs. Endurance comes along for the ride.",
+    ],
+  },
+  // Repeats with jogs between. Sharper than the tempo, so Peak gains
+  // more and the legs take a bigger fatigue hit. Still some Endurance.
+  "interval-run": {
+    id: "interval-run",
+    name: "Interval Run",
+    slots: 2,
+    miles: 4,
+    fatigue: 20,
+    nutrition: -12,
+    peak: 14,
+    endurance: 3,
+    xp: { overall: 32, marathon: 24 },
+    attributes: { speed: 14, mental: 3, endurance: 2 },
+    hard: true,
+    training: true,
+    style: "road",
+    lines: [
+      "Fast reps, then a jog until the legs come back.",
+      "Peak jumps. Endurance picks up a little.",
+    ],
+  },
+  // Easy aerobic. One block, a small fatigue bump, and the two fitness
+  // meters move by the same amount. Not a recovery jog: that one rests you.
+  "zone-2": {
+    id: "zone-2",
+    name: "Zone 2 Run",
+    slots: 1,
+    miles: 5,
+    fatigue: 4,
+    nutrition: -8,
+    peak: 3,
+    endurance: 3,
+    xp: { overall: 16, marathon: 8 },
+    attributes: { endurance: 6, recovery: 2 },
+    hard: false,
+    training: true,
+    style: "road",
+    lines: [
+      "Easy and steady. You could talk the whole way.",
+      "Endurance and Peak both grow, about the same.",
     ],
   },
   treadmill: {
@@ -654,7 +723,9 @@ export function applyRun(state, runId, rng = Math.random) {
   if (runId === "ridge-repeats" && !isMountainOpen(state)) {
     return refuse(state, ["The ranger hasn't opened the gate."]);
   }
-  const energyCost = activity.id === "long-run" || activity.id === "ridge-repeats" ? 2 : 1;
+  // The price is `slots` on the workout. Heavy runs say 2. Listing
+  // ids here used to miss any new one, so a 2-block session cost 1.
+  const energyCost = runEnergyCost(runId);
   if (readEnergy(state) < energyCost) {
     return refuse(state, [LOW_ENERGY]);
   }
@@ -1483,7 +1554,11 @@ function item(label, detail, action, disabled, disabledReason) {
 }
 
 function runEnergyCost(runId) {
-  return runId === "long-run" || runId === "ridge-repeats" ? 2 : 1;
+  // 1 block is a normal session. 2 is a heavy one (long run, ridge,
+  // threshold, interval run). The menu label and applyRun both call
+  // this, so the button and the charge cannot disagree.
+  const slots = RUNS[runId]?.slots;
+  return slots >= 2 ? slots : 1;
 }
 
 function runItem(state, runId) {
@@ -1550,6 +1625,8 @@ export function menuFor(locationId, state) {
         intro: "Rubber floors and a row of treadmills facing a brick wall.",
         items: [
           runItem(state, "treadmill"),
+          runItem(state, "threshold"),
+          runItem(state, "interval-run"),
           runItem(state, "strength"),
         ],
       };
@@ -1591,6 +1668,7 @@ export function menuFor(locationId, state) {
         intro: "A dirt loop circles the pond. The grass is for picnics, the path is for you.",
         items: [
           runItem(state, "easy-run"),
+          runItem(state, "zone-2"),
           runItem(state, "long-run"),
           runItem(state, "park-trail"),
           runItem(state, "yards"),
@@ -1603,6 +1681,8 @@ export function menuFor(locationId, state) {
         intro: "Lanes are open. The 5K board is nailed to the booth.",
         items: [
           runItem(state, "intervals"),
+          runItem(state, "threshold"),
+          runItem(state, "interval-run"),
           item("Brick City 5K", "Open · race readiness", { type: "open-race", id: "5k" }),
           item(
             "Community 10K",

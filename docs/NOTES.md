@@ -95,8 +95,8 @@ The HUD clock still says Morning, Midday, Afternoon, Evening, or Night. What act
 
 | Action | Blocks |
 |---|---|
-| Easy run, park trail, yards, intervals, treadmill, strength, shift, nap, 5K, Remy | 1 |
-| Long run, ridge repeats, 10K | 2 |
+| Easy run, zone 2, park trail, yards, track intervals, treadmill, strength, shift, nap, 5K, Remy | 1 |
+| Long run, ridge repeats, threshold, interval run, 10K | 2 |
 | Grocery food, gels, shoes, eating a gel, home kitchen | 0 |
 
 If you don't have enough blocks, the menu says to sleep or eat a gel. The sky moves with the bar: two blocks spent is one step of the day. Zero blocks is a spent night. That slot is what `sleepPlan` still reads, so going to bed with a full bar is a short poor sleep, and going to bed after a real day is the good one.
@@ -276,6 +276,8 @@ Sidewalk tiles are the letter `s` in `src/game/town.js`. They are walkable, like
 
 Home, the Grocery, the Gym, and the Run Store open when you step onto their mat. The check is in `noteArrival`. The first time the game looks at your tile (a new game starts on Home's mat, and a save can too) it only remembers the tile. A jump from the town map does the same. The menu opens on the step that changes the tile. Closing it with B leaves you standing there, and it does not open again until you walk off and come back. A still works if you want the menu without leaving. Park, the track, the mountain trail, and the depot are not in that list, so you face that spot and press A.
 
+The track spot is three pictures that share one menu: the race booth at tile (26, 12), the 5K board on the sidewalk at (26, 11), and the TRACK name on the road (tiles 27, 9 and 28, 9). Stand on any of them, or on a neighboring tile while facing it, and press A.
+
 ## The city sign
 
 There is one welcome sign. It stands on the sidewalk just west of Home's front mat, which is where a new runner appears (tile 4, 7, next to the mat at 5, 7). Turn left and press A. The plaque says Brick City and the motto, Every Mile Lays a Brick.
@@ -390,6 +392,66 @@ The 5K board stands on the sidewalk tile just west of the track (tile 26, 11), u
 `TRACK_ROWS` in `src/game/town.js` is one loop of lane tiles. Each corner is two tiles wide so every step is straight up, down, left, or right. The infield stays walkable, so stepping inside does not trap you. The gate is the sidewalk next to the west lane, including the race booth at (26, 12). `sceneryLayout()` in `src/game/art.js` is the list of boards and fences. Fences are painted first, boards after, and no fence rectangle shares a tile with a sign or with that gate. The park PARK board was moved up onto the road row for the same reason: it used to cross into the park fence's tile.
 
 On a phone the HUD card is full width and about 120 pixels tall. Dialogue used to open at the top of the map, so a short result line sat on top of the meters and cut them in half. Below 760 pixels wide, the window starts under that card and scrolls inside the space that is left. The d-pad stays in the bar under the map, not on top of the text.
+
+### Why the track sign ignored A
+
+The oval rebuild moved the 5K board onto the sidewalk tile just west of the track, (26, 11), and painted TRACK on the road above the north rail. The button did not move with them. `PLACES` still listed one track tile, the race booth at (26, 12).
+
+A does two lookups, in `lookupInteract`. First the tile you are facing. Then the tile under your feet. The sign tiles were in neither list. So:
+
+- Stand on the 5K board facing up, left, or right (the way you arrive if you walk up the sidewalk or in from the road) and press A. Nothing opens.
+- Face south, toward the booth, and the same press opens the track, because you are looking at (26, 12).
+- Stand on the TRACK letters on the road and press A. Nothing opens, from any side.
+
+The booth itself was fine. That is why it felt random: the picture you were reading was not the tile the game was listening to.
+
+`TRACK_SIGN_TILES` in `src/game/town.js` is those painted tiles. `buildWorld` marks each one `"track"`, the same id as the booth. Standing on the sign uses the feet check. Standing beside it and facing it uses the facing check. The menu is the same one, so Track Intervals, Threshold Run, Interval Run, and the 5K all start from any of those tiles. The signs are not saved. `brick-city-save-v1` still only stores the runner. An old save rebuilds this map when it loads.
+
+The letter A on a keyboard is not the confirm button. It is the left step of WASD. Confirm is Z, Enter, Space, or the on-screen A button. B is X, Esc, or the B button.
+
+### The gold mat
+
+The menus worked if you already knew the square. The sidewalk, the road, and the pebble path all looked the same, so the 5K board did not look like a button.
+
+`activationTiles()` in `src/game/town.js` walks the interaction grid and keeps every square that is not solid. That is the list of places you can stand and press A: Home, the Grocery, the Gym (treadmill and the new runs), the Run Store, the Park, the track booth, the 5K board, the TRACK name, the mountain gate, the depot, and the sidewalk tile just north of Remy. His own square stays solid. You can still face him from the other side. The mat is the obvious spot.
+
+`paintActivationPads()` in `src/game/art.js` draws that list and nothing else. There is no second copy of the coordinates. A test fails if a mat is missing, or if a mat shows up on a square A ignores. The welcome post and the doors hidden inside buildings are solid, so they do not get a mat. You face those.
+
+The mat is a brick-red paver with a gold lip and a light corner. Sidewalk is pale gray. The lip stays light gold, so the dusk and night wash (a dark tint over the whole map) does not turn the mat into the same color as the path.
+
+While your feet are on a mat, a small A bobs above your head. It hides when a menu is open. If the browser asks for less motion, the letter stays still. It is not saved. Old `brick-city-save-v1` files do not know about mats, and they do not need to.
+
+### How a workout is defined
+
+Every session you can start from a menu is one object in `RUNS` inside `src/lib/activities.js`. The menu does not invent numbers. `runItem` reads the object, and `applyRun` applies that same object when you confirm.
+
+| Field | What it does |
+|---|---|
+| `name` | The row in the menu |
+| `slots` | Energy blocks. 1 is a normal session. 2 is a heavy one. The menu and the charge both read this, so they cannot disagree. |
+| `miles` | Added to the week and to the shoes you wore |
+| `fatigue` | Added to the fatigue meter. A negative number is a recovery jog. |
+| `nutrition` | Usually negative. Spending blocks also drains a little food on top of this. |
+| `peak` | Added to the Peak meter (orange bolt on the HUD). This is sharpness, not the Speed attribute. |
+| `endurance` | Added to the Endurance meter (blue heart). This is not the Endurance attribute on the status sheet. |
+| `xp` | Overall XP, plus a specialty such as `marathon` |
+| `attributes` | Skill points. Speed, Endurance, Strength, Recovery, Mental. These level up. They do not fall when you rest. |
+| `hard` | `true` counts as a soreness strike. Two strikes (tired, hungry, worn-out shoes, a hard session, a hard week) makes you sore. |
+| `lines` | The short pages you tap through after the run. One string is one page. |
+| `style` | Which shoe bonus applies (`road`, `trail`, or `versatile`) |
+
+Balance, compared with what was already on the board:
+
+- Easy Recovery Run is 1 block, and fatigue goes down. It is rest, not fitness.
+- Track Intervals is 1 block, Peak +8, Endurance +1, fatigue +15. Sharp, short.
+- Long Run is 2 blocks, Endurance +7, Peak +1, fatigue +18. The endurance day.
+- Threshold Run is 2 blocks, Peak +10, Endurance +4, fatigue +17. A tempo. Peak is the main gain. Endurance moves less. It is a hard session, so it counts toward soreness the way intervals do.
+- Interval Run is 2 blocks, Peak +14, Endurance +3, fatigue +20. Repeats with a jog between. Sharper than the tempo, and the legs pay more.
+- Zone 2 Run is 1 block, Peak +3, Endurance +3, fatigue +4. Easy aerobic. Both meters grow, and by about the same amount. Fatigue stays low. It is not `hard`.
+
+Threshold and Interval Run are on the track menu and the gym treadmill menu. Zone 2 is on the park menu, next to the easy run. The old Track Intervals row is still there, and it is still the one that ticks `trackRuns` for the half-marathon checklist. The new sessions do not add a save field. An old `brick-city-save-v1` blob loads unchanged.
+
+The 5K is not a `RUNS` row. It is a race (`open-race` / `applyRace`). It stays on the track menu and still costs 1 block.
 
 ### How a note gets from the song file to the speaker
 
