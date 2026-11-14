@@ -8,8 +8,10 @@
  *
  * The closet, the Run Store racks, and the Sponsors list are the same kind
  * of menu, so the d-pad and the A/B buttons drive them. A race win starts
- * confetti in the town ticker. The dialogue does not wait for it. Saves
- * go to localStorage. There is no server and no Strava.
+ * confetti in the town ticker and a short victory fanfare. The dialogue
+ * does not wait for either. When the fanfare ends, the town theme
+ * returns. Saves go to localStorage. There is no server and no Strava.
+ * Music mute is its own key, not a field on the runner.
  *
  * The only sign interaction is the welcome post beside Home. Pressing
  * A on it opens the city name and motto. Building name boards are
@@ -19,6 +21,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { playVictory, setMusicCue, subscribeAudio, toggleMuted, trackForScene } from "@/game/audio/engine";
 import { Hud } from "@/components/game/Hud";
 import { Overworld } from "@/components/game/Overworld";
 import {
@@ -51,21 +54,30 @@ import { describeNeeds, isMountainOpen, mountainStatus } from "@/lib/unlocks";
 import { writeSave } from "@/lib/save";
 import { CONFETTI_MS } from "@/game/confetti";
 
-const SYSTEM = [
-  { label: "Runner status", detail: "Meters, attributes, gear, sponsors", action: { type: "open-status" } },
-  { label: "Sponsors", detail: "Shoe deals and fuel deals", action: { type: "open-sponsors" } },
-  { label: "This week", detail: "Miles, races, old summaries", action: { type: "open-week" } },
-  { label: "Closet", detail: "Shoes, belts, vests", action: { type: "open-gear" } },
-  { label: "How to play", detail: "Buttons", action: { type: "open-help" } },
-  { label: "Save game", detail: "This browser", action: { type: "save" } },
-  { label: "Title screen", detail: "Leave the town", action: { type: "title" } },
-];
+function systemItems(soundOn) {
+  return [
+    { label: "Runner status", detail: "Meters, attributes, gear, sponsors", action: { type: "open-status" } },
+    { label: "Sponsors", detail: "Shoe deals and fuel deals", action: { type: "open-sponsors" } },
+    { label: "This week", detail: "Miles, races, old summaries", action: { type: "open-week" } },
+    { label: "Closet", detail: "Shoes, belts, vests", action: { type: "open-gear" } },
+    { label: "How to play", detail: "Buttons", action: { type: "open-help" } },
+    {
+      label: soundOn ? "Sound: On" : "Sound: Off",
+      detail: "Press M",
+      action: { type: "toggle-sound" },
+      testId: "sound-toggle",
+    },
+    { label: "Save game", detail: "This browser", action: { type: "save" } },
+    { label: "Title screen", detail: "Leave the town", action: { type: "title" } },
+  ];
+}
 
 export function PlayScreen({ game, setGame, onTitle }) {
   const [panel, setPanel] = useState(null);
   const [ticker, setTicker] = useState("");
   const [mapNote, setMapNote] = useState("");
   const [partyId, setPartyId] = useState(0);
+  const [soundOn, setSoundOn] = useState(true);
   const worldRef = useRef(null);
   const gameRef = useRef(game);
   const panelRef = useRef(panel);
@@ -92,6 +104,12 @@ export function PlayScreen({ game, setGame, onTitle }) {
   useEffect(() => {
     if (frozen) worldRef.current?.clearHeld();
   }, [frozen]);
+
+  useEffect(() => subscribeAudio((prefs) => setSoundOn(!prefs.muted)), []);
+
+  useEffect(() => {
+    setMusicCue(trackForScene({ screen: "play", panel }));
+  }, [panel]);
 
   useEffect(() => {
     const pos = worldRef.current?.getPosition();
@@ -123,9 +141,20 @@ export function PlayScreen({ game, setGame, onTitle }) {
     if (nextTicker) setTicker(nextTicker);
     // Confetti is a timer in the town ticker, not a menu. Input still works.
     // CONFETTI_MS is the length of that timer. The id is what starts a new one.
-    if (extra.celebrate) setPartyId((current) => current + 1);
+    // The fanfare is the same win. It plays out, then the town theme
+    // returns even if this dialogue is still open.
+    if (extra.celebrate) {
+      setPartyId((current) => current + 1);
+      playVictory();
+    }
     if (lines && lines.length) {
-      setPanel({ type: "dialogue", speaker: extra.speaker || "Brick City", pages: lines, index: 0 });
+      setPanel({
+        type: "dialogue",
+        speaker: extra.speaker || "Brick City",
+        pages: lines,
+        index: 0,
+        music: extra.celebrate ? null : extra.music || null,
+      });
     } else {
       setPanel(null);
     }
@@ -146,9 +175,11 @@ export function PlayScreen({ game, setGame, onTitle }) {
       });
       return;
     }
+    const music = action.type === "rival" ? "battle" : action.type === "race" ? "race" : null;
     commit(result.state, result.lines, result.ticker, {
       celebrate: result.celebrate,
       speaker: result.speaker,
+      music,
     });
   }
 
@@ -175,6 +206,10 @@ export function PlayScreen({ game, setGame, onTitle }) {
     }
     if (action.type === "open-help") {
       setPanel({ type: "help" });
+      return;
+    }
+    if (action.type === "toggle-sound") {
+      toggleMuted();
       return;
     }
     if (action.type === "open-gear") {
@@ -257,6 +292,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
           { id: "later", label: "Not now" },
         ],
         choiceIndex: 0,
+        music: "battle",
       });
       return;
     }
@@ -396,14 +432,19 @@ export function PlayScreen({ game, setGame, onTitle }) {
   }
 
   function openMenu() {
-    setPanel({ type: "list", title: "Menu", items: SYSTEM, index: 0 });
+    setPanel({ type: "list", title: "Menu", items: systemItems(soundOn), index: 0 });
   }
 
   useLayoutEffect(() => {
     // Handlers read these at event time. Updating them in an effect (not
     // during render) keeps the keyboard listener stable without stale state.
     gameRef.current = game;
-    panelRef.current = panel;
+    // The Sound row label follows the live mute flag. The stored panel
+    // can be one toggle behind; the keyboard should see the same row
+    // the screen is showing.
+    panelRef.current = panel?.type === "list" && panel.title === "Menu"
+      ? { ...panel, items: systemItems(soundOn) }
+      : panel;
     actions.current = { pressA, pressB, moveSelection, openMap, openInventory };
   });
 
@@ -440,7 +481,9 @@ export function PlayScreen({ game, setGame, onTitle }) {
         if (!event.repeat) actions.current.pressB();
         return;
       }
-      if (event.code === "KeyM" && !event.repeat) {
+      // M is mute, handled by the audio engine so it also works on the
+      // title screen. P is the map. The on-screen Map button is unchanged.
+      if (event.code === "KeyP" && !event.repeat) {
         event.preventDefault();
         actions.current.openMap();
         return;
@@ -482,10 +525,13 @@ export function PlayScreen({ game, setGame, onTitle }) {
             <MenuList
               title={panel.title}
               intro={panel.intro}
-              items={panel.items}
+              items={panel.title === "Menu" ? systemItems(soundOn) : panel.items}
               index={panel.index}
               testId={panel.testId}
-              onPick={(itemIndex) => activate(panel.items[itemIndex])}
+              onPick={(itemIndex) => {
+                const items = panel.title === "Menu" ? systemItems(soundOn) : panel.items;
+                activate(items[itemIndex]);
+              }}
             />
           ) : null}
           {panel?.type === "dialogue" ? (

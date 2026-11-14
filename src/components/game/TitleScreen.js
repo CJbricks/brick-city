@@ -9,16 +9,20 @@
 
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Stack } from "@chakra-ui/react";
+import { subscribeAudio, toggleMuted } from "@/game/audio/engine";
 import { paintLogo, paintWave, runnerPalette } from "@/game/art";
 import { levelFromXp } from "@/lib/xp";
 
 export function TitleScreen({ quote, save, onResume, onNew }) {
   const logoRef = useRef(null);
   const waveRef = useRef(null);
+  const [soundOn, setSoundOn] = useState(true);
   const gender = save?.runner?.gender || "male";
   const sponsorId = save?.sponsors?.shoe || "";
+
+  useEffect(() => subscribeAudio((prefs) => setSoundOn(!prefs.muted)), []);
 
   useEffect(() => {
     const canvas = logoRef.current;
@@ -67,6 +71,14 @@ export function TitleScreen({ quote, save, onResume, onNew }) {
         ) : null}
         <Button className="gbc-btn" data-testid="new-game" onClick={onNew}>
           New Game
+        </Button>
+        <Button
+          className="gbc-btn"
+          data-testid="sound-toggle"
+          aria-pressed={soundOn}
+          onClick={toggleMuted}
+        >
+          {soundOn ? "Sound: On" : "Sound: Off"}
         </Button>
       </Stack>
       <p className="copyright">© 2026 CJBRICKS</p>

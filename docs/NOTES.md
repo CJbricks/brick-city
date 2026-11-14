@@ -34,6 +34,7 @@ The pictures CJ drew for the look of the game live in `docs/concepts/`: the titl
 src/app/            the Next.js route (layout, page, global CSS)
 src/components/     screens and panels (React + Chakra)
 src/game/           pixels and the town grid (canvas + Pixi)
+src/game/audio/     original chiptune songs and the Web Audio player
 src/lib/            rules: XP, fatigue, races, saves (plain JS)
 prototype/quotes.json   the 15 lines under the logo
 docs/               this note, the loading-screen spec, and docs/concepts/
@@ -305,7 +306,8 @@ When a later town gets tiles, add it to `cityMaps()` with one welcome sign and t
 | Move | Arrows or WASD | D-pad (hold) |
 | Confirm | Z, Enter, or Space | A |
 | Back | X or Esc | B |
-| Map | M | Map |
+| Map | P | Map |
+| Music | M | Menu row "Sound: On" / "Sound: Off" |
 | Inventory | I | Inventory |
 
 On a phone the D-pad and buttons are a bar under the map, not floating over it, so a 390 by 844 screen does not have to scroll to reach them. The page itself does not scroll while you are in town.
@@ -356,6 +358,55 @@ A 1st-place finish, including beating Remy, sets `celebrate` on the race result.
 The fall is the one from Marathon City's `src/components/game/CityView.js`: each bit has an x, a y, a speed, and a color from that file's `CONFETTI` list, and a bit that leaves the bottom comes back at the top. The count, 36, is `raceDay.confetti` in Marathon City's `src/lib/rules.js`. Brick City draws the squares in screen pixels on top of the town, not on the map texture, and the graphics object does not take clicks, so you can keep walking and close the dialogue. After 30 seconds the array is thrown away.
 
 If the browser says `prefers-reduced-motion: reduce`, the count is 0. The win still happened. The screen stays still.
+
+## Music
+
+The songs are original. They use a Game Boy palette (two pulse waves, a wave-channel bass, noise drums) so the town feels like a handheld RPG. They are not arrangements of anybody else's soundtrack. Nothing in `src/game/audio/` is an audio file. The browser builds the sound while the game runs.
+
+| Song | When it plays | Mood | Tempo | Key |
+|---|---|---|---|---|
+| Every New Mile | Title, gender, and name screens | Heroic fanfare, then a brighter loop | 128 BPM | Bb major |
+| Morning on Brick Street | Walking the town, and any menu that is not a race | Cheerful walk | 116 BPM | G major |
+| White Line | The 5K, the 10K, and a bonk choice in those races | Fast and driving | 160 BPM | E minor |
+| Last Straight | Talking to Remy, his start line, and his mile | Tense rival battle, arpeggiated bass | 172 BPM | D minor |
+| Tape Break | A 1st-place finish, including beating Remy | Short triumphant fanfare, does not loop | 144 BPM | C major |
+
+Remy is a separate race from the 5K and the 10K (`type: "rival"`), so he gets the battle theme. A win starts Tape Break on top of the 30-second confetti. When the fanfare ends, Morning on Brick Street comes back, even if the result text is still open. A loss keeps the race or battle theme until you close the result, then the town theme returns. Two songs never stay at full volume together. The old one fades out over about a seventh of a second while the new one fades in, and the old scheduler stops immediately so it cannot keep adding notes.
+
+Mute is not part of `brick-city-save-v1`. An old runner still loads. The choice lives under `brick-city-audio-v1`. If that key is missing or junk, the music is on at a moderate volume (0.38). The Menu row says `Sound: On` or `Sound: Off`. The same row is on the title screen. `M` toggles it everywhere except the name grid, where M is the letter M. The Map key moved to `P` so the two shortcuts do not share a key. The Map button on the touch bar is unchanged.
+
+A hidden tab pauses the music. Coming back continues from the same beat, because the audio clock itself was suspended.
+
+### Why the first tap is silent until you touch something
+
+Browsers refuse to play sound that a page starts on its own. `installAudio` in `src/game/audio/engine.js` does not create an `AudioContext` when the module loads. The first `pointerdown` or `keydown` creates it, resumes it, and only then starts whatever song the screen has been asking for. That is why the title can sit there quietly and then play on the click that hits New Game or Resume.
+
+### How a note gets from the song file to the speaker
+
+`src/game/audio/songs.js` holds the patterns. `src/game/audio/pattern.js` reads tokens like `E5.4` (the pitch E5, four 16th-notes long) and `r.4` (a quarter rest). `src/game/audio/scheduler.js` turns those into times in seconds. It does not know about speakers, which is why the tests can run it in Node.
+
+The player wakes up about 40 times a second and asks the scheduler for every note in the next tenth of a second. JavaScript timers wobble. The audio clock does not. Scheduling a little ahead means a late timer still places the note on the correct sample. Each note is an oscillator (pulse or the looping wave buffer) or a noise buffer, with a gain envelope so it starts and ends at silence instead of clicking.
+
+Pulse duty is not the built-in square wave. That square is stuck at 50%. A 12.5% or 25% pulse is a stack of harmonics (`createPeriodicWave`), which is the thin lead on the town theme. The bass is 32 steps of a 4-bit triangle, looped. That is the size of the Game Boy wave channel, and the steps are why it buzzes instead of sounding like a smooth synth. Drums are a shift-register noise buffer through a filter, plus a short falling tone on the kick so a phone speaker has something to thump. Vibrato is a square LFO that waits a moment, then steps the pitch up and down. It only joins notes long enough to hear it.
+
+Leads use a fast attack and a short decay so the line stays bouncy. Fanfare notes use a higher sustain so the last chord can ring.
+
+### How to write a new song
+
+Add a block in `src/game/audio/songs.js` and put it on `SONGS`. Every channel has to be the same number of bars. `bars()` throws if a line is not exactly 16 sixteenths, which is one 4/4 bar.
+
+```js
+pattern: bars([
+  "C5.4 E5.4 G5.4 E5.4",
+  "F5.8 r.4 E5.4",
+]),
+```
+
+`C5.4` is a quarter note. `r.4` is a quarter rest. `kick`, `snare`, and `hat` are the only noise pitches. Pulse `duty` is `0.125`, `0.25`, `0.5`, or `0.75`. `loop: true` repeats the whole song. Set `loopStart` to a step number (a bar is 16 steps) if the opening bars should play once and the rest should loop. `loop: false` plays once and stops. That is what the victory fanfare does.
+
+Then teach `trackForScene` in `src/game/audio/cues.js` when to ask for it, and call `setMusicCue` from the screen. Run `npm test`. The song tests check that the channels agree, the pitches are real, and a looping intro does not sneak back in.
+
+Keep the melody, the bass line, and the chords original. Matching the handheld sound means duties, envelopes, vibrato, and tempo. It does not mean borrowing a tune.
 
 ## What this build does not do yet
 

@@ -61,6 +61,7 @@ export function MenuList({ title, intro, items, index, onPick, testId }) {
                 ? `menu-header${itemIndex === index ? " selected" : ""}`
                 : `menu-row${itemIndex === index ? " selected" : ""}`
             }
+            data-testid={item.testId || undefined}
             onClick={() => onPick(itemIndex)}
           >
             {item.label}
@@ -263,7 +264,7 @@ export function HelpView({ onClose }) {
   return (
     <Window title="How to play" testId="help">
       <p>Move with the arrows, WASD, or the D-pad.</p>
-      <p>A is Z, Enter, Space, or the A button. B is X, Esc, or the B button. M opens the map.</p>
+      <p>A is Z, Enter, Space, or the A button. B is X, Esc, or the B button. M toggles the music. P, or the Map button, opens the map.</p>
       <p>Walk up to a door or a person and press A.</p>
       <p>Sleep at home ends the day. Sunday night writes the weekly summary.</p>
       <p>Low nutrition and poor sleep together will bonk you out of a race.</p>

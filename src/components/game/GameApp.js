@@ -8,6 +8,11 @@
  * The loading screen stays up while Pixi downloads. That is a real load,
  * not a fake timer. The same quote is handed to the title so it does not
  * change between the two screens.
+ *
+ * Music follows the screen. Title, gender, and name share the fanfare.
+ * The town screen picks its own song. Nothing plays during the load,
+ * and nothing plays until the first tap or key: the engine waits for
+ * that gesture before it builds an audio context.
  */
 
 "use client";
@@ -17,6 +22,7 @@ import { GenderScreen, NameScreen } from "@/components/game/CreateRunner";
 import { PlayScreen } from "@/components/game/PlayScreen";
 import { LoadingScreen } from "@/components/game/Screens";
 import { TitleScreen } from "@/components/game/TitleScreen";
+import { installAudio, setMusicCue } from "@/game/audio/engine";
 import { createNewGame } from "@/lib/activities";
 import { randomQuote } from "@/lib/quotes";
 import { loadSave, writeSave } from "@/lib/save";
@@ -27,6 +33,17 @@ export function GameApp() {
   const [screen, setScreen] = useState("boot");
   const [draft, setDraft] = useState({ gender: "male", name: "" });
   const [game, setGame] = useState(null);
+
+  useEffect(() => {
+    installAudio();
+  }, []);
+
+  useEffect(() => {
+    // PlayScreen owns the cue once the runner is in town. Setting it
+    // here too would restart the town theme on every menu change.
+    if (screen === "play") return;
+    setMusicCue(screen === "boot" ? null : "title");
+  }, [screen]);
 
   useEffect(() => {
     let cancel = false;

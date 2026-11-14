@@ -117,7 +117,7 @@ At the start of a new game only the basics are open. Locked places show as greye
 **Trail path:** park trail runs, then mountain trail runs, then trail events, then 100-mile mountain ultras.
 
 ### Town map and quick travel
-- A **Map** button (on screen for touch, and the `M` key on keyboard) opens an enlarged map of Brick City.
+- A **Map** button (on screen for touch, and the `P` key on keyboard) opens an enlarged map of Brick City. `M` toggles the music.
 - The map shows every location. Unlocked places are highlighted, and locked or not-yet-built districts are greyed out.
 - Tap or select a location to **quick travel** there instantly. Travel could later cost a little time of day.
 
