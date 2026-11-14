@@ -19,6 +19,13 @@
  * art.js. They are not in this file, and they are not solid. Signs are
  * not stored in brick-city-save-v1, so an old save just rebuilds this map.
  *
+ * The running track is a closed oval of "k" tiles east of the sidewalk
+ * at x = 26. Corners are two tiles wide on purpose: a one-tile diagonal
+ * step is not a path the feet can follow, so those corners used to look
+ * like loose red squares and stop a lap. The gate is the sidewalk tiles
+ * next to the west lane. art.js must not paint a fence on those tiles
+ * or on the 5K board.
+ *
  * cityMaps() is the list of overworlds that actually exist. Brick City
  * is the only one. Ridgeview, Lakeport, Mesa Verde Flats, Flatland, and
  * Summit Hollow are names in the design. They are in UNBUILT_CITIES and
@@ -70,6 +77,51 @@ export function signCopy(info = CITY_INFO) {
     speaker: "City sign",
     lines: [`${info.name.toUpperCase()}\n"${info.motto}"`],
   };
+}
+
+/**
+ * Track oval, stamped at TRACK_ORIGIN. "k" is the red lane, "i" is the
+ * infield. The dots stay grass. Each "k" shares a full edge with the next
+ * "k", including the corners. A corner that only touched on the diagonal
+ * drew as its own white-bordered square and the feet could not cross it.
+ */
+export const TRACK_ORIGIN = { tx: 27, ty: 11 };
+
+export const TRACK_ROWS = [
+  ".kkkkk.",
+  "kkiiikk",
+  "kiiiiik",
+  "kiiiiik",
+  "kiiiiik",
+  "kiiiiik",
+  "kkiiikk",
+  ".kkkkk.",
+];
+
+/**
+ * Opening from the sidewalk (x = 26) onto the west lane (x = 27).
+ * The race booth is (26, 12). These tiles stay walkable, and the fence
+ * painter is not allowed to use them.
+ */
+export const TRACK_GATE = [
+  { tx: 26, ty: 12 },
+  { tx: 26, ty: 13 },
+  { tx: 26, ty: 14 },
+  { tx: 26, ty: 15 },
+  { tx: 27, ty: 12 },
+  { tx: 27, ty: 13 },
+  { tx: 27, ty: 14 },
+  { tx: 27, ty: 15 },
+];
+
+export function trackLaneTiles() {
+  const tiles = [];
+  TRACK_ROWS.forEach((row, yy) => {
+    [...row].forEach((ch, xx) => {
+      if (ch === "k") tiles.push({ tx: TRACK_ORIGIN.tx + xx, ty: TRACK_ORIGIN.ty + yy });
+    });
+  });
+  return tiles;
 }
 
 export const PLACES = [
@@ -207,17 +259,10 @@ export function createGround() {
   grid[3][30] = "o";
   grid[7][30] = "d";
 
-  // Track oval in the east block.
-  stamp(grid, 27, 11, [
-    "..kkk..",
-    ".kiiik.",
-    "kiiiiik",
-    "kiiiiik",
-    "kiiiiik",
-    "kiiiiik",
-    ".kiiik.",
-    "..kkk..",
-  ], { k: "k", i: "i" });
+  // Continuous oval. See TRACK_ROWS. The sidewalk column x = 26 is
+  // paved just below, and TRACK_GATE is the walk from that sidewalk
+  // onto the west lane. Do not stamp the lane onto the sidewalk.
+  stamp(grid, TRACK_ORIGIN.tx, TRACK_ORIGIN.ty, TRACK_ROWS, { k: "k", i: "i" });
 
   // Concrete sidewalks. Each one shares an edge with the road and with
   // the door tile, so the walk meets the threshold. Trees, roads, water,
@@ -389,6 +434,26 @@ export function inBounds(tx, ty) {
 export function isBlocked(world, tx, ty) {
   if (!inBounds(tx, ty)) return true;
   return world.blocked[ty][tx];
+}
+
+/**
+ * Feet, not the whole sprite. The old box was ±4px on a 16px tile.
+ * Tiles are 32px now, so the box is doubled and still the same fraction
+ * of a tile. The head is allowed to overlap a fence or a wall.
+ * Overworld uses this so the lap test and the runner agree.
+ */
+export function footBlocked(world, x, y) {
+  const unit = TILE / 16;
+  const points = [
+    [x - 4 * unit, y - 2 * unit],
+    [x + 3 * unit, y - 2 * unit],
+    [x - 4 * unit, y + 3 * unit],
+    [x + 3 * unit, y + 3 * unit],
+  ];
+  return points.some(([px, py]) => {
+    const tile = tileOf(px, py);
+    return isBlocked(world, tile.tx, tile.ty);
+  });
 }
 
 /**

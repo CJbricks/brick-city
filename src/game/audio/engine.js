@@ -8,6 +8,15 @@
  * AudioContext until that first gesture. Until then the screen can
  * still say which song it wants. The gesture plays whatever is waiting.
  *
+ * iOS Safari only treats touchend and click as the gesture, and it
+ * ignores resume() if it runs later in a promise. The handler therefore
+ * calls resume() and starts a one-sample silent buffer in the same
+ * turn, on pointerdown, touchstart, touchend, click, and keydown.
+ * Android Chrome and desktop Chrome accept pointerdown and click.
+ * If the context is still suspended, the song is started again when
+ * resume() actually flips the clock to running. Scheduling once into
+ * a suspended context is how a phone stays silent.
+ *
  * One song is current. A scene change fades the old song out over a
  * short moment and fades the new one in. The old scheduler is stopped
  * immediately, so it cannot keep stacking notes on top of the new song.
@@ -63,7 +72,39 @@ const state = {
   nodes: [],
   waves: new Map(),
   noise: new Map(),
+  // Test hook. Production leaves this null and uses the real window.
+  host: null,
+  AudioContextClass: null,
+  // True when notes were queued before the audio clock was running.
+  // The restart happens when resume() resolves, not on every tap.
+  armedWhileSuspended: false,
 };
+
+/** Events that count as a user gesture on iOS, Android, or desktop. */
+export const UNLOCK_EVENTS = ["pointerdown", "touchstart", "touchend", "click", "keydown"];
+
+function hostWindow() {
+  if (state.host) return state.host;
+  return typeof window === "undefined" ? null : window;
+}
+
+function hostDocument() {
+  const win = hostWindow();
+  if (win && win.document) return win.document;
+  return typeof document === "undefined" ? null : document;
+}
+
+function hostInterval(fn, ms) {
+  const win = hostWindow();
+  const schedule = win && win.setInterval ? win.setInterval.bind(win) : setInterval;
+  return schedule(fn, ms);
+}
+
+function hostTimeout(fn, ms) {
+  const win = hostWindow();
+  const schedule = win && win.setTimeout ? win.setTimeout.bind(win) : setTimeout;
+  return schedule(fn, ms);
+}
 
 const listeners = new Set();
 
@@ -100,12 +141,20 @@ function audible() {
 
 function applyMaster(when) {
   if (!state.master || !state.ctx) return;
-  const now = when ?? state.ctx.currentTime;
-  const target = audible();
-  state.master.gain.cancelScheduledValues(now);
-  const current = Math.max(0.0001, state.master.gain.value || 0.0001);
-  state.master.gain.setValueAtTime(current, now);
-  state.master.gain.exponentialRampToValueAtTime(Math.max(0.0001, target), now + 0.04);
+  const target = Math.max(0.0001, audible());
+  // A failed ramp used to leave the master at a near-zero value. Set the
+  // plain value too, so mute-off is actually audible if the ramp throws.
+  state.master.gain.value = target;
+  try {
+    const now = when ?? state.ctx.currentTime;
+    state.master.gain.cancelScheduledValues(now);
+    const current = state.master.gain.value;
+    const safe = current > 0 ? current : target;
+    state.master.gain.setValueAtTime(Math.max(0.0001, safe), now);
+    state.master.gain.exponentialRampToValueAtTime(target, now + 0.04);
+  } catch {
+    state.master.gain.value = target;
+  }
 }
 
 function persist() {
@@ -181,7 +230,7 @@ function silence(nodes, gain) {
   }
   // Stopping at once would click. The fade hides the cut, then we
   // actually stop the oscillators so a hidden song cannot keep running.
-  window.setTimeout(() => {
+  hostTimeout(() => {
     for (const node of nodes) {
       try {
         node.stop();
@@ -222,9 +271,32 @@ function startPlayback(id) {
   // A few milliseconds in the future so the first note is not already late.
   state.origin = now + 0.03;
   state.nextSchedule = 0;
-  state.timer = window.setInterval(() => pump(gen), TICK_MS);
+  state.timer = hostInterval(() => pump(gen), TICK_MS);
   pump(gen);
   emit();
+}
+
+function currentCueId() {
+  if (state.victoryLock) return "victory";
+  return state.cue;
+}
+
+function playSilence(ctx) {
+  // One sample of zeros, started now. iOS will not open the speaker for
+  // later oscillators until some buffer has played inside the gesture.
+  const rate = ctx.sampleRate || 22050;
+  const buffer = ctx.createBuffer(1, 1, rate);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  source.start(0);
+}
+
+function restartIfArmed() {
+  if (!state.armedWhileSuspended || !state.ctx || state.ctx.state !== "running") return;
+  state.armedWhileSuspended = false;
+  const id = currentCueId();
+  if (id) startPlayback(id);
 }
 
 export function setMusicCue(next) {
@@ -234,7 +306,8 @@ export function setMusicCue(next) {
     state.victoryLock = false;
   }
   if (!state.unlocked) return;
-  if (next === state.currentId) return;
+  if (next === state.currentId && state.timer && !state.armedWhileSuspended) return;
+  if (state.ctx && state.ctx.state !== "running") state.armedWhileSuspended = true;
   startPlayback(next);
 }
 
@@ -246,44 +319,72 @@ export function playVictory() {
 }
 
 function unlock() {
-  if (state.unlocked) {
-    if (state.ctx && state.ctx.state === "suspended") {
-      state.ctx.resume().catch(() => {});
-    }
-    return;
-  }
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtx) return;
+  const win = hostWindow();
+  if (!win) return;
+  const AudioCtx = state.AudioContextClass || win.AudioContext || win.webkitAudioContext;
+  if (!AudioCtx && !state.ctx) return;
   // Build the context inside the gesture. If this browser has no Web
   // Audio, leave the flag unset so a later tap can try again, and do
   // not let the error swallow the click that opened the game.
   try {
-    const ctx = new AudioCtx();
-    state.ctx = ctx;
+    if (!state.ctx) {
+      const ctx = new AudioCtx();
+      state.ctx = ctx;
+      buildOutput(ctx);
+      ctx.onstatechange = () => restartIfArmed();
+    }
+    const ctx = state.ctx;
+    if (!ctx) return;
+    // Already running: a second tap must not restart the song.
+    if (ctx.state === "running" && state.unlocked && !state.armedWhileSuspended) {
+      return;
+    }
+    // resume() and the silent buffer have to happen before this function
+    // returns. A promise callback is too late for iOS Safari.
+    if (ctx.state !== "running") state.armedWhileSuspended = true;
+    const pending = typeof ctx.resume === "function" ? ctx.resume() : null;
+    try {
+      playSilence(ctx);
+    } catch {
+      // The resume above is the part the gesture has to see. A buffer
+      // the browser rejects should not throw away the context.
+    }
     state.unlocked = true;
-    buildOutput(ctx);
     applyMaster(ctx.currentTime);
-    if (state.cue) startPlayback(state.victoryLock ? "victory" : state.cue);
+    if (ctx.state === "running") state.armedWhileSuspended = false;
+    const id = currentCueId();
+    if (id) startPlayback(id);
+    if (pending && typeof pending.then === "function") {
+      pending.then(() => restartIfArmed()).catch(() => {});
+    }
     emit();
   } catch {
     state.unlocked = false;
     state.ctx = null;
+    state.armedWhileSuspended = false;
   }
+}
+
+/** Call from a gesture handler, before preventDefault, on touch controls. */
+export function unlockAudio() {
+  unlock();
 }
 
 function onMuteKey(event) {
   if (event.code !== "KeyM" || event.repeat) return;
   if (event.metaKey || event.ctrlKey || event.altKey) return;
   // The name grid needs the letter M. Everywhere else, M is mute.
-  if (document.querySelector("[data-testid='name-screen']")) return;
+  const doc = hostDocument();
+  if (doc && doc.querySelector && doc.querySelector("[data-testid='name-screen']")) return;
   event.preventDefault();
   event.stopPropagation();
   toggleMuted();
 }
 
 function onVisibility() {
-  if (!state.ctx || !state.unlocked) return;
-  if (document.hidden) {
+  const doc = hostDocument();
+  if (!doc || !state.ctx || !state.unlocked) return;
+  if (doc.hidden) {
     // suspend freezes the audio clock, so a hidden tab does not play
     // the rest of the loop in the background and then skip ahead.
     state.ctx.suspend().catch(() => {});
@@ -292,17 +393,58 @@ function onVisibility() {
   state.ctx.resume().catch(() => {});
 }
 
-export function installAudio() {
-  if (state.installed || typeof window === "undefined") return;
+export function installAudio(options = {}) {
+  const win = options.host || (typeof window === "undefined" ? null : window);
+  if (state.installed || !win) return;
   state.installed = true;
-  const saved = readAudioPrefs();
+  state.host = options.host || null;
+  state.AudioContextClass = options.AudioContext || null;
+  const saved = readAudioPrefs(options.storage);
   state.muted = saved.muted;
   state.volume = saved.volume;
-  window.addEventListener("pointerdown", unlock, { capture: true });
-  window.addEventListener("keydown", unlock, { capture: true });
-  window.addEventListener("keydown", onMuteKey, { capture: true });
-  document.addEventListener("visibilitychange", onVisibility);
+  // Capture phase runs before the d-pad's preventDefault. iOS still
+  // wants touchend and click, so those are listed too. The listeners
+  // stay for the whole page: a later suspend (a hidden tab on a phone)
+  // is resumed by the next tap, not only the first one.
+  for (const type of UNLOCK_EVENTS) {
+    win.addEventListener(type, unlock, { capture: true });
+  }
+  win.addEventListener("keydown", onMuteKey, { capture: true });
+  const doc = win.document || hostDocument();
+  if (doc && doc.addEventListener) doc.addEventListener("visibilitychange", onVisibility);
   emit();
+}
+
+/** Drops listeners and the context. Tests use this between cases. */
+export function resetAudioForTests() {
+  const win = hostWindow();
+  if (win && win.removeEventListener) {
+    for (const type of UNLOCK_EVENTS) win.removeEventListener(type, unlock, true);
+    win.removeEventListener("keydown", onMuteKey, true);
+  }
+  const doc = hostDocument();
+  if (doc && doc.removeEventListener) doc.removeEventListener("visibilitychange", onVisibility);
+  stopScheduler();
+  state.installed = false;
+  state.unlocked = false;
+  state.ctx = null;
+  state.master = null;
+  state.muted = false;
+  state.volume = DEFAULT_VOLUME;
+  state.cue = null;
+  state.currentId = null;
+  state.victoryLock = false;
+  state.generation = 0;
+  state.timer = 0;
+  state.origin = 0;
+  state.nextSchedule = 0;
+  state.songGain = null;
+  state.nodes = [];
+  state.waves = new Map();
+  state.noise = new Map();
+  state.host = null;
+  state.AudioContextClass = null;
+  state.armedWhileSuspended = false;
 }
 
 function buildOutput(ctx) {

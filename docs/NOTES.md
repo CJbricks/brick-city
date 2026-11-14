@@ -379,7 +379,17 @@ A hidden tab pauses the music. Coming back continues from the same beat, because
 
 ### Why the first tap is silent until you touch something
 
-Browsers refuse to play sound that a page starts on its own. `installAudio` in `src/game/audio/engine.js` does not create an `AudioContext` when the module loads. The first `pointerdown` or `keydown` creates it, resumes it, and only then starts whatever song the screen has been asking for. That is why the title can sit there quietly and then play on the click that hits New Game or Resume.
+Browsers refuse to play sound that a page starts on its own. `installAudio` in `src/game/audio/engine.js` does not create an `AudioContext` when the module loads. The first `pointerdown`, `touchstart`, `touchend`, `click`, or `keydown` creates it. That handler calls `resume()` and plays a one-sample silent buffer **before it returns**. The song the screen has been asking for starts in that same turn. The title can sit there quietly and then play on the click that hits New Game or Resume.
+
+Phones are stricter than desktop Chrome. iOS Safari does not count `pointerdown` as a gesture, and it ignores `resume()` if you call it later from a promise (`.then`, `await`, `setTimeout`). The resume has to be the direct result of `touchend` or `click`. A one-sample silent buffer in that same turn is what actually opens the speaker. Android Chrome accepts `pointerdown` and `touchstart`. The d-pad calls `unlockAudio()` before `preventDefault`, because eating the touch first can throw away the gesture iOS was waiting for. The listeners stay up for the whole visit, so a later tap can resume a clock that the phone suspended again. Mute still defaults to off (`brick-city-audio-v1` missing means sound on at volume 0.38). That key is not part of `brick-city-save-v1`.
+
+### The 5K board and the track oval
+
+The 5K board stands on the sidewalk tile just west of the track (tile 26, 11), under the TRACK name on the road above the north rail. A vertical fence used to be drawn on that same tile, after the letters, so the fence covered the sign. The lane under it was also a handful of red squares that only touched at the corners. You cannot walk a diagonal corner: the foot check looks at the tile beside you, not the tile diagonally ahead, so the lap died at the top-left of the oval and the gate looked shut.
+
+`TRACK_ROWS` in `src/game/town.js` is one loop of lane tiles. Each corner is two tiles wide so every step is straight up, down, left, or right. The infield stays walkable, so stepping inside does not trap you. The gate is the sidewalk next to the west lane, including the race booth at (26, 12). `sceneryLayout()` in `src/game/art.js` is the list of boards and fences. Fences are painted first, boards after, and no fence rectangle shares a tile with a sign or with that gate. The park PARK board was moved up onto the road row for the same reason: it used to cross into the park fence's tile.
+
+On a phone the HUD card is full width and about 120 pixels tall. Dialogue used to open at the top of the map, so a short result line sat on top of the meters and cut them in half. Below 760 pixels wide, the window starts under that card and scrolls inside the space that is left. The d-pad stays in the bar under the map, not on top of the text.
 
 ### How a note gets from the song file to the speaker
 

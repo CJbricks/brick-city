@@ -17,6 +17,11 @@
  * TRACK, MOUNTAIN, DEPOT) are a different picture: they name that
  * building, they do not say the city motto, and they do not block a tile.
  *
+ * sceneryLayout() is the list of those boards and every wooden fence.
+ * renderWorld paints fences first and boards after, and the rectangles
+ * do not share a tile. The 5K board used to sit under the west rail of
+ * the track, which also hid the gate onto the oval.
+ *
  * Runner letters (the pictures are drawn as text so the outline is easy
  * to see in the source):
  *   o outline   C cap   P panel   B brim   H hair
@@ -873,6 +878,8 @@ function drawTrack(ctx, px, py, x, y, ground) {
   ink(ctx, px + (n % 20), py + 6, 6, 2, "#e86a62");
   ink(ctx, px + 4, py + 22, 8, 2, "#a32e28");
   const at = (dx, dy) => ground[y + dy]?.[x + dx];
+  // White only on an edge that leaves the lane. Neighboring "k" tiles
+  // share that edge, so a corner stays one curve instead of a loose square.
   const edge = (code) => code !== "k";
   if (edge(at(0, -1))) ink(ctx, px, py, TILE, 3, "#f7f7f7");
   if (edge(at(0, 1))) ink(ctx, px, py + TILE - 3, TILE, 3, "#f7f7f7");
@@ -1057,6 +1064,138 @@ function drawVFence(ctx, x, y, length) {
   }
 }
 
+function paintFence(ctx, fence) {
+  if (!fence) return;
+  if (fence.kind === "h") drawHFence(ctx, fence.x, fence.y, fence.w);
+  else drawVFence(ctx, fence.x, fence.y, fence.h);
+}
+
+function paintBoard(ctx, sign) {
+  if (!sign) return;
+  labeledSign(ctx, sign.x, sign.y, sign.text);
+}
+
+function scenePart(scene, id) {
+  return scene.signs.find((item) => item.id === id) || scene.fences.find((item) => item.id === id);
+}
+
+function boardRect(id, text, x, y) {
+  // Same size labeledSign paints: 2× mini font, plus the wooden frame.
+  const scale = 2;
+  return {
+    id,
+    kind: "board",
+    text,
+    x,
+    y,
+    w: text.length * 4 * scale + 12,
+    h: 5 * scale + 12,
+  };
+}
+
+function hFence(id, x, y, length) {
+  // Posts are 18px tall. The rect is the whole rail, not just the boards,
+  // so a sign that clips a post still counts as an overlap.
+  return { id, kind: "h", x, y, w: length, h: 18 };
+}
+
+function vFence(id, x, y, length) {
+  return { id, kind: "v", x, y, w: 18, h: length };
+}
+
+function buildingOrigin(id) {
+  const building = BUILDINGS.find((item) => item.id === id);
+  return { x: building.x * TILE, y: building.y * TILE };
+}
+
+/**
+ * Every name board and every wooden fence, in pixels. Tests compare these
+ * rectangles to each other and to the walk grid. Draw functions read the
+ * same objects, so a moved sign cannot forget to move its hit box.
+ *
+ * The 5K board is inset on sidewalk tile (26, 11). The track's west rail
+ * used to be painted on that same tile, after the sign, so the letters
+ * disappeared and the gate looked shut. Corner posts now sit on the grass
+ * tiles beside the oval, and the gate tiles in town.js stay empty.
+ */
+export function sceneryLayout() {
+  const home = buildingOrigin("home");
+  const gym = buildingOrigin("gym");
+  const store = buildingOrigin("store");
+  const grocery = buildingOrigin("grocery");
+  const signs = [
+    boardRect("home", "HOME", home.x + 70, home.y + 2),
+    boardRect("grocery", "GROCERY", grocery.x + 78, grocery.y + 24),
+    boardRect("gym", "GYM", gym.x + 78, gym.y + 8),
+    boardRect("store", "RUN STORE", store.x + 48, store.y + 78),
+    boardRect("mountain", "MOUNTAIN", 30 * TILE - 36, 6 * TILE - 30),
+    // Road row above the park fence. The old y crossed into the rail's tile.
+    boardRect("park", "PARK", 18 * TILE - 22, 21 * TILE + 4),
+    // East-west road, one tile above the track's north rail.
+    boardRect("track", "TRACK", 27 * TILE + 6, 9 * TILE + 6),
+    boardRect("5k", "5K", 26 * TILE + 2, 11 * TILE + 6),
+    {
+      id: "depot",
+      kind: "label",
+      text: "DEPOT",
+      x: 19 * TILE + 8,
+      y: 16 * TILE + 2,
+      w: 5 * 4,
+      h: 5,
+    },
+    {
+      id: "banner-5k",
+      kind: "banner",
+      text: "5K",
+      x: 27 * TILE + 4,
+      y: 12 * TILE + 2,
+      w: 26,
+      h: 28,
+    },
+    ...CITY_SIGNS.map((sign) => ({
+      id: sign.id,
+      kind: "city",
+      text: "BC",
+      x: sign.tx * TILE,
+      y: sign.ty * TILE,
+      w: TILE,
+      h: TILE,
+    })),
+  ];
+  const parkX0 = 15 * TILE + 8;
+  const parkX1 = 31 * TILE - 8;
+  const fences = [
+    vFence("home-west", home.x + 4, home.y + 96, 40),
+    vFence("home-east", home.x + 7 * TILE - 20, home.y + 96, 40),
+    hFence("gym-fence", gym.x + 16, gym.y + 7 * TILE - 20, 70),
+    hFence("store-fence", store.x + 16, store.y + 5 * TILE - 20, 7 * TILE - 40),
+    hFence("park-north-west", parkX0, 22 * TILE + 18, 2 * TILE),
+    hFence("park-north-east", 21 * TILE, 22 * TILE + 18, parkX1 - 21 * TILE),
+    hFence("park-south", parkX0, 28 * TILE + 4, parkX1 - parkX0),
+    vFence("park-west", parkX0, 23 * TILE, 5 * TILE),
+    vFence("park-east", 31 * TILE - 4, 23 * TILE, 5 * TILE),
+    hFence("track-north", 27 * TILE + 2, 10 * TILE + 7, 7 * TILE - 8),
+    hFence("track-south", 27 * TILE + 2, 19 * TILE + 6, 7 * TILE - 8),
+    vFence("track-east", 34 * TILE + 8, 11 * TILE + 2, 8 * TILE - 4),
+    vFence("track-west-north", 27 * TILE + 8, 11 * TILE + 2, TILE - 4),
+    vFence("track-west-south", 27 * TILE + 8, 18 * TILE + 2, TILE - 4),
+  ];
+  return { signs, fences };
+}
+
+/** Tiles a rectangle paints on. A 1px spill still counts. */
+export function tilesTouchedBy(rect) {
+  const tiles = [];
+  const x0 = Math.floor(rect.x / TILE);
+  const y0 = Math.floor(rect.y / TILE);
+  const x1 = Math.floor((rect.x + rect.w - 1) / TILE);
+  const y1 = Math.floor((rect.y + rect.h - 1) / TILE);
+  for (let ty = y0; ty <= y1; ty += 1) {
+    for (let tx = x0; tx <= x1; tx += 1) tiles.push({ tx, ty });
+  }
+  return tiles;
+}
+
 function labeledSign(ctx, x, y, text) {
   const scale = 2;
   const width = text.length * 4 * scale + 12;
@@ -1076,10 +1215,12 @@ function panes(id) {
   return townLights().windows.filter((pane) => pane.id === id);
 }
 
-function drawHome(ctx, ox, oy) {
+function drawHome(ctx, ox, oy, scene) {
   const foot = 5 * TILE;
-  drawVFence(ctx, ox + 4, oy + 96, 40);
-  drawVFence(ctx, ox + 7 * TILE - 20, oy + 96, 40);
+  // Fences before the name board. sceneryLayout owns the rectangles so
+  // a later edit cannot put a rail on top of the letters.
+  paintFence(ctx, scenePart(scene, "home-west"));
+  paintFence(ctx, scenePart(scene, "home-east"));
   shingles(ctx, ox + 36, oy + 26, 156, 46, "#b33a32", "#7a241c", "#d45a48");
   chimney(ctx, ox + 156, oy + 8);
   woodSiding(ctx, ox + 48, oy + 64, 132, 56);
@@ -1092,12 +1233,12 @@ function drawHome(ctx, ox, oy) {
   ink(ctx, ox + 84, oy + foot - 8, 58, 8, "#cfc6b8");
   ink(ctx, ox + 84, oy + foot - 2, 58, 2, "#8d877c");
   drawLantern(ctx, ox + 112, oy + 108);
-  labeledSign(ctx, ox + 70, oy + 2, "HOME");
+  paintBoard(ctx, scenePart(scene, "home"));
   drawFlower(ctx, ox + 40, oy + 108, 1);
   drawFlower(ctx, ox + 176, oy + 108, 4);
 }
 
-function drawGrocery(ctx, ox, oy) {
+function drawGrocery(ctx, ox, oy, scene) {
   shingles(ctx, ox + 28, oy + 16, 200, 40, "#8d3a32", "#5e221c", "#c45a48");
   brickCourses(ctx, ox + 36, oy + 48, 184, 78);
   stripedAwning(ctx, ox + 24, oy + 86, 208, 18, "#2f7a45", "#f4f7f2");
@@ -1106,7 +1247,7 @@ function drawGrocery(ctx, ox, oy) {
   crate(ctx, ox + 32, oy + 5 * TILE - 28, ["#e23d3d", "#f2c14e", "#3d9a4a", "#e23d3d", "#f2c14e", "#7ec85a"]);
   crate(ctx, ox + 196, oy + 5 * TILE - 28, ["#3d9a4a", "#e23d3d", "#f2c14e", "#7ec85a", "#e23d3d", "#f2c14e"]);
   drawLantern(ctx, ox + 128, oy + 96);
-  labeledSign(ctx, ox + 78, oy + 24, "GROCERY");
+  paintBoard(ctx, scenePart(scene, "grocery"));
 }
 
 function drawDumbbell(ctx, x, y) {
@@ -1117,7 +1258,7 @@ function drawDumbbell(ctx, x, y) {
   ink(ctx, x + 2, y + 4, 2, 2, "#ffffff");
 }
 
-function drawGym(ctx, ox, oy) {
+function drawGym(ctx, ox, oy, scene) {
   shingles(ctx, ox + 28, oy + 28, 168, 52, "#3c4654", "#232a33", "#6a7380");
   brickCourses(ctx, ox + 36, oy + 72, 188, 96);
   for (const pane of panes("gym")) windowPane(ctx, pane.x, pane.y, pane.w, pane.h);
@@ -1130,8 +1271,8 @@ function drawGym(ctx, ox, oy) {
   box(ctx, ox + 70, oy + 18, 28, 18, "#f3e2c0", "#fff8ea", "#6b4428");
   drawDumbbell(ctx, ox + 73, oy + 21);
   drawLantern(ctx, ox + 214, oy + 88);
-  labeledSign(ctx, ox + 78, oy + 8, "GYM");
-  drawHFence(ctx, ox + 16, oy + 7 * TILE - 20, 70);
+  paintFence(ctx, scenePart(scene, "gym-fence"));
+  paintBoard(ctx, scenePart(scene, "gym"));
   drawFlower(ctx, ox + 24, oy + 180, 2);
 }
 
@@ -1143,7 +1284,7 @@ function drawSneaker(ctx, x, y) {
   ink(ctx, x + 6, y + 8, 4, 1, "#e23b3b");
 }
 
-function drawStore(ctx, ox, oy) {
+function drawStore(ctx, ox, oy, scene) {
   // Awning hangs a few pixels onto the sidewalk. The door itself starts
   // on the north edge of the building, flush with tile y = 22.
   stripedAwning(ctx, ox + 20, oy - 12, 184, 16, "#2a4f8f", "#f7f7f7");
@@ -1155,8 +1296,8 @@ function drawStore(ctx, ox, oy) {
   crate(ctx, ox + 28, oy + 4, ["#f7f7f7", "#2aa6a0", "#e23b3b"]);
   crate(ctx, ox + 164, oy + 4, ["#24366b", "#f7f7f7", "#2aa6a0"]);
   drawLantern(ctx, ox + 112, oy - 4);
-  labeledSign(ctx, ox + 48, oy + 78, "RUN STORE");
-  drawHFence(ctx, ox + 16, oy + 5 * TILE - 20, 7 * TILE - 40);
+  paintFence(ctx, scenePart(scene, "store-fence"));
+  paintBoard(ctx, scenePart(scene, "store"));
 }
 
 function drawFountain(ctx, frame) {
@@ -1176,7 +1317,7 @@ function drawFountain(ctx, frame) {
   ink(ctx, x + 30, y + 8 + spark, 2, 2, "#fff6d0");
 }
 
-function drawGate(ctx, open) {
+function drawGate(ctx, open, scene) {
   const x = 30 * TILE;
   const y = 6 * TILE;
   box(ctx, x - 8, y, 12, TILE, "#9aa3ab", "#d5dee6", "#5c656e");
@@ -1190,17 +1331,13 @@ function drawGate(ctx, open) {
     box(ctx, x + 30, y + 4, 8, 22, "#c4956a", "#e8d0a4", "#6b4428");
     drawPebble(ctx, x, y, 30, 6);
   }
-  labeledSign(ctx, x - 36, y - 30, "MOUNTAIN");
+  paintBoard(ctx, scenePart(scene, "mountain"));
 }
 
-function drawParkSign(ctx) {
-  labeledSign(ctx, 18 * TILE - 20, 22 * TILE - 18, "PARK");
-}
-
-function drawTrackSign(ctx) {
-  labeledSign(ctx, 27 * TILE, 10 * TILE - 18, "TRACK");
-  box(ctx, 26 * TILE + 4, 11 * TILE + 4, 24, 22, "#f3e2c0", "#fff8ea", "#6b4428");
-  paintOutlinedText(ctx, "5K", 26 * TILE + 8, 11 * TILE + 8, "#1c140f", 2);
+function drawParkAndTrackSigns(ctx, scene) {
+  // After the fences. These three used to be painted first, and the
+  // west track rail then covered the 5K letters.
+  for (const id of ["park", "track", "5k"]) paintBoard(ctx, scenePart(scene, id));
 }
 
 function drawCityPost(ctx, tx, ty) {
@@ -1212,7 +1349,7 @@ function drawCityPost(ctx, tx, ty) {
   paintOutlinedText(ctx, "BC", x + 7, y + 8, "#1c140f", 2);
 }
 
-function drawDepot(ctx) {
+function drawDepot(ctx, scene) {
   const x = 19 * TILE;
   const y = 16 * TILE;
   box(ctx, x + 2, y + 4, 8, TILE - 4, "#6b4428", "#c4956a", "#3e2614");
@@ -1221,7 +1358,8 @@ function drawDepot(ctx) {
   box(ctx, x + 14, y + 14, 36, 18, "#f3e2c0", "#fff8ea", "#6b4428");
   windowPane(ctx, x + 18, y + 16, 12, 10);
   ink(ctx, x + 8, y + TILE - 4, 48, 4, "#d7d0c3");
-  paintOutlinedText(ctx, "DEPOT", x + 8, y + 2, "#fff8ea", 1);
+  const label = scenePart(scene, "depot");
+  paintOutlinedText(ctx, label.text, label.x, label.y, "#fff8ea", 1);
 }
 
 function drawLampPost(ctx, x, y) {
@@ -1230,9 +1368,10 @@ function drawLampPost(ctx, x, y) {
   ink(ctx, x - 4, y - 32, 9, 4, "#fff1c2");
 }
 
-function drawBanner(ctx) {
-  const x = 27 * TILE + 4;
-  const y = 12 * TILE;
+function drawBanner(ctx, scene) {
+  const sign = scenePart(scene, "banner-5k");
+  const x = sign.x;
+  const y = sign.y;
   ink(ctx, x, y, 4, 28, "#f4f4f4");
   ink(ctx, x + 4, y, 22, 10, "#e23b3b");
   ink(ctx, x + 4, y + 10, 18, 8, "#f2c14e");
@@ -1244,24 +1383,10 @@ function drawTrailMarker(ctx) {
   box(ctx, 16 * TILE + 2, 23 * TILE - 22, 16, 10, "#f2c14e", "#fff1c2", "#8a5a20");
 }
 
-function drawParkFence(ctx) {
-  const x0 = 15 * TILE + 8;
-  const x1 = 31 * TILE - 8;
-  const yNorth = 22 * TILE + 18;
-  const ySouth = 28 * TILE + 4;
-  drawHFence(ctx, x0, yNorth, 2 * TILE);
-  drawHFence(ctx, 21 * TILE, yNorth, x1 - 21 * TILE);
-  drawHFence(ctx, x0, ySouth, x1 - x0);
-  drawVFence(ctx, x0, 23 * TILE, 5 * TILE);
-  drawVFence(ctx, 31 * TILE - 4, 23 * TILE, 5 * TILE);
-}
-
-function drawTrackFence(ctx) {
-  drawHFence(ctx, 27 * TILE, 10 * TILE + 8, 6 * TILE);
-  drawHFence(ctx, 27 * TILE, 19 * TILE - 4, 6 * TILE);
-  drawVFence(ctx, 34 * TILE - 8, 11 * TILE, 7 * TILE);
-  drawVFence(ctx, 26 * TILE + 10, 11 * TILE, 2 * TILE);
-  drawVFence(ctx, 26 * TILE + 10, 16 * TILE, 3 * TILE);
+function drawAreaFences(ctx, scene) {
+  for (const fence of scene.fences) {
+    if (fence.id.startsWith("park") || fence.id.startsWith("track")) paintFence(ctx, fence);
+  }
 }
 
 /**
@@ -1272,6 +1397,7 @@ function drawTrackFence(ctx) {
  */
 export function renderWorld(state, waterFrame = 0) {
   const world = buildWorld(state);
+  const scene = sceneryLayout();
   const canvas = document.createElement("canvas");
   canvas.width = COLS * TILE;
   canvas.height = ROWS * TILE;
@@ -1285,23 +1411,23 @@ export function renderWorld(state, waterFrame = 0) {
   for (const building of BUILDINGS) {
     const px = building.x * TILE;
     const py = building.y * TILE;
-    if (building.id === "home") drawHome(ctx, px, py);
-    if (building.id === "grocery") drawGrocery(ctx, px, py);
-    if (building.id === "gym") drawGym(ctx, px, py);
-    if (building.id === "store") drawStore(ctx, px, py);
+    if (building.id === "home") drawHome(ctx, px, py, scene);
+    if (building.id === "grocery") drawGrocery(ctx, px, py, scene);
+    if (building.id === "gym") drawGym(ctx, px, py, scene);
+    if (building.id === "store") drawStore(ctx, px, py, scene);
   }
   drawFountain(ctx, waterFrame);
-  drawGate(ctx, world.mountainOpen);
-  drawParkSign(ctx);
-  drawTrackSign(ctx);
-  drawDepot(ctx);
+  drawGate(ctx, world.mountainOpen, scene);
+  drawDepot(ctx, scene);
+  for (const lamp of townLights().lamps) drawLampPost(ctx, lamp.x, lamp.y);
+  // Rails first, then boards. The 5K sign used to be under the west fence
+  // because the fence was the later stroke on the same pixels.
+  drawAreaFences(ctx, scene);
+  drawParkAndTrackSigns(ctx, scene);
   // One welcome post. Do not draw a BC plaque per building. Those
   // buildings already have their own name boards above.
   for (const sign of CITY_SIGNS) drawCityPost(ctx, sign.tx, sign.ty);
-  for (const lamp of townLights().lamps) drawLampPost(ctx, lamp.x, lamp.y);
-  drawParkFence(ctx);
-  drawTrackFence(ctx);
-  if (state?.milestones?.includes("banner")) drawBanner(ctx);
+  if (state?.milestones?.includes("banner")) drawBanner(ctx, scene);
   if (state?.milestones?.includes("flowers")) {
     drawFlowerBed(ctx, 13 * TILE, 12 * TILE, 13, 12);
     drawFlowerBed(ctx, 22 * TILE, 17 * TILE, 22, 17);

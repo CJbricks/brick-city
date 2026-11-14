@@ -11,7 +11,9 @@
  * confetti in the town ticker and a short victory fanfare. The dialogue
  * does not wait for either. When the fanfare ends, the town theme
  * returns. Saves go to localStorage. There is no server and no Strava.
- * Music mute is its own key, not a field on the runner.
+ * Music mute is its own key, not a field on the runner. A key press
+ * also unlocks the audio clock in that same turn, which is what phones
+ * require before any note can play.
  *
  * The only sign interaction is the welcome post beside Home. Pressing
  * A on it opens the city name and motto. Building name boards are
@@ -21,7 +23,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { playVictory, setMusicCue, subscribeAudio, toggleMuted, trackForScene } from "@/game/audio/engine";
+import { playVictory, setMusicCue, subscribeAudio, toggleMuted, trackForScene, unlockAudio } from "@/game/audio/engine";
 import { Hud } from "@/components/game/Hud";
 import { Overworld } from "@/components/game/Overworld";
 import {
@@ -460,6 +462,10 @@ export function PlayScreen({ game, setGame, onTitle }) {
       KeyD: "right",
     };
     const onDown = (event) => {
+      // Same turn as the key. The window capture listener also unlocks,
+      // and this call covers a handler that preventDefault's the key
+      // before that capture listener was installed.
+      unlockAudio();
       const dir = dirs[event.code];
       if (dir) {
         event.preventDefault();

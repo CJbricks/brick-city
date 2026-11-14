@@ -34,7 +34,7 @@ import { CONFETTI_MS, pieceCount, spawnPieces, stepPieces } from "@/game/confett
 import {
   TILE,
   buildWorld,
-  isBlocked,
+  footBlocked,
   lookupInteract,
   noteArrival,
   tileOf,
@@ -69,21 +69,9 @@ function chooseScale(cssW, cssH) {
 }
 
 function blockedAt(world, x, y) {
-  // A small box around the feet, not the whole sprite. The head is allowed
-  // to overlap a wall the way it does in a classic top-down RPG.
-  // The old box was ±4px on a 16px tile. Tiles are 32px now, so the box
-  // is doubled and still covers the same fraction of a tile.
-  const unit = TILE / 16;
-  const points = [
-    [x - 4 * unit, y - 2 * unit],
-    [x + 3 * unit, y - 2 * unit],
-    [x - 4 * unit, y + 3 * unit],
-    [x + 3 * unit, y + 3 * unit],
-  ];
-  return points.some(([px, py]) => {
-    const tile = tileOf(px, py);
-    return isBlocked(world, tile.tx, tile.ty);
-  });
+  // Shared with the lap test. A second copy here is how the oval and
+  // the runner used to disagree about a one-pixel gap.
+  return footBlocked(world, x, y);
 }
 
 // Feet sit this far below the tile center. v1 used +6 on a 20px sprite

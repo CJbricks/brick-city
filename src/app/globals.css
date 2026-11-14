@@ -7,7 +7,9 @@
  * is what makes it chunky.
  *
  * Sponsor lists and the shoe rack are long. The window scrolls instead of
- * growing under the touch bar. Section labels in a menu use .menu-header
+ * growing under the touch bar. On a phone the window also starts below
+ * the HUD card so a one-line result does not cut through the meters.
+ * Section labels in a menu use .menu-header
  * so they don't look like buttons you can buy. The HUD portrait is a
  * 32×40 canvas scaled as pixels, same as the town.
  */
@@ -669,6 +671,15 @@ canvas {
 }
 
 @media (max-width: 760px) {
+  /* The phone HUD is a full-width card about 120px tall. A short
+     dialogue used to start at the top of the map and slice through
+     that card. The window starts below it, and it cannot grow back
+     up over the meters. */
+  .gbc-window {
+    margin-top: 120px;
+    max-height: calc(100% - 120px);
+  }
+
   .hud-desktop {
     display: none;
   }

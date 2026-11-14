@@ -4,14 +4,15 @@
  * quotation marks, a waving runner, Resume (only if this browser has a
  * save), and New Game. The logo and the wave are canvases so the pixels
  * stay square when the page scales. Resume paints the saved shoe
- * sponsor's colors on the waving runner.
+ * sponsor's colors on the waving runner. New Game, Resume, and the
+ * sound button call unlockAudio in the click, before the screen changes.
  */
 
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import { Button, Stack } from "@chakra-ui/react";
-import { subscribeAudio, toggleMuted } from "@/game/audio/engine";
+import { subscribeAudio, toggleMuted, unlockAudio } from "@/game/audio/engine";
 import { paintLogo, paintWave, runnerPalette } from "@/game/art";
 import { levelFromXp } from "@/lib/xp";
 
@@ -65,18 +66,18 @@ export function TitleScreen({ quote, save, onResume, onNew }) {
       <p className="press-start">PRESS START</p>
       <Stack className="menu-stack" gap="3">
         {save ? (
-          <Button className="gbc-btn" data-testid="resume" onClick={onResume}>
+          <Button className="gbc-btn" data-testid="resume" onClick={() => { unlockAudio(); onResume(); }}>
             {`Resume · ${save.runner.name} · Lv ${level} · Day ${save.calendar.day}`}
           </Button>
         ) : null}
-        <Button className="gbc-btn" data-testid="new-game" onClick={onNew}>
+        <Button className="gbc-btn" data-testid="new-game" onClick={() => { unlockAudio(); onNew(); }}>
           New Game
         </Button>
         <Button
           className="gbc-btn"
           data-testid="sound-toggle"
           aria-pressed={soundOn}
-          onClick={toggleMuted}
+          onClick={() => { unlockAudio(); toggleMuted(); }}
         >
           {soundOn ? "Sound: On" : "Sound: Off"}
         </Button>
