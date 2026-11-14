@@ -4,11 +4,14 @@
  * This catches a fence, a fountain, or an NPC placed on the only path.
  * It also checks every built city map has one welcome sign, not one
  * per building, and that an old brick-city-save-v1 blob still loads.
+ * The track test walks the oval with the same foot box as the runner,
+ * and it refuses a fence that shares a tile with a sign or the gate.
  */
 
 import { describe, expect, it } from "vitest";
 import { createNewGame } from "@/lib/activities";
-import { COLS, DIR, ROWS, UNBUILT_CITIES, buildWorld, canReach, cityMaps, entranceAt, homeSpawn, isBlocked, lookupInteract, noteArrival, PLACES, TILE, signCopy, worldPixelSize } from "@/game/town";
+import { sceneryLayout, tilesTouchedBy } from "@/game/art";
+import { COLS, DIR, ROWS, TRACK_GATE, UNBUILT_CITIES, buildWorld, canReach, cityMaps, entranceAt, footBlocked, homeSpawn, isBlocked, lookupInteract, noteArrival, PLACES, TILE, signCopy, trackLaneTiles, worldPixelSize } from "@/game/town";
 import { deserialize } from "@/lib/save";
 
 function citySignsOnMap(world) {
@@ -176,5 +179,105 @@ describe("town paths", () => {
     expect(park.entered).toBeNull();
     const gate = noteArrival({ tx: 30, ty: 9 }, { tx: 30, ty: 8 }, true);
     expect(gate.entered).toBeNull();
+  });
+});
+
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function tileKey(tile) {
+  return `${tile.tx},${tile.ty}`;
+}
+
+/**
+ * One pixel at a time, the same way the runner slides along a wall:
+ * try X, then Y, and stop if neither axis can move. A diagonal-only
+ * corner fails this, which is the broken top-left of the old oval.
+ */
+function walkFeet(world, from, to) {
+  let x = from.x;
+  let y = from.y;
+  const guard = TILE * 8;
+  for (let step = 0; step < guard && (x !== to.x || y !== to.y); step += 1) {
+    const dx = Math.sign(to.x - x);
+    const dy = Math.sign(to.y - y);
+    let nx = x;
+    let ny = y;
+    if (dx && !footBlocked(world, x + dx, y)) nx = x + dx;
+    if (dy && !footBlocked(world, nx, y + dy)) ny = y + dy;
+    if (nx === x && ny === y) {
+      throw new Error(`feet stuck at ${x},${y} walking to ${to.x},${to.y}`);
+    }
+    x = nx;
+    y = ny;
+  }
+  expect({ x, y }).toEqual(to);
+}
+
+describe("track gate and signs", () => {
+  it("joins the lane into one oval and keeps fences off signs and the gate", () => {
+    const state = createNewGame({ name: "Ada", gender: "female" });
+    const world = buildWorld(state);
+    const scene = sceneryLayout();
+    const signTiles = new Set();
+    for (const sign of scene.signs) {
+      for (const tile of tilesTouchedBy(sign)) signTiles.add(tileKey(tile));
+    }
+    const fenceTiles = new Set();
+    for (const fence of scene.fences) {
+      for (const sign of scene.signs) {
+        expect(rectsOverlap(sign, fence), `${sign.id} overlaps ${fence.id}`).toBe(false);
+      }
+      for (const tile of tilesTouchedBy(fence)) {
+        const key = tileKey(tile);
+        expect(signTiles.has(key), `${fence.id} shares ${key} with a sign`).toBe(false);
+        fenceTiles.add(key);
+      }
+    }
+
+    const lanes = trackLaneTiles();
+    expect(lanes.length).toBeGreaterThan(10);
+    const laneKeys = new Set(lanes.map(tileKey));
+    // One piece. A loose red square has no orthogonal neighbor in this set.
+    const seen = new Set([tileKey(lanes[0])]);
+    const queue = [lanes[0]];
+    while (queue.length) {
+      const current = queue.shift();
+      for (const [dx, dy] of Object.values(DIR)) {
+        const next = { tx: current.tx + dx, ty: current.ty + dy };
+        const key = tileKey(next);
+        if (!laneKeys.has(key) || seen.has(key)) continue;
+        seen.add(key);
+        queue.push(next);
+      }
+    }
+    expect(seen.size).toBe(lanes.length);
+
+    const start = PLACES.find((place) => place.id === "track");
+    expect(isBlocked(world, start.tx, start.ty)).toBe(false);
+    expect(fenceTiles.has(tileKey(start)), "fence blocks the race booth").toBe(false);
+    // The road tile just west of the booth. This is the sidewalk approach.
+    expect(canReach(world, { tx: start.tx - 1, ty: start.ty }, start)).toBe(true);
+    for (const gate of TRACK_GATE) {
+      expect(fenceTiles.has(tileKey(gate)), `fence on gate ${tileKey(gate)}`).toBe(false);
+      expect(isBlocked(world, gate.tx, gate.ty), tileKey(gate)).toBe(false);
+    }
+    for (const lane of lanes) {
+      expect(isBlocked(world, lane.tx, lane.ty), tileKey(lane)).toBe(false);
+      expect(canReach(world, start, lane), tileKey(lane)).toBe(true);
+      expect(fenceTiles.has(tileKey(lane)), `fence on lane ${tileKey(lane)}`).toBe(false);
+    }
+
+    const center = (tile) => ({ x: (tile.tx + 0.5) * TILE, y: (tile.ty + 0.5) * TILE });
+    walkFeet(world, center(start), center({ tx: 27, ty: 12 }));
+    for (const lane of lanes) {
+      expect(footBlocked(world, center(lane).x, center(lane).y), tileKey(lane)).toBe(false);
+      for (const [dx, dy] of [[1, 0], [0, 1]]) {
+        const next = { tx: lane.tx + dx, ty: lane.ty + dy };
+        if (!laneKeys.has(tileKey(next))) continue;
+        walkFeet(world, center(lane), center(next));
+      }
+    }
   });
 });

@@ -4,9 +4,15 @@
  * under the map so a 390x844 phone never has to scroll the page to reach
  * them. Holding a direction uses pointer capture: if your thumb slides a
  * little, the hold still ends on pointerup instead of getting stuck.
+ *
+ * unlockAudio() runs before preventDefault. iOS Safari only resumes the
+ * audio clock inside the gesture turn. A preventDefault that happens
+ * first can swallow that turn, and the town stays silent.
  */
 
 "use client";
+
+import { unlockAudio } from "@/game/audio/engine";
 
 const PAD = [
   { dir: "up", label: "▲", style: { gridColumn: 2, gridRow: 1 } },
@@ -18,6 +24,7 @@ const PAD = [
 function bindHold(dir, onHold) {
   return {
     onPointerDown: (event) => {
+      unlockAudio();
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
       onHold(dir, true);
