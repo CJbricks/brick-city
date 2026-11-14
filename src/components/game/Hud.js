@@ -2,8 +2,13 @@
  * Hud.js
  * The four meters that stay on screen: Endurance, Peak, Fatigue, and
  * Nutrition (labeled FOOD, like the concept). Arrows compare each meter
- * with yesterday. On a narrow phone the card collapses to mini bars so
- * the town stays visible. Tap the card for the full breakdown.
+ * with yesterday. On a narrow phone the card is full width, so the
+ * stylesheet under 760px draws a shorter stack: half-size portrait,
+ * thinner bars, FOOD on the portrait row, and the trend arrows pinned
+ * to 8px. Those triangles are not letters in Press Start 2P. Left
+ * unsized they inherit the page's 16px and the row grows a big black
+ * triangle. Tap the card for the full breakdown. Desktop sizes are the
+ * base CSS and are not changed in this file.
  *
  * The food bar is a fraction of the current cap, not of 100. A belt makes
  * the cap 105 and a vest makes it 110, so 85 / 110 fills most of the bar
@@ -209,7 +214,11 @@ export function Hud({ game, onOpen }) {
                       }}
                     />
                   </div>
-                  <span>{TREND_ARROW[trends[meter.key]]}</span>
+                  {/* Press Start 2P has no triangle. The class is how the
+                      phone CSS holds this glyph at 8px. Without it the
+                      arrow inherits 16px and stands twice as tall as the
+                      labels next to it. */}
+                  <span className="trend-arrow">{TREND_ARROW[trends[meter.key]]}</span>
                 </div>
               );
             })}
