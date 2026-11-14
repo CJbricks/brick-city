@@ -10,6 +10,10 @@
  * of menu, so the d-pad and the A/B buttons drive them. A race win starts
  * confetti in the town ticker. The dialogue does not wait for it. Saves
  * go to localStorage. There is no server and no Strava.
+ *
+ * The only sign interaction is the welcome post beside Home. Pressing
+ * A on it opens the city name and motto. Building name boards are
+ * paint, so they never reach this function.
  */
 
 "use client";
@@ -231,10 +235,13 @@ export function PlayScreen({ game, setGame, onTitle }) {
   }
 
   function openLocation(id) {
+    // sign- ids are the city plaque only. A removed post is not in
+    // CITY_SIGNS, and its tile is no longer in the interact grid, so
+    // this branch cannot fire for the old copies.
     if (String(id).startsWith("sign-")) {
       const sign = CITY_SIGNS.find((item) => item.id === id);
       if (!sign) return;
-      const copy = signCopy(sign);
+      const copy = signCopy();
       setPanel({ type: "dialogue", speaker: copy.speaker, pages: copy.lines, index: 0 });
       return;
     }

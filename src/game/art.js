@@ -12,6 +12,11 @@
  * CSS scale them with nearest-neighbor filtering. That is what keeps the
  * edges crisp instead of blurry.
  *
+ * The blue-striped "BC" post is the town welcome sign. town.js lists
+ * exactly one, beside Home. The HOME / GROCERY / GYM boards (and PARK,
+ * TRACK, MOUNTAIN, DEPOT) are a different picture: they name that
+ * building, they do not say the city motto, and they do not block a tile.
+ *
  * Runner letters (the pictures are drawn as text so the outline is easy
  * to see in the source):
  *   o outline   C cap   P panel   B brim   H hair
@@ -1290,6 +1295,8 @@ export function renderWorld(state, waterFrame = 0) {
   drawParkSign(ctx);
   drawTrackSign(ctx);
   drawDepot(ctx);
+  // One welcome post. Do not draw a BC plaque per building. Those
+  // buildings already have their own name boards above.
   for (const sign of CITY_SIGNS) drawCityPost(ctx, sign.tx, sign.ty);
   for (const lamp of townLights().lamps) drawLampPost(ctx, lamp.x, lamp.y);
   drawParkFence(ctx);
