@@ -17,6 +17,8 @@
  *
  * Shoe stats live in catalog.js. This file turns them into a pace percent
  * for the race in front of you, then adds the sponsor and the vest.
+ * finishQuality uses the same score bands as the clock, so a fast time
+ * and a win are the same result.
  */
 
 import { attributeLevel, levelFromXp } from "@/lib/xp";
@@ -278,4 +280,16 @@ export function flavorTime(race, score, slow) {
   if (score >= 40) return race.id === "5k" ? "23:55" : "51:20";
   if (score >= 28) return race.id === "5k" ? "26:40" : "57:10";
   return race.id === "5k" ? "29:05" : "1:04:00";
+}
+
+/**
+ * The same 55 line that prints the fast clock is a win. 40 is the next
+ * clock (a top-3 day). Anything slower still finished, it just does not
+ * make a brand sprint to the banner. A bonk that you jog in is not passed
+ * through here. The caller treats that as a plain finish.
+ */
+export function finishQuality(score) {
+  if (score >= 55) return "win";
+  if (score >= 40) return "podium";
+  return "finish";
 }

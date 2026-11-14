@@ -10,8 +10,19 @@
  *
  * Obligations are the cost of the deal. Accepting one spends an energy
  * block and pays better than a Run Store shift. Skipping drops standing.
- * Standing under STANDING_DROP ends that deal until you sign again.
+ * Standing under STANDING_DROP ends that deal. The brand then waits
+ * COOLDOWN_LEAVE days before they will offer again. You do not sign
+ * yourself from a list. offers.js is what lets a brand ask.
  * The rules here are pure. activities.js is what writes them onto a save.
+ */
+
+/**
+ * Offer timing and the caps on a scaled contract.
+ * OFFER_DAYS is how long a note stays on the table.
+ * COOLDOWN_PASS is the wait after a decline or an expiry.
+ * COOLDOWN_LEAVE is the longer wait after you leave them, or they drop you.
+ * Discount and race coins grow with level, then stop at the caps so a
+ * high level is better without becoming a free store.
  */
 
 import { styleLabel, shoeById, carryById, replaceCost } from "@/lib/catalog";
@@ -22,6 +33,56 @@ export const STANDING_ACCEPT = 12;
 export const STANDING_SKIP = 22;
 export const STANDING_WARN = 45;
 export const STANDING_DROP = 25;
+
+export const OFFER_DAYS = 3;
+export const COOLDOWN_PASS = 7;
+export const COOLDOWN_LEAVE = 14;
+export const DISCOUNT_STEP = 0.02;
+export const DISCOUNT_CAP = 0.55;
+export const RACE_COIN_STEP = 2;
+export const RACE_COIN_CAP = 36;
+export const POACH_DISCOUNT = 0.05;
+export const POACH_COINS = 4;
+
+function roadGates(levelNeeded) {
+  return [
+    {
+      label: `Reach level ${levelNeeded}`,
+      met: (state, level) => level >= levelNeeded,
+      have: (state, level) => `Lv ${level}`,
+    },
+    {
+      label: "Finish the 5K or the 10K",
+      met: (state) => Boolean(state.progress.fiveKFinished || state.progress.tenKFinished),
+      have: (state) => {
+        if (state.progress.tenKFinished) return "10K done";
+        if (state.progress.fiveKFinished) return "5K done";
+        return "no road race yet";
+      },
+    },
+  ];
+}
+
+function dirtGates(levelNeeded) {
+  return [
+    {
+      label: `Reach level ${levelNeeded}`,
+      met: (state, level) => level >= levelNeeded,
+      have: (state, level) => `Lv ${level}`,
+    },
+    {
+      // A park trail, a ridge session, or a practice yard. Big brands do
+      // not use this gate. Boutique brands do, because that is the work
+      // they showed up to see.
+      label: "Finish a trail run or a backyard yard",
+      met: (state) => {
+        const trails = (state.progress.parkTrailRuns || 0) + (state.progress.mountainRuns || 0);
+        return trails >= 1 || (state.progress.yards || 0) >= 1;
+      },
+      have: (state) => `${state.progress.parkTrailRuns || 0} trail · ${state.progress.yards || 0} yards`,
+    },
+  ];
+}
 
 const SHOE_DEAL_LIST = [
   {
@@ -35,16 +96,10 @@ const SHOE_DEAL_LIST = [
     penalty: -0.03,
     shortRoad: 0,
     raceCoins: 10,
-    // Level 2 is one good session past the first easy runs, so the first
-    // deal shows up before the player forgets the Sponsors menu exists.
-    gates: [
-      { label: "Reach level 2", met: (state, level) => level >= 2, have: (state, level) => `Lv ${level}` },
-      {
-        label: "Finish a track workout or the 5K",
-        met: (state) => state.progress.trackRuns >= 1 || state.progress.fiveKFinished,
-        have: (state) => state.progress.fiveKFinished ? "5K done" : `${state.progress.trackRuns}/1 track`,
-      },
-    ],
+    // The biggest road brand. Level 5 is 220 overall XP, a few races
+    // past the first 5K, so Nike is early but not the first handshake.
+    minLevel: 5,
+    gates: roadGates(5),
   },
   {
     id: "adidas",
@@ -57,13 +112,8 @@ const SHOE_DEAL_LIST = [
     penalty: 0,
     shortRoad: -0.02,
     raceCoins: 8,
-    gates: [
-      {
-        label: "Reach level 3 or finish the 5K",
-        met: (state, level) => level >= 3 || state.progress.fiveKFinished,
-        have: (state, level) => state.progress.fiveKFinished ? `5K done · Lv ${level}` : `Lv ${level}`,
-      },
-    ],
+    minLevel: 4,
+    gates: roadGates(4),
   },
   {
     id: "hoka",
@@ -76,10 +126,10 @@ const SHOE_DEAL_LIST = [
     penalty: 0,
     shortRoad: -0.02,
     raceCoins: 8,
-    gates: [
-      { label: "Reach level 2", met: (state, level) => level >= 2, have: (state, level) => `Lv ${level}` },
-      { label: "Log 4 miles", met: (state) => state.progress.totalMiles >= 4, have: (state) => `${state.progress.totalMiles}/4 mi` },
-    ],
+    // Level 3 is 70 overall XP. One 5K is 46, so Hoka shows up once a
+    // second race or a bit of training has you at level 3 with a finish.
+    minLevel: 3,
+    gates: roadGates(3),
   },
   {
     id: "brooks",
@@ -92,9 +142,8 @@ const SHOE_DEAL_LIST = [
     penalty: -0.05,
     shortRoad: 0,
     raceCoins: 8,
-    gates: [
-      { label: "Reach level 2", met: (state, level) => level >= 2, have: (state, level) => `Lv ${level}` },
-    ],
+    minLevel: 3,
+    gates: roadGates(3),
   },
   {
     id: "norda",
@@ -107,10 +156,10 @@ const SHOE_DEAL_LIST = [
     penalty: -0.04,
     shortRoad: 0,
     raceCoins: 12,
-    gates: [
-      { label: "Reach level 3", met: (state, level) => level >= 3, have: (state, level) => `Lv ${level}` },
-      { label: "Finish 1 park trail run", met: (state) => state.progress.parkTrailRuns >= 1, have: (state) => `${state.progress.parkTrailRuns}/1` },
-    ],
+    // Level 6 is 325 overall XP, well past the 10K. Boutique brands wait
+    // for that plus a trail or a yard, which is when those results exist.
+    minLevel: 6,
+    gates: dirtGates(6),
   },
   {
     id: "speedland",
@@ -123,10 +172,8 @@ const SHOE_DEAL_LIST = [
     penalty: -0.04,
     shortRoad: 0,
     raceCoins: 12,
-    gates: [
-      { label: "Reach level 3", met: (state, level) => level >= 3, have: (state, level) => `Lv ${level}` },
-      { label: "Finish 1 park trail run", met: (state) => state.progress.parkTrailRuns >= 1, have: (state) => `${state.progress.parkTrailRuns}/1` },
-    ],
+    minLevel: 6,
+    gates: dirtGates(6),
   },
   {
     id: "mount-to-coast",
@@ -139,10 +186,8 @@ const SHOE_DEAL_LIST = [
     penalty: -0.03,
     shortRoad: 0,
     raceCoins: 12,
-    gates: [
-      { label: "Reach level 3", met: (state, level) => level >= 3, have: (state, level) => `Lv ${level}` },
-      { label: "Finish 2 park trail runs", met: (state) => state.progress.parkTrailRuns >= 2, have: (state) => `${state.progress.parkTrailRuns}/2` },
-    ],
+    minLevel: 7,
+    gates: dirtGates(7),
   },
   {
     id: "salomon",
@@ -155,10 +200,8 @@ const SHOE_DEAL_LIST = [
     penalty: -0.04,
     shortRoad: 0,
     raceCoins: 12,
-    gates: [
-      { label: "Reach level 4", met: (state, level) => level >= 4, have: (state, level) => `Lv ${level}` },
-      { label: "Finish 2 park trail runs", met: (state) => state.progress.parkTrailRuns >= 2, have: (state) => `${state.progress.parkTrailRuns}/2` },
-    ],
+    minLevel: 7,
+    gates: dirtGates(7),
   },
   {
     id: "satisfy",
@@ -171,10 +214,8 @@ const SHOE_DEAL_LIST = [
     penalty: -0.04,
     shortRoad: 0,
     raceCoins: 10,
-    gates: [
-      { label: "Reach level 4", met: (state, level) => level >= 4, have: (state, level) => `Lv ${level}` },
-      { label: "Finish 1 park trail run", met: (state) => state.progress.parkTrailRuns >= 1, have: (state) => `${state.progress.parkTrailRuns}/1` },
-    ],
+    minLevel: 8,
+    gates: dirtGates(8),
   },
 ];
 
@@ -187,10 +228,8 @@ const NUTRITION_DEAL_LIST = [
     gelDiscount: 0.25,
     raceFuel: 0,
     gelBonus: 0,
-    gates: [
-      { label: "Reach level 2", met: (state, level) => level >= 2, have: (state, level) => `Lv ${level}` },
-      { label: "Log 2 miles", met: (state) => state.progress.totalMiles >= 2, have: (state) => `${state.progress.totalMiles}/2 mi` },
-    ],
+    minLevel: 4,
+    gates: roadGates(4),
   },
   {
     id: "honey-stinger",
@@ -200,14 +239,8 @@ const NUTRITION_DEAL_LIST = [
     gelDiscount: 0.35,
     raceFuel: 6,
     gelBonus: 2,
-    gates: [
-      { label: "Reach level 2", met: (state, level) => level >= 2, have: (state, level) => `Lv ${level}` },
-      {
-        label: "Eat a real meal or carry a gel",
-        met: (state) => state.condition.mealQuality === "good" || (state.gels || 0) >= 1,
-        have: (state) => (state.gels || 0) >= 1 ? "gel in pocket" : state.condition.mealQuality,
-      },
-    ],
+    minLevel: 3,
+    gates: roadGates(3),
   },
   {
     id: "maurten",
@@ -217,14 +250,8 @@ const NUTRITION_DEAL_LIST = [
     gelDiscount: 0.1,
     raceFuel: 8,
     gelBonus: 4,
-    gates: [
-      { label: "Reach level 3", met: (state, level) => level >= 3, have: (state, level) => `Lv ${level}` },
-      {
-        label: "Finish the Brick City 5K",
-        met: (state) => Boolean(state.progress.fiveKFinished),
-        have: (state) => state.progress.fiveKFinished ? "done" : "not yet",
-      },
-    ],
+    minLevel: 6,
+    gates: dirtGates(6),
   },
   {
     id: "precision",
@@ -234,10 +261,8 @@ const NUTRITION_DEAL_LIST = [
     gelDiscount: 0.2,
     raceFuel: 4,
     gelBonus: 6,
-    gates: [
-      { label: "Reach level 3", met: (state, level) => level >= 3, have: (state, level) => `Lv ${level}` },
-      { label: "Finish 1 long run", met: (state) => state.progress.longRuns >= 1, have: (state) => `${state.progress.longRuns}/1` },
-    ],
+    minLevel: 7,
+    gates: dirtGates(7),
   },
 ];
 
@@ -268,6 +293,14 @@ export function emptySponsors() {
     // The first morning after a deal is signed always brings one note,
     // so the player meets the loop before the every-fourth-day cadence.
     seenObligation: false,
+    // offers: the note on the table. mailbox: a letter that arrives
+    // tomorrow morning. cooldowns: the day a brand may ask again.
+    // shoeTerms is the contract you actually signed. Null means "use the
+    // catalog numbers", which is how an old save keeps its deal.
+    offers: { shoe: null, nutrition: null },
+    cooldowns: {},
+    mailbox: [],
+    shoeTerms: null,
   };
 }
 
@@ -298,7 +331,7 @@ export function gateStatus(state, sponsor) {
   return { open: needs.every((need) => need.ok), needs, level };
 }
 
-export function shoePerkText(sponsor) {
+export function shoePerkText(sponsor, terms) {
   const covered = sponsor.styles.map((style) => styleLabel(style)).join(" + ");
   const boost = Math.round(sponsor.boost * 100);
   let trade = "";
@@ -307,8 +340,12 @@ export function shoePerkText(sponsor) {
   } else if (sponsor.shortRoad) {
     trade = ` −${Math.round(Math.abs(sponsor.shortRoad) * 100)}% in short road races.`;
   }
-  const off = Math.round(sponsor.discount * 100);
-  return `+${boost}% ${covered}.${trade} ${off}% off ${sponsor.brands.join("/")} gear. +${sponsor.raceCoins} coins on a clean finish. Worn-out matching shoes are free to replace.`;
+  // terms is the signed or offered contract. Without it, the catalog
+  // numbers are the deal you would get at the brand's minimum level.
+  const discount = typeof terms?.discount === "number" ? terms.discount : sponsor.discount;
+  const raceCoins = typeof terms?.raceCoins === "number" ? terms.raceCoins : sponsor.raceCoins;
+  const off = Math.round(discount * 100);
+  return `+${boost}% ${covered}.${trade} ${off}% off ${sponsor.brands.join("/")} gear. +${raceCoins} coins on a clean finish. Worn-out matching shoes are free to replace.`;
 }
 
 export function nutritionPerkText(sponsor) {
@@ -336,6 +373,22 @@ export function clampStanding(value) {
  * shortRoad is an extra tax for the all-style deals, and only on a short
  * road race, so Hoka is not a free upgrade at the 5K.
  */
+/**
+ * The contract on the save wins over the catalog. An old save has a
+ * sponsor and no shoeTerms, so the catalog discount and race coins
+ * stay in force and the deal is not rewritten.
+ */
+export function shoeDealNumbers(state) {
+  const deal = activeShoeSponsor(state);
+  if (!deal) return null;
+  const stored = state?.sponsors?.shoeTerms;
+  return {
+    ...deal,
+    discount: typeof stored?.discount === "number" ? stored.discount : deal.discount,
+    raceCoins: typeof stored?.raceCoins === "number" ? stored.raceCoins : deal.raceCoins,
+  };
+}
+
 export function sponsorPace(state, style, options = {}) {
   const deal = activeShoeSponsor(state);
   if (!deal) return { mod: 0, name: null, deal: null };
@@ -357,7 +410,7 @@ export function brandDiscount(deal, brand) {
 export function pricedShoe(state, shoeId, owned, wornOut) {
   const shoe = shoeById(shoeId);
   const base = owned ? replaceCost(shoeId) : shoe.price;
-  const deal = activeShoeSponsor(state);
+  const deal = shoeDealNumbers(state);
   if (!brandDiscount(deal, shoe.brand)) {
     return { cost: base, base, deal: false, free: false };
   }
@@ -375,7 +428,7 @@ export function pricedShoe(state, shoeId, owned, wornOut) {
 export function pricedCarry(state, carryId) {
   const item = carryById(carryId);
   if (!item) return { cost: 0, base: 0, deal: false };
-  const deal = activeShoeSponsor(state);
+  const deal = shoeDealNumbers(state);
   if (!brandDiscount(deal, item.brand)) return { cost: item.price, base: item.price, deal: false };
   return {
     cost: Math.round(item.price * (1 - deal.discount)),
@@ -451,11 +504,44 @@ export function obligationStillValid(sponsors, obligation) {
   return false;
 }
 
+function knownBrand(id) {
+  return Boolean(SHOE_SPONSORS[id] || NUTRITION_SPONSORS[id]);
+}
+
+function normalizeOffer(raw, kind) {
+  if (!raw || typeof raw !== "object") return null;
+  const sponsor = sponsorById(kind, raw.id);
+  if (!sponsor) return null;
+  const expiresOn = Number(raw.expiresOn);
+  if (!Number.isFinite(expiresOn)) return null;
+  const offeredOn = Number(raw.offeredOn);
+  const discount = Number(raw.discount);
+  const raceCoins = Number(raw.raceCoins);
+  return {
+    id: raw.id,
+    kind,
+    offeredOn: Number.isFinite(offeredOn) ? Math.round(offeredOn) : Math.round(expiresOn) - OFFER_DAYS,
+    expiresOn: Math.round(expiresOn),
+    discount: Number.isFinite(discount)
+      ? Math.max(0, Math.min(DISCOUNT_CAP, discount))
+      : kind === "shoe" ? sponsor.discount : 0,
+    raceCoins: Number.isFinite(raceCoins)
+      ? Math.max(0, Math.min(RACE_COIN_CAP, Math.round(raceCoins)))
+      : kind === "shoe" ? sponsor.raceCoins : 0,
+    poach: Boolean(raw.poach),
+  };
+}
+
 /**
  * Old saves have no sponsors object. Missing fields become "no deal"
  * instead of a crash. A deal id we do not sell anymore is cleared, and
  * its obligation goes with it, because you cannot work for a brand that
  * is not in the catalog.
+ *
+ * A save that already has a shoe or nutrition sponsor keeps that id.
+ * shoeTerms stays null when the old file never stored a contract, and
+ * the catalog numbers keep working. Offers, cooldowns, and the mailbox
+ * default to empty so a new field cannot crash Resume.
  */
 export function normalizeSponsors(raw) {
   const empty = emptySponsors();
@@ -465,10 +551,44 @@ export function normalizeSponsors(raw) {
   const standing = {};
   if (raw.standing && typeof raw.standing === "object") {
     for (const [id, value] of Object.entries(raw.standing)) {
-      if (!SHOE_SPONSORS[id] && !NUTRITION_SPONSORS[id]) continue;
+      if (!knownBrand(id)) continue;
       const numeric = Number(value);
       if (!Number.isFinite(numeric)) continue;
       standing[id] = clampStanding(numeric);
+    }
+  }
+  const cooldowns = {};
+  if (raw.cooldowns && typeof raw.cooldowns === "object") {
+    for (const [id, value] of Object.entries(raw.cooldowns)) {
+      if (!knownBrand(id)) continue;
+      const day = Number(value);
+      if (!Number.isFinite(day)) continue;
+      cooldowns[id] = Math.max(0, Math.round(day));
+    }
+  }
+  const offers = {
+    shoe: normalizeOffer(raw.offers?.shoe, "shoe"),
+    nutrition: normalizeOffer(raw.offers?.nutrition, "nutrition"),
+  };
+  const mailbox = [];
+  if (Array.isArray(raw.mailbox)) {
+    for (const letter of raw.mailbox) {
+      const kind = letter?.kind === "nutrition" ? "nutrition" : letter?.kind === "shoe" ? "shoe" : null;
+      const offer = kind ? normalizeOffer(letter, kind) : null;
+      const arrivesOn = Number(letter?.arrivesOn);
+      if (!offer || !Number.isFinite(arrivesOn)) continue;
+      mailbox.push({ ...offer, arrivesOn: Math.round(arrivesOn) });
+    }
+  }
+  let shoeTerms = null;
+  if (shoe && raw.shoeTerms && typeof raw.shoeTerms === "object") {
+    const discount = Number(raw.shoeTerms.discount);
+    const raceCoins = Number(raw.shoeTerms.raceCoins);
+    if (Number.isFinite(discount) && Number.isFinite(raceCoins)) {
+      shoeTerms = {
+        discount: Math.max(0, Math.min(DISCOUNT_CAP, discount)),
+        raceCoins: Math.max(0, Math.min(RACE_COIN_CAP, Math.round(raceCoins))),
+      };
     }
   }
   const next = {
@@ -477,6 +597,10 @@ export function normalizeSponsors(raw) {
     standing,
     obligation: null,
     seenObligation: Boolean(raw.seenObligation),
+    offers,
+    cooldowns,
+    mailbox,
+    shoeTerms,
   };
   if (obligationStillValid(next, raw.obligation)) {
     const task = OBLIGATIONS.find((item) => item.id === raw.obligation.task) || OBLIGATIONS[0];
@@ -493,11 +617,22 @@ export function normalizeSponsors(raw) {
 }
 
 export function sponsorSummaryLines(state) {
-  const shoe = activeShoeSponsor(state);
+  const shoe = shoeDealNumbers(state);
   const food = activeNutritionSponsor(state);
   const lines = [];
-  lines.push(shoe ? `Shoe sponsor: ${shoe.name} · standing ${standingOf(state, shoe.id)}` : "Shoe sponsor: none");
+  lines.push(shoe ? `Shoe sponsor: ${shoe.name} · standing ${standingOf(state, shoe.id)} · ${Math.round(shoe.discount * 100)}% off · +${shoe.raceCoins} coins` : "Shoe sponsor: none");
   lines.push(food ? `Nutrition sponsor: ${food.name} · standing ${standingOf(state, food.id)}` : "Nutrition sponsor: none");
+  const shoeOffer = state?.sponsors?.offers?.shoe;
+  const foodOffer = state?.sponsors?.offers?.nutrition;
+  const day = state?.calendar?.day || 1;
+  if (shoeOffer && day < shoeOffer.expiresOn) {
+    const name = sponsorById("shoe", shoeOffer.id)?.name || shoeOffer.id;
+    lines.push(`Shoe offer: ${name} until day ${shoeOffer.expiresOn}`);
+  }
+  if (foodOffer && day < foodOffer.expiresOn) {
+    const name = sponsorById("nutrition", foodOffer.id)?.name || foodOffer.id;
+    lines.push(`Nutrition offer: ${name} until day ${foodOffer.expiresOn}`);
+  }
   const job = state?.sponsors?.obligation;
   if (job) lines.push(`Obligation: ${job.label} for ${sponsorById(job.kind, job.sponsorId)?.name || "a sponsor"}`);
   return lines;

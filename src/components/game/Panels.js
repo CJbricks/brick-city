@@ -7,7 +7,8 @@
  *
  * Race readiness and the runner sheet also show the equipped shoes, the
  * belt or vest, both sponsors, and the nutrition cap (100, 105, or 110).
- * The long sponsor list is a normal menu, so the d-pad can reach it.
+ * The sponsor list is current deals and pending offers, plus locked
+ * brands as hints. It is a normal menu, so the d-pad can reach it.
  */
 
 "use client";
@@ -267,7 +268,7 @@ export function HelpView({ onClose }) {
       <p>Sleep at home ends the day. Sunday night writes the weekly summary.</p>
       <p>Low nutrition and poor sleep together will bonk you out of a race.</p>
       <p>Shoes change one style and cost you in the others. A belt is +5 max nutrition. A vest is +10, with a small penalty in short road races.</p>
-      <p>You can sign one shoe sponsor and one nutrition sponsor. Switch anytime. Obligations pay coins and cost an energy block.</p>
+      <p>Brands offer deals after a result. Accept or decline in Sponsors. An offer lasts 3 days. You can hold one shoe sponsor and one nutrition sponsor.</p>
       <Button className="gbc-btn" onClick={onClose}>Close</Button>
     </Window>
   );

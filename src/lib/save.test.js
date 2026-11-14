@@ -83,7 +83,30 @@ describe("save serialization", () => {
     expect(migrated.sponsors.shoe).toBeNull();
     expect(migrated.sponsors.nutrition).toBeNull();
     expect(migrated.sponsors.obligation).toBeNull();
+    expect(migrated.sponsors.offers).toEqual({ shoe: null, nutrition: null });
+    expect(migrated.sponsors.cooldowns).toEqual({});
+    expect(migrated.sponsors.mailbox).toEqual([]);
+    expect(migrated.sponsors.shoeTerms).toBeNull();
     expect(migrated.condition.nutrition).toBe(100);
+    expect(migrated.version).toBe(1);
+  });
+
+  it("keeps an active sponsor from a save that predates offers", () => {
+    const legacy = createNewGame({ name: "Ada", gender: "male" });
+    legacy.sponsors = {
+      shoe: "nike",
+      nutrition: "bpn",
+      standing: { nike: 66, bpn: 80 },
+      obligation: null,
+      seenObligation: true,
+    };
+    const migrated = deserialize(serialize(legacy));
+    expect(migrated.sponsors.shoe).toBe("nike");
+    expect(migrated.sponsors.nutrition).toBe("bpn");
+    expect(migrated.sponsors.standing.nike).toBe(66);
+    expect(migrated.sponsors.shoeTerms).toBeNull();
+    expect(migrated.sponsors.offers.shoe).toBeNull();
+    expect(migrated.sponsors.cooldowns).toEqual({});
     expect(migrated.version).toBe(1);
   });
 

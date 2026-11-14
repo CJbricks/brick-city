@@ -2,8 +2,9 @@
  * activities.js
  * What you can do in town, and the pure functions that apply a choice to
  * a save. React calls these and then stores the returned state. Nothing
- * in here reads the clock or Math.random. When a race needs luck, the
- * screen passes a roll in, so tests can force a win, a loss, or a bonk.
+ * in here reads the clock. When a race needs luck, the screen passes a
+ * roll in, so tests can force a win, a loss, or a bonk. Sponsor offers
+ * use a second function, rng, for the same reason.
  *
  * A returned object always has { ok, state, lines, ticker }. `ok: false`
  * means the day was too short or the coins weren't there, and `state` is
@@ -54,6 +55,7 @@ import {
   RACES,
   RIVAL,
   combinedMod,
+  finishQuality,
   flavorTime,
   gearModForStyle,
   judgeBonk,
@@ -62,6 +64,8 @@ import {
   shoeWear,
 } from "@/lib/race";
 import {
+  COOLDOWN_LEAVE,
+  COOLDOWN_PASS,
   NUTRITION_SPONSOR_IDS,
   SHOE_SPONSOR_IDS,
   STANDING_ACCEPT,
@@ -69,7 +73,6 @@ import {
   STANDING_SKIP,
   STANDING_START,
   STANDING_WARN,
-  activeShoeSponsor,
   clampStanding,
   emptySponsors,
   gateStatus,
@@ -79,12 +82,14 @@ import {
   pricedCarry,
   pricedGel,
   pricedShoe,
+  shoeDealNumbers,
   shoePerkText,
   sponsorById,
   sponsorPace,
   sponsorSummaryLines,
   standingOf,
 } from "@/lib/sponsors";
+import { deliverMail, expireOffers, liveOffer, rollOffers, setCooldown } from "@/lib/offers";
 import {
   describeNeeds,
   halfStatus,
@@ -637,7 +642,13 @@ function applyBody(state, activity) {
   }
 }
 
-export function applyRun(state, runId) {
+const LETTER_STYLES = {
+  "park-trail": "trail",
+  "ridge-repeats": "trail",
+  yards: "versatile",
+};
+
+export function applyRun(state, runId, rng = Math.random) {
   const activity = RUNS[runId];
   if (!activity) return refuse(state, ["That session isn't on the board."]);
   if (runId === "ridge-repeats" && !isMountainOpen(state)) {
@@ -679,6 +690,12 @@ export function applyRun(state, runId) {
   sample(next);
   if (activity.miles > 0) {
     lines.push(`${round1(activity.miles)} miles in the book.`);
+  }
+  // Trail loops and yards do not have a finish banner. If a brand cares,
+  // the note waits until tomorrow morning instead of interrupting the run.
+  const letterStyle = LETTER_STYLES[activity.id];
+  if (letterStyle) {
+    rollOffers(next, { style: letterStyle, quality: "finish", channel: "letter" }, rng);
   }
   return finish(before, next, lines);
 }
@@ -792,6 +809,10 @@ export function applySleep(state) {
   next.calendar.slot = slotFromEnergy(MAX_ENERGY);
   next.calendar.trainedToday = false;
   lines.push("Energy is back to 10/10.");
+  // The new morning is when a 3-day offer can die, and when a letter
+  // from yesterday's trail run is sitting on the table.
+  lines.push(...expireOffers(next));
+  lines.push(...deliverMail(next));
   const note = planObligation(next);
   if (note) {
     const brand = sponsorById(note.kind, note.sponsorId);
@@ -1074,7 +1095,7 @@ function raceStartNutrition(state) {
   return Math.min(maxNutritionFromGear(state.gear), state.condition.nutrition + bonus);
 }
 
-export function applyRace(state, raceId, roll = 0.5, choice) {
+export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) {
   const race = RACES[raceId];
   if (!race) return refuse(state, ["That race isn't on the calendar."]);
   if (raceId === "10k" && !isTenKOpen(state)) {
@@ -1098,6 +1119,9 @@ export function applyRace(state, raceId, roll = 0.5, choice) {
   const before = state;
   const next = clone(state);
   const lines = [];
+  let celebrate = false;
+  let speaker = null;
+  let quality = null;
   const fuel = addRaceFuel(next);
   if (fuel) lines.push(`${nutritionTuning(next).name} tops you up with ${fuel} nutrition at the gun.`);
   if (threat.bonk && !rescued && threat.dnf) {
@@ -1122,8 +1146,11 @@ export function applyRace(state, raceId, roll = 0.5, choice) {
     if (raceId === "5k") next.progress.fiveKFinished = true;
     if (raceId === "10k") next.progress.tenKFinished = true;
     if ((state.gels || 0) === 0) lines.push("A Stride Fuel gel could have saved this.");
+    // Jogging it in is a finish, not a win. No confetti.
+    quality = "finish";
   } else {
     const form = raceFormScore(next, race);
+    quality = finishQuality(form);
     const time = flavorTime(race, form, false);
     lines.push(rescued
       ? `The gel hits before the bonk does. You finish the ${race.name} in ${time}.`
@@ -1132,7 +1159,7 @@ export function applyRace(state, raceId, roll = 0.5, choice) {
     grantXp(next, race.xp, race.style);
     addAttributes(next, race.attributes);
     next.coins += race.coins;
-    const deal = activeShoeSponsor(next);
+    const deal = shoeDealNumbers(next);
     if (deal?.raceCoins) {
       next.coins += deal.raceCoins;
       lines.push(`${deal.name} adds ${deal.raceCoins} coins for the finish.`);
@@ -1145,6 +1172,11 @@ export function applyRace(state, raceId, roll = 0.5, choice) {
     if (raceId === "5k") next.progress.fiveKFinished = true;
     if (raceId === "10k") next.progress.tenKFinished = true;
   }
+  if (quality) {
+    const notice = noticeBrands(next, lines, { style: race.style, quality, channel: "finish" }, rng);
+    speaker = notice.speaker;
+    celebrate = quality === "win";
+  }
   next.calendar.trainedToday = true;
   const sore = nextSoreness(next, { hard: true });
   next.condition.sore = sore.sore;
@@ -1152,7 +1184,24 @@ export function applyRace(state, raceId, roll = 0.5, choice) {
   spendEnergy(next, energyCost, true);
   if (rescued) applyRescueGel(next);
   sample(next);
-  return finish(before, next, lines);
+  return withNotice(finish(before, next, lines), celebrate, speaker);
+}
+
+function noticeBrands(state, lines, event, rng) {
+  const rolled = rollOffers(state, event, rng);
+  lines.push(...rolled.lines);
+  if (rolled.created.length === 1) {
+    const sponsor = sponsorById(rolled.created[0].kind, rolled.created[0].id);
+    return { speaker: sponsor ? `${sponsor.name} rep` : "Finish line" };
+  }
+  if (rolled.created.length > 1) return { speaker: "Finish line" };
+  return { speaker: null };
+}
+
+function withNotice(result, celebrate, speaker) {
+  if (celebrate) result.celebrate = true;
+  if (speaker) result.speaker = speaker;
+  return result;
 }
 
 function scaleAttributes(attributes, factor) {
@@ -1175,7 +1224,7 @@ function raceFormScore(state, race) {
   );
 }
 
-export function applyRival(state, roll = 0.5, choice) {
+export function applyRival(state, roll = 0.5, choice, rng = Math.random) {
   const energyCost = RIVAL.energy || 1;
   if (readEnergy(state) < energyCost) {
     return refuse(state, [LOW_ENERGY]);
@@ -1194,6 +1243,7 @@ export function applyRival(state, roll = 0.5, choice) {
   const before = state;
   const next = clone(state);
   const lines = [`Remy Calder, ${RIVAL.title}, toes the line beside you.`];
+  let speaker = null;
   const fuel = addRaceFuel(next);
   if (fuel) lines.push(`${nutritionTuning(next).name} tops you up with ${fuel} nutrition at the gun.`);
   let win = false;
@@ -1218,7 +1268,7 @@ export function applyRival(state, roll = 0.5, choice) {
       grantXp(next, RIVAL.winXp, "road");
       addAttributes(next, RIVAL.winAttributes);
       next.coins += RIVAL.coins;
-      const deal = activeShoeSponsor(next);
+      const deal = shoeDealNumbers(next);
       if (deal?.raceCoins) {
         next.coins += deal.raceCoins;
         lines.push(`${deal.name} adds ${deal.raceCoins} coins for the finish.`);
@@ -1240,7 +1290,12 @@ export function applyRival(state, roll = 0.5, choice) {
   spendEnergy(next, energyCost, true);
   if (rescued) applyRescueGel(next);
   sample(next);
-  return finish(before, next, lines);
+  // Beating Remy is a boss win. The offer is guaranteed when a road
+  // brand is eligible. A loss does not draw anybody.
+  if (win) {
+    speaker = noticeBrands(next, lines, { style: "road", quality: "win", channel: "finish" }, rng).speaker;
+  }
+  return withNotice(finish(before, next, lines), win, speaker);
 }
 
 function sponsorField(kind) {
@@ -1250,19 +1305,38 @@ function sponsorField(kind) {
 export function applySignSponsor(state, kind, id) {
   const sponsor = sponsorById(kind, id);
   if (!sponsor) return refuse(state, ["That brand is not offering a deal."]);
-  const status = gateStatus(state, sponsor);
+  const before = state;
+  const next = clone(state);
+  if (!next.sponsors) next.sponsors = emptySponsors();
+  // A note that already aged out cannot be accepted. Expiry also starts
+  // the short cooldown, same as letting it sit.
+  const expired = expireOffers(next);
+  const offer = liveOffer(next, kind);
+  if (!offer || offer.id !== id) {
+    const why = expired[0] || "They have not made an offer. Brands ask you. You do not sign from the list.";
+    // An expired note has to stay expired. refuse(state) would throw
+    // the cooldown away because it hands back the object from before.
+    return refuse(expired.length ? next : state, [why]);
+  }
+  const status = gateStatus(next, sponsor);
   if (!status.open) {
     return refuse(state, [`Not yet. ${status.needs.filter((need) => !need.ok).map((need) => `${need.label} (${need.have})`).join(" ")}`]);
   }
   const field = sponsorField(kind);
-  if (state.sponsors?.[field] === id) {
+  if (next.sponsors[field] === id) {
     return refuse(state, [`You already have a ${sponsor.name} deal.`]);
   }
-  const before = state;
-  const next = clone(state);
-  if (!next.sponsors) next.sponsors = emptySponsors();
   const previous = sponsorById(kind, next.sponsors[field]);
   next.sponsors[field] = id;
+  next.sponsors.offers[kind] = null;
+  if (field === "shoe") {
+    next.sponsors.shoeTerms = { discount: offer.discount, raceCoins: offer.raceCoins };
+  }
+  // Leaving a brand for another one is the long cooldown. The closet
+  // stays. They just will not call for two weeks.
+  if (previous && previous.id !== id) {
+    setCooldown(next, previous.id, COOLDOWN_LEAVE);
+  }
   // A dropped deal sits under STANDING_DROP. Signing again starts clean.
   // Switching back to a deal you only paused keeps the standing you had.
   const previousStanding = next.sponsors.standing?.[id];
@@ -1274,11 +1348,26 @@ export function applySignSponsor(state, kind, id) {
   }
   const lines = [];
   if (previous) {
-    lines.push(`The ${previous.name} deal ends. Gear you already own stays in the closet.`);
+    lines.push(`The ${previous.name} deal ends. Gear you already own stays in the closet. ${previous.name} will not offer again for ${COOLDOWN_LEAVE} days.`);
   }
-  lines.push(`You sign with ${sponsor.name}. Standing is ${next.sponsors.standing[id]}. Only one ${field === "shoe" ? "shoe" : "nutrition"} sponsor at a time.`);
-  lines.push(field === "nutrition" ? nutritionPerkText(sponsor) : shoePerkText(sponsor));
+  lines.push(`You accept ${sponsor.name}. Standing is ${next.sponsors.standing[id]}. Only one ${field === "shoe" ? "shoe" : "nutrition"} sponsor at a time.`);
+  lines.push(field === "nutrition" ? nutritionPerkText(sponsor) : shoePerkText(sponsor, next.sponsors.shoeTerms));
   return finish(before, next, lines);
+}
+
+export function applyDeclineOffer(state, kind) {
+  const before = state;
+  const next = clone(state);
+  if (!next.sponsors) next.sponsors = emptySponsors();
+  const expired = expireOffers(next);
+  const offer = liveOffer(next, kind);
+  if (!offer) {
+    return refuse(expired.length ? next : state, [expired[0] || "No offer to decline."]);
+  }
+  const sponsor = sponsorById(kind, offer.id);
+  next.sponsors.offers[kind] = null;
+  setCooldown(next, offer.id, COOLDOWN_PASS);
+  return finish(before, next, [`You decline ${sponsor?.name || "the offer"}. They will not ask again for ${COOLDOWN_PASS} days.`]);
 }
 
 export function applyEndSponsor(state, kind) {
@@ -1288,8 +1377,12 @@ export function applyEndSponsor(state, kind) {
   const before = state;
   const next = clone(state);
   next.sponsors[field] = null;
+  if (field === "shoe") next.sponsors.shoeTerms = null;
   if (next.sponsors.obligation?.kind === field) next.sponsors.obligation = null;
-  return finish(before, next, [`You end the ${current.name} deal. Your closet stays as it is. You can sign again later.`]);
+  // Ending it yourself is the short wait, not the 14-day leave. They
+  // can come back after a week if a result earns it.
+  setCooldown(next, current.id, COOLDOWN_PASS);
+  return finish(before, next, [`You end the ${current.name} deal. Your closet stays as it is. They can offer again in ${COOLDOWN_PASS} days.`]);
 }
 
 export function applyObligation(state, choice) {
@@ -1321,8 +1414,12 @@ export function applyObligation(state, choice) {
     next.sponsors.obligation = null;
     const lines = [`You skip the ${job.label.toLowerCase()}. ${sponsor.name} standing falls to ${standing}.`];
     if (standing < STANDING_DROP) {
-      next.sponsors[sponsorField(job.kind)] = null;
-      lines.push(`${sponsor.name} drops the deal. You can sign again from the Sponsors menu.`);
+      const field = sponsorField(job.kind);
+      next.sponsors[field] = null;
+      if (field === "shoe") next.sponsors.shoeTerms = null;
+      // Being dropped is the long cooldown, same as leaving them for a rival.
+      setCooldown(next, job.sponsorId, COOLDOWN_LEAVE);
+      lines.push(`${sponsor.name} drops the deal. They will not offer again for ${COOLDOWN_LEAVE} days.`);
     } else if (standing < STANDING_WARN) {
       lines.push(`${sponsor.name} warns you. Skip another and they may walk.`);
     }
@@ -1338,10 +1435,10 @@ export function acknowledgeWeek(state) {
   return next;
 }
 
-export function perform(state, action, roll = 0.5) {
+export function perform(state, action, roll = 0.5, rng = Math.random) {
   switch (action.type) {
     case "run":
-      return applyRun(state, action.id);
+      return applyRun(state, action.id, rng);
     case "sleep":
       return applySleep(state);
     case "nap":
@@ -1362,6 +1459,8 @@ export function perform(state, action, roll = 0.5) {
       return applyUnequipCarry(state);
     case "sign-sponsor":
       return applySignSponsor(state, action.kind, action.id);
+    case "decline-offer":
+      return applyDeclineOffer(state, action.kind);
     case "end-sponsor":
       return applyEndSponsor(state, action.kind);
     case "obligation":
@@ -1369,9 +1468,9 @@ export function perform(state, action, roll = 0.5) {
     case "shift":
       return applyShift(state, action.job, action.choice);
     case "race":
-      return applyRace(state, action.id, roll, action.choice);
+      return applyRace(state, action.id, roll, action.choice, rng);
     case "rival":
-      return applyRival(state, roll, action.choice);
+      return applyRival(state, roll, action.choice, rng);
     case "eat-gel":
       return applyEatGel(state);
     default:
@@ -1440,7 +1539,7 @@ export function menuFor(locationId, state) {
             "Already had your home snack today.",
           ),
           item("Closet", "Shoes, belts, vests", { type: "open-gear" }),
-          item("Sponsors", "Deals and obligations", { type: "open-sponsors" }),
+          item("Sponsors", "Offers, deals, obligations", { type: "open-sponsors" }),
           item("Save Game", "This browser only", { type: "save" }),
         ],
       };
@@ -1465,7 +1564,7 @@ export function menuFor(locationId, state) {
           ),
           item("Shop shoes", "Trail, Marathon, Backyard", { type: "open-shoe-categories" }),
           item("Belts & vests", "+5 or +10 max nutrition", { type: "open-carry-shop" }),
-          item("Sponsors", "Sign, switch, or do an obligation", { type: "open-sponsors" }),
+          item("Sponsors", "Offers, deals, obligations", { type: "open-sponsors" }),
         ],
       };
     case "grocery":
@@ -1720,34 +1819,80 @@ export function closetItems(state) {
   return rows;
 }
 
+function offerTermsDetail(kind, sponsor, offer) {
+  if (kind === "nutrition") return nutritionPerkText(sponsor);
+  return shoePerkText(sponsor, offer);
+}
+
 function sponsorRows(state, kind, ids) {
   const field = kind === "nutrition" ? "nutrition" : "shoe";
-  const active = state.sponsors?.[field] || null;
-  return ids.map((id) => {
+  const activeId = state.sponsors?.[field] || null;
+  const pending = liveOffer(state, kind);
+  const rows = [];
+  if (activeId) {
+    const sponsor = sponsorById(kind, activeId);
+    if (sponsor) {
+      const terms = kind === "shoe" ? shoeDealNumbers(state) : null;
+      const perk = kind === "nutrition" ? nutritionPerkText(sponsor) : shoePerkText(sponsor, terms);
+      rows.push(item(
+        `End ${sponsor.name} deal`,
+        `Standing ${standingOf(state, sponsor.id)}. ${perk}`,
+        { type: "end-sponsor", kind },
+      ));
+    }
+  } else {
+    rows.push(item(
+      kind === "shoe" ? "No shoe sponsor" : "No nutrition sponsor",
+      "Brands offer when a result in their style is good enough.",
+      { type: "noop" },
+      true,
+      "No deal yet.",
+    ));
+  }
+  if (pending) {
+    const sponsor = sponsorById(kind, pending.id);
+    if (sponsor) {
+      const perk = offerTermsDetail(kind, sponsor, pending);
+      rows.push(item(
+        `Accept ${sponsor.name}`,
+        perk,
+        { type: "sign-sponsor", kind, id: pending.id },
+      ));
+      rows.push(item(
+        `Decline ${sponsor.name}`,
+        `They wait ${COOLDOWN_PASS} days before asking again.`,
+        { type: "decline-offer", kind },
+      ));
+    }
+  }
+  const locked = [];
+  const watching = [];
+  for (const id of ids) {
+    if (id === activeId || id === pending?.id) continue;
     const sponsor = sponsorById(kind, id);
     const status = gateStatus(state, sponsor);
-    const perk = kind === "nutrition" ? nutritionPerkText(sponsor) : shoePerkText(sponsor);
-    const covered = kind === "nutrition" ? "" : `Covers ${sponsor.styles.map((style) => styleLabel(style)).join(", ")}. `;
     if (!status.open) {
-      const needs = status.needs.filter((need) => !need.ok).map((need) => `${need.label} (${need.have})`).join(" · ");
-      return item(`${sponsor.name} · locked`, `${covered}${perk} · ${needs}`, { type: "noop" }, true, needs);
+      const needs = status.needs.filter((need) => !need.ok).map((need) => need.label).join(" · ");
+      locked.push(item(
+        `${sponsor.name} · not interested yet`,
+        needs,
+        { type: "noop" },
+        true,
+        `${sponsor.name} is not interested yet.`,
+      ));
+      continue;
     }
-    const standing = typeof state.sponsors?.standing?.[id] === "number" ? state.sponsors.standing[id] : null;
-    const standingText = standing === null ? "" : ` · standing ${standing}`;
-    if (active === id) {
-      return item(
-        `End ${sponsor.name} deal`,
-        `Active${standingText}. ${covered}${perk}`,
-        { type: "end-sponsor", kind },
-      );
-    }
-    const verb = active ? "Switch to" : "Sign";
-    return item(
-      `${verb} ${sponsor.name}`,
-      `${covered}${perk}${standingText}`,
-      { type: "sign-sponsor", kind, id },
-    );
-  });
+    watching.push(item(
+      `${sponsor.name} · watching`,
+      "No offer right now.",
+      { type: "noop" },
+      true,
+      "They have not made an offer.",
+    ));
+  }
+  rows.push(...watching);
+  rows.push(...locked);
+  return rows;
 }
 
 export function sponsorMenuItems(state) {
@@ -1772,9 +1917,9 @@ export function sponsorMenuItems(state) {
   } else if ((state.sponsors?.shoe || state.sponsors?.nutrition)) {
     rows.push(headerItem("No obligation today", "The next note shows up after you sleep."));
   }
-  rows.push(headerItem("Shoe sponsors", "One active shoe deal. Switching keeps your closet."));
+  rows.push(headerItem("Shoe deals", "One shoe sponsor. Rivals can offer better terms."));
   rows.push(...sponsorRows(state, "shoe", SHOE_SPONSOR_IDS));
-  rows.push(headerItem("Nutrition sponsors", "One fuel deal. Stacks with a belt or vest. No speed penalty."));
+  rows.push(headerItem("Nutrition deals", "One fuel deal. Stacks with a belt or vest. No speed penalty."));
   rows.push(...sponsorRows(state, "nutrition", NUTRITION_SPONSOR_IDS));
   return rows;
 }

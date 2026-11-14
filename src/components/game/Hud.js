@@ -11,7 +11,8 @@
  *
  * The little pictures (heart, bolt, zzz, apple, coin) are 8×8 canvases
  * painted with fillRect. They are not image files. CSS keeps them
- * pixelated, same as the town.
+ * pixelated, same as the town. The portrait in the corner is the same
+ * runner drawing as the map, including the shoe-sponsor colors.
  */
 
 "use client";
@@ -22,6 +23,7 @@ import { formatWhen } from "@/lib/calendar";
 import { MAX_ENERGY } from "@/lib/constants";
 import { maxNutritionFromGear } from "@/lib/catalog";
 import { levelProgress } from "@/lib/xp";
+import { drawRunnerSprite, runnerPalette } from "@/game/art";
 
 const METERS = [
   { key: "endurance", short: "END", color: "#3d7edb", icon: "heart" },
@@ -111,6 +113,31 @@ function CoinCount({ coins }) {
   );
 }
 
+function Portrait({ gender, sponsorId }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Same palette the walk sheet uses, so the face in the corner matches
+    // the runner on the road the moment a deal is accepted.
+    drawRunnerSprite(ctx, 0, 0, "down", 0, runnerPalette(gender, sponsorId), gender);
+  }, [gender, sponsorId]);
+  return (
+    <canvas
+      ref={ref}
+      className="hud-portrait"
+      width={32}
+      height={40}
+      data-testid="hud-portrait"
+      data-outfit={sponsorId || "default"}
+      aria-hidden="true"
+    />
+  );
+}
+
 function LevelAndEnergy({ game }) {
   const progress = levelProgress(game.xp.overall);
   const energy = typeof game.energy === "number" ? game.energy : MAX_ENERGY;
@@ -145,7 +172,10 @@ export function Hud({ game, onOpen }) {
   return (
     <div className="hud-wrap">
       <button type="button" className="hud-card" data-testid="hud" onClick={onOpen}>
-        <LevelAndEnergy game={game} />
+        <div className="hud-top">
+          <Portrait gender={game.runner?.gender} sponsorId={game.sponsors?.shoe || ""} />
+          <LevelAndEnergy game={game} />
+        </div>
         <span className="food-line" data-testid="hud-nutrition">{`FOOD ${foodNow} / ${foodMax}`}</span>
         <div className="hud-desktop">
           {METERS.map((meter) => (

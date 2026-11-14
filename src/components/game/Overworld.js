@@ -22,13 +22,15 @@
  * Draw order, back to front: map, pond shimmer, foot shadows, dust,
  * runners, then a full-screen time-of-day grade, then (dusk and night
  * only) the window and streetlamp glows. The glows are last so the dark
- * grade does not paint over the lamps.
+ * grade does not paint over the lamps. Win confetti is a screen-space
+ * layer on top of that, and it does not take clicks.
  */
 
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { RUNNER_FRAMES, RUNNER_H, RUNNER_W, makeRunnerSheet, renderWorld } from "@/game/art";
+import { RUNNER_FRAMES, RUNNER_H, RUNNER_W, makeRunnerSheet, renderWorld, runnerPalette } from "@/game/art";
+import { CONFETTI_MS, pieceCount, spawnPieces, stepPieces } from "@/game/confetti";
 import {
   TILE,
   buildWorld,
@@ -193,6 +195,11 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
       const grade = new PIXI.Graphics();
       const glowLayer = new PIXI.Container();
       const glows = new PIXI.Graphics();
+      // Screen-space, like Marathon City's overlay. Not a child of the
+      // world, so the camera scale does not shrink the pieces, and
+      // eventMode none means the squares never eat a tap.
+      const confettiGfx = new PIXI.Graphics();
+      confettiGfx.eventMode = "none";
       // 'add' is canvas "lighter". Drawn after the grade, the yellow
       // circles add light instead of painting a flat sticker on the night.
       glowLayer.blendMode = "add";
@@ -200,6 +207,7 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
       app.stage.addChild(worldLayer);
       app.stage.addChild(grade);
       app.stage.addChild(glowLayer);
+      app.stage.addChild(confettiGfx);
 
       const mapSprite = new PIXI.Sprite({ roundPixels: true });
       worldLayer.addChild(mapSprite);
@@ -227,7 +235,8 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
       const lights = glowAnchors();
       const sheetCache = new Map();
       function framesFor(palette, gender) {
-        const key = `${palette}:${gender}`;
+        const look = typeof palette === "string" ? palette : `${palette?.cap}|${palette?.shirt}|${palette?.shorts}|${palette?.stripe}`;
+        const key = `${look}:${gender}`;
         if (!sheetCache.has(key)) {
           const base = PIXI.Texture.from(makeRunnerSheet(palette, gender));
           base.source.scaleMode = "nearest";
@@ -256,6 +265,9 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
       const npcFeet = [];
       let sparkles = [];
       const npcSprites = [];
+      let confettiBits = [];
+      let confettiUntil = 0;
+      let confettiParty = 0;
 
       function placeActor(sprite, tx, ty, facing, palette, gender) {
         const frames = framesFor(palette, gender);
@@ -368,7 +380,10 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
         }
 
         const gender = game.runner.gender === "female" ? "female" : "male";
-        const frames = framesFor(gender, gender);
+        // Shoe sponsor id is the outfit. Every walk frame comes from this
+        // sheet, so the recolor is not just the standing pose.
+        const sponsorId = game.sponsors?.shoe || "";
+        const frames = framesFor(runnerPalette(gender, sponsorId), gender);
         // Sheet layout is 12 frames: down 0-3, up 4-7, side 8-11.
         // Each group plays idle, strideA, idle, strideB. Holding idle
         // between the two strides is the walk; % 4 is that cycle.
@@ -480,6 +495,32 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
         if (waterMs > 680) {
           waterMs = 0;
           waterFrame = waterFrame ? 0 : 1;
+        }
+
+        // A new win id starts a 30 second shower. The ticker keeps
+        // walking input alone. When the clock runs out the array is
+        // dropped so the graphics object is empty.
+        const party = live.partyId || 0;
+        if (party && party !== confettiParty) {
+          confettiParty = party;
+          const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          const count = pieceCount(reduced);
+          confettiUntil = performance.now() + CONFETTI_MS;
+          confettiBits = spawnPieces(count, host.clientWidth || 320, host.clientHeight || 240);
+        }
+        confettiGfx.clear();
+        if (confettiBits.length && performance.now() < confettiUntil) {
+          const viewW = host.clientWidth || 320;
+          const viewH = host.clientHeight || 240;
+          stepPieces(confettiBits, viewW, viewH);
+          const spec = Math.max(3, scale * 2);
+          for (const bit of confettiBits) {
+            confettiGfx.rect(Math.round(bit.x), Math.round(bit.y), spec, spec).fill({ color: bit.c });
+          }
+          host.dataset.confetti = "1";
+        } else {
+          confettiBits = [];
+          host.dataset.confetti = "0";
         }
       });
     })();
