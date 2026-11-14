@@ -480,6 +480,38 @@ Then teach `trackForScene` in `src/game/audio/cues.js` when to ask for it, and c
 
 Keep the melody, the bass line, and the chords original. Matching the handheld sound means duties, envelopes, vibrato, and tempo. It does not mean borrowing a tune.
 
+## Link previews (Open Graph)
+
+Paste the game's URL into Messages, Slack, Discord, Facebook, or X and the app builds a card: a picture, a headline, and one sentence. That card is a link preview. Next.js writes it from the `metadata` export in `src/app/layout.js`, which becomes tags in the page `<head>`. A shared link can show the title art before anyone opens the page.
+
+Two sets of tags describe the same card:
+
+- **Open Graph** tags start with `og:`. Facebook defined them, and most chat apps read them.
+- **Twitter card** tags start with `twitter:`. X reads those. Setting both keeps the card intact in either place.
+
+The browser tab keeps the name of the game. `title` is `Brick City`, so the tab and bookmarks say Brick City. The card headline is a different line: `Pokemans For Your Legs.` (`openGraph.title` and `twitter.title`). Under the headline, the card and the meta description use one sentence: `GBC era Pokemans Inspired RPG for Runners That Runs In Your Browser or on iPhone.`
+
+| Field | What a person sees |
+|---|---|
+| `title` | Browser tab and bookmarks |
+| `description` | The meta description, and the sentence under the card headline |
+| `openGraph.title` and `twitter.title` | Bold headline on the card |
+| `openGraph.description` and `twitter.description` | Sentence under that headline |
+| `openGraph.siteName` | Small site name on the card: Brick City |
+| `openGraph.url` | Page the card points at (`/`, the home page) |
+| `openGraph.type` | `website`, which selects the standard card layout |
+| `openGraph.locale` | `en_US`, the language of the card text |
+| `twitter.card` | `summary_large_image`, the wide picture with text underneath |
+| `images` | The picture on the card |
+
+The picture file is `public/og-image.png`, 1200 by 630 pixels. That ratio, about 1.91 to 1, is the large-card size Facebook, Slack, and Discord expect. A file with another shape gets cropped or letterboxed, and the brick logo or the runner can end up cut off. CJ's title art is 1512 by 896. Relative to its width, that painting is taller than a 1200x630 card, so the whole picture sits inside the frame. The bars on the left and right are the cream background sampled from that art (`#f5f1e5`). The scale from 1512x896 down to the frame is not a whole number of the original pixels, so a nearest-neighbor shrink would make some bricks 2 pixels wide and others 3. The card image uses a smooth filter instead, which keeps the bricks even. The untouched painting is `public/brand/brick-city-title.png`.
+
+`metadataBase` is `https://brick-city-five.vercel.app`. In the code the picture is the path `/og-image.png`. A chat app downloads the picture from its own servers, so the tag has to be a full address. Next joins the base and the path and writes `https://brick-city-five.vercel.app/og-image.png` into `og:image` and `twitter:image`. That join is the whole reason `metadataBase` is there.
+
+The favicon is separate. It still comes from `src/app/icon.png` and `src/app/favicon.ico`. The viewport is the Next.js default. This metadata block leaves both alone.
+
+After a deploy, check the card before sharing the link. Open [opengraph.xyz](https://www.opengraph.xyz/), paste `https://brick-city-five.vercel.app`, and look at the picture, the headline, and the sentence. The site fetches the live page the way a chat app does. If the picture is missing, view the page source and find `og:image`. It should be that absolute URL, and `public/og-image.png` should be in the deploy. A local check is `npm run build`, then `npm start`, then open the page source on the URL the server prints. The tags already name the production host, because `metadataBase` is that host, so the picture URL is absolute even when the page is served from your own machine.
+
 ## What this build does not do yet
 
 The half marathon itself, backyard race events, the other cities, and real-life run logging are in the design and not in this build. The menus mention the locked ones so the path is visible. Shoe sponsors and nutrition sponsors are in this private prototype. The fictional brand ladder in the README is the public-release plan.
