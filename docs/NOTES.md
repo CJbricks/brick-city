@@ -270,6 +270,30 @@ The grade is a vertical gradient over the whole screen: sky color at the top, gr
 
 The hearts, bolts, and the coin next to your money are not image files. `Icon` in `src/components/game/Hud.js` paints an 8×8 canvas with `fillRect`, one rectangle per pixel. The coin is a dark ring, a gold fill, a light pixel in the corner, and a short dark slot. The ring is what keeps it visible on the cream card. CSS sets `image-rendering: pixelated` and puts the coin in an inline flex row with a 3px gap, so it sits on the same line as the number. The number is just the count. The picture is the "c", which keeps the phone row from crowding the SORE flag.
 
+## How the HUD scales
+
+The same card is on screen in town on every width. What changes is only the CSS under 760 pixels. Nothing about the scale is saved. `brick-city-save-v1` still stores the runner, and `brick-city-audio-v1` still stores mute. The d-pad and the A/B buttons are a bar under the map. They are not part of this card, and these rules do not resize them.
+
+**Desktop, wider than 760px.** The card sits in the corner and stops at 360 pixels wide, so the map stays visible beside it. The portrait is the runner's real frame, 32 by 40. Labels are 8 pixels (Press Start 2P). Bars are 8 pixels tall. Energy blocks are 8 by 10. Padding is 6 pixels by 8. Each meter has its own row, with a name (END, PEAK, FTG, FOOD), an icon, a bar, and an arrow. Under that: the SORE warning when it is on, then the day and the coins. FOOD is also printed as `FOOD 85 / 100` above those rows, because the bar is a fraction of the cap and the words say which cap.
+
+**Phone, 760px and under.** The card stretches across the screen. Using the desktop sizes there covered roughly the top fifth of a short phone (about 114 pixels of card on a 375 by 667 screen, and the arrows were even taller than the labels). The phone rules pull it back down without dropping a piece of information:
+
+| Piece | Desktop | Phone |
+|---|---|---|
+| Portrait | 32×40, the whole frame | 16×20, half the frame |
+| Labels, including FOOD, the day, coins, SORE | 8px | 8px |
+| Bars | 8px tall | 5px tall |
+| Energy blocks | 8×10 | 6×7 |
+| Padding | 6px 8px | 4px 6px |
+| Trend arrows | 8px, inside a named meter row | 8px, beside a mini bar |
+| Rows | Portrait, FOOD, four named meters, day | Portrait + level + energy + FOOD on one line, then the four mini bars, then the day |
+
+Half size is on purpose. The frame is 32 by 40. Dividing by 2 lands on whole pixels, so the face stays sharp. A size in between, such as 24 by 30, does not divide evenly and the portrait goes soft. 8px is the floor for the words. Press Start 2P below that stops reading as letters. The card itself is the button, so the thinner bars do not need to be big enough to tap one at a time.
+
+The arrows are the part that used to blow up. `▲` `▼` and `▬` are not in Press Start 2P. The browser draws them from the fallback font. On the desktop rows the meter sets the font to 8px, so the triangle stays in that line. The phone mini bars did not set a size, so the triangles inherited the page's 16px and the line grew to 24px. `.trend-arrow` in the phone block pins them back to 8px.
+
+Dialogue and menus still start under the card. `.gbc-window` has a top margin only in this same phone block (72px today). The phone card is about 64 pixels tall and begins 6 pixels down, so the border ends near 70. The overlay already begins 8 pixels from the top of the map, and 72 pixels of margin lands the window about 10 pixels under the border. A short result used to open at the top and slice through the meters. If you make the phone card taller, raise that margin with it. The desktop window does not use the margin. It opens at the top of the map, beside the corner card.
+
 ## Sidewalks and walking into a building
 
 Sidewalk tiles are the letter `s` in `src/game/town.js`. They are walkable, like roads. Each run of sidewalk shares one edge with the street and the other with a door, so you are not stepping across a grass gap to get inside. The door pictures in `src/game/art.js` are lined up with that same edge.
@@ -391,7 +415,7 @@ The 5K board stands on the sidewalk tile just west of the track (tile 26, 11), u
 
 `TRACK_ROWS` in `src/game/town.js` is one loop of lane tiles. Each corner is two tiles wide so every step is straight up, down, left, or right. The infield stays walkable, so stepping inside does not trap you. The gate is the sidewalk next to the west lane, including the race booth at (26, 12). `sceneryLayout()` in `src/game/art.js` is the list of boards and fences. Fences are painted first, boards after, and no fence rectangle shares a tile with a sign or with that gate. The park PARK board was moved up onto the road row for the same reason: it used to cross into the park fence's tile.
 
-On a phone the HUD card is full width and about 120 pixels tall. Dialogue used to open at the top of the map, so a short result line sat on top of the meters and cut them in half. Below 760 pixels wide, the window starts under that card and scrolls inside the space that is left. The d-pad stays in the bar under the map, not on top of the text.
+On a phone the HUD card is full width and shorter than the old 120-pixel stack. How that scale works, and why the desktop card is a different size, is in "How the HUD scales" below. Dialogue used to open at the top of the map, so a short result line sat on top of the meters and cut them in half. Below 760 pixels wide, the window starts under that card and scrolls inside the space that is left. The d-pad stays in the bar under the map, not on top of the text.
 
 ### Why the track sign ignored A
 

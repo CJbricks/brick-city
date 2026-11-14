@@ -11,7 +11,9 @@
  * the HUD card so a one-line result does not cut through the meters.
  * Section labels in a menu use .menu-header
  * so they don't look like buttons you can buy. The HUD portrait is a
- * 32×40 canvas scaled as pixels, same as the town.
+ * 32×40 canvas. Wide screens show that full frame. Phones draw it at
+ * half size so the face stays on whole pixels. The phone sizes are
+ * only in the block under 760px. The desktop card is the rules above that.
  */
 
 html,
@@ -671,13 +673,22 @@ canvas {
 }
 
 @media (max-width: 760px) {
-  /* The phone HUD is a full-width card about 120px tall. A short
-     dialogue used to start at the top of the map and slice through
-     that card. The window starts below it, and it cannot grow back
-     up over the meters. */
+  /* Phone only. A 390-wide screen was giving the HUD the top fifth of
+     the map: same 32×40 face and 8px bars as the desktop corner card,
+     plus trend arrows at the page's 16px. This block shortens that
+     stack. It does not run on a wide window, so the desktop card keeps
+     the sizes written above. Text stays 8px. Press Start 2P smaller
+     than that stops looking like letters, and the whole card is the
+     thing you tap, so the thinner bars do not have to be thumb-sized. */
+
+  /* The overlay already starts 8px down and the card starts 6px down.
+     The phone card is about 64px tall, so its border ends near 70px.
+     72px of margin puts a short result about 10px under that border.
+     The old card needed 120px. If the phone card grows, raise this
+     with it or the dialogue sits on the HUD again. */
   .gbc-window {
-    margin-top: 120px;
-    max-height: calc(100% - 120px);
+    margin-top: 72px;
+    max-height: calc(100% - 72px);
   }
 
   .hud-desktop {
@@ -686,34 +697,120 @@ canvas {
 
   .hud-mobile {
     display: block;
+    flex: 1 1 100%;
+    width: 100%;
   }
 
   .hud-card {
     max-width: none;
     width: 100%;
     box-sizing: border-box;
+    /* One row for the face, the level, the energy, and FOOD. The meter
+       icons wrap underneath, then the day. FOOD used to be a row of
+       its own under a 40px portrait, which is most of what covered
+       the roofs. */
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 3px;
+    padding: 4px 6px;
+    font-size: 8px;
+    line-height: 1.5;
+  }
+
+  .hud-top {
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 4px;
+    align-items: center;
+  }
+
+  /* Half of 32×40. A size in between, such as 24×30, does not divide
+     the frame evenly, so the face goes soft. Half size stays sharp. */
+  .hud-portrait {
+    width: 16px;
+    height: 20px;
+  }
+
+  .hud-progress {
+    flex: 1;
+    min-width: 0;
+    margin-bottom: 0;
+  }
+
+  .xp-row,
+  .energy-row {
+    margin-bottom: 1px;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .energy-row {
+    margin-bottom: 0;
+  }
+
+  .hud-card .bar {
+    height: 5px;
+  }
+
+  .energy-blocks {
+    gap: 1px;
+  }
+
+  .energy-on,
+  .energy-off {
+    width: 6px;
+    height: 7px;
+  }
+
+  .food-line {
+    flex: 0 0 auto;
+    margin: 0;
+    font-size: 8px;
+    white-space: nowrap;
   }
 
   .mini-row {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
   }
 
   .mini-meter {
     display: flex;
     align-items: center;
-    gap: 3px;
+    gap: 2px;
     flex: 1;
+    min-width: 0;
+    font-size: 8px;
+    line-height: 1;
   }
 
   .mini-meter .bar {
     flex: 1;
-    min-width: 28px;
+    min-width: 16px;
+    height: 5px;
+  }
+
+  /* The triangle glyph is missing from Press Start 2P, so it falls
+     back to a normal font and, unsized, uses the page's 16px. That
+     made a 24px-tall black triangle next to 8px labels. Pinning it
+     here keeps the arrow the same height as the icon beside it. */
+  .trend-arrow {
+    flex: none;
+    font-size: 8px;
+    line-height: 1;
   }
 
   .hud-meta {
-    margin-top: 4px;
+    margin-top: 2px;
+    font-size: 8px;
+    gap: 4px 8px;
+  }
+
+  .sore-flag {
+    font-size: 8px;
   }
 }
 
