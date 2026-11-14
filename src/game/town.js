@@ -12,6 +12,17 @@
  * TILE is 32 source pixels. v1 used 16. A saved position is a pixel,
  * not a tile, so an old save has to be doubled on load (see save.js)
  * or the runner spawns halfway into the next tile and often in a wall.
+ *
+ * The town has one welcome sign. It names the city and the motto, and
+ * it stands on the sidewalk beside the Home mat (where you start).
+ * Building name boards (HOME, GROCERY, and the rest) are painted in
+ * art.js. They are not in this file, and they are not solid. Signs are
+ * not stored in brick-city-save-v1, so an old save just rebuilds this map.
+ *
+ * cityMaps() is the list of overworlds that actually exist. Brick City
+ * is the only one. Ridgeview, Lakeport, Mesa Verde Flats, Flatland, and
+ * Summit Hollow are names in the design. They are in UNBUILT_CITIES and
+ * have no tiles.
  */
 
 import { CITY_INFO } from "@/lib/constants";
@@ -40,26 +51,24 @@ export const BUILDINGS = [
 ];
 
 /**
- * One signpost per place, on a tile that is not the door mat. The post
- * itself is solid. The mat next to it stays walkable, so you face the
- * sign and press A instead of standing on it.
+ * The one city info sign. An earlier pass put this same plaque beside
+ * every place, so eight posts all read "BRICK CITY" and the motto.
+ * Those copies are gone. This post is the sidewalk tile just west of
+ * the Home mat: you spawn on (5, 7) facing the door, and turning left
+ * faces the sign. The post is solid. The mat stays walkable, so you
+ * stand next to it and press A.
  */
 export const CITY_SIGNS = [
-  { id: "sign-home", placeId: "home", placeName: "Home", tx: 4, ty: 7 },
-  { id: "sign-grocery", placeId: "grocery", placeName: "Grocery", tx: 16, ty: 7 },
-  { id: "sign-gym", placeId: "gym", placeName: "Gym", tx: 9, ty: 13 },
-  { id: "sign-store", placeId: "store", placeName: "Run Store", tx: 4, ty: 22 },
-  { id: "sign-park", placeId: "park", placeName: "Park", tx: 19, ty: 22 },
-  { id: "sign-track", placeId: "track", placeName: "Local Track", tx: 26, ty: 10 },
-  { id: "sign-mountain", placeId: "mountain", placeName: "Mountain Gate", tx: 29, ty: 7 },
-  { id: "sign-depot", placeId: "depot", placeName: "World Depot", tx: 20, ty: 17 },
+  { id: "sign-city", tx: 4, ty: 7 },
 ];
 
-export function signCopy(sign) {
-  // One page, not three presses. The sign is a plaque: city, motto, place.
+export function signCopy(info = CITY_INFO) {
+  // One page. The plaque is that city's name and motto, not a building
+  // name. Building names are the boards painted on the buildings.
+  // The default is Brick City, the only map you can walk today.
   return {
     speaker: "City sign",
-    lines: [`${CITY_INFO.name.toUpperCase()}\n"${CITY_INFO.motto}"\n${sign.placeName}`],
+    lines: [`${info.name.toUpperCase()}\n"${info.motto}"`],
   };
 }
 
@@ -212,7 +221,8 @@ export function createGround() {
 
   // Concrete sidewalks. Each one shares an edge with the road and with
   // the door tile, so the walk meets the threshold. Trees, roads, water,
-  // and the track are left alone. Signs sit on these tiles and stay solid.
+  // and the track are left alone. The welcome sign occupies sidewalk
+  // tile (4, 7). buildWorld marks that one tile solid.
   const pave = (x, y) => {
     if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return;
     const code = grid[y][x];
@@ -314,6 +324,9 @@ export function buildWorld(state) {
     blocked[npc.ty][npc.tx] = true;
     interact[npc.ty][npc.tx] = npc.location;
   }
+  // Only the welcome post is solid and readable. The old per-place
+  // posts are not in CITY_SIGNS, so those tiles are not blocked here
+  // and A does not open the city plaque on them.
   for (const sign of CITY_SIGNS) {
     blocked[sign.ty][sign.tx] = true;
     interact[sign.ty][sign.tx] = sign.id;
@@ -329,6 +342,37 @@ export function buildWorld(state) {
     signs: CITY_SIGNS,
     mountainOpen,
   };
+}
+
+/**
+ * Towns the design names that do not have tiles yet. The depot dialogue
+ * can mention them. There is no grid, no welcome sign, and nothing to
+ * collide with. When one of these gets a map, add it to cityMaps()
+ * with exactly one welcome sign and take it off this list.
+ */
+export const UNBUILT_CITIES = [
+  { id: "ridgeview", name: "Ridgeview" },
+  { id: "lakeport", name: "Lakeport" },
+  { id: "mesa-verde-flats", name: "Mesa Verde Flats" },
+  { id: "flatland", name: "Flatland" },
+  { id: "summit-hollow", name: "Summit Hollow" },
+];
+
+/**
+ * Every overworld the game can build. The sign test loops this list,
+ * so a new city is checked on the day it is added here. Brick City is
+ * the only entry. Its welcome post is CITY_SIGNS, and there is one.
+ */
+export function cityMaps() {
+  return [
+    {
+      id: CITY_INFO.id,
+      info: CITY_INFO,
+      signs: CITY_SIGNS,
+      places: PLACES,
+      build: buildWorld,
+    },
+  ];
 }
 
 export function tileOf(px, py) {

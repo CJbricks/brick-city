@@ -132,7 +132,7 @@ The roll is `Math.random()`, passed into `applyRace` at the moment you confirm. 
 | Community 10K | Level 3 and a finished 5K |
 | Mountain gate | Level 8, 5 park trail runs, any trail-style shoe equipped |
 | Brick City Half | Shown, still locked. The requirements are listed. The race itself is a later build. |
-| Other cities | The depot sign explains them. The bus is not running yet. |
+| Other cities | Sam at the depot explains them. The bus is not running yet. |
 
 Finishing the 5K hangs a banner by the track. Reaching level 3 plants extra flowers. The first park trail run adds a trail marker. Opening the gate changes the gate art and lets you walk a few tiles up the ridge. The actual ridge workout is still a menu on the ranger.
 
@@ -273,7 +273,30 @@ The hearts, bolts, and the coin next to your money are not image files. `Icon` i
 
 Sidewalk tiles are the letter `s` in `src/game/town.js`. They are walkable, like roads. Each run of sidewalk shares one edge with the street and the other with a door, so you are not stepping across a grass gap to get inside. The door pictures in `src/game/art.js` are lined up with that same edge.
 
-Home, the Grocery, the Gym, and the Run Store open when you step onto their mat. The check is in `noteArrival`. The first time the game looks at your tile (a new game starts on Home's mat, and a save can too) it only remembers the tile. A jump from the town map does the same. The menu opens on the step that changes the tile. Closing it with B leaves you standing there, and it does not open again until you walk off and come back. A still works if you want the menu without leaving. Park and the mountain trail are not in that list, so you still face the sign and press A.
+Home, the Grocery, the Gym, and the Run Store open when you step onto their mat. The check is in `noteArrival`. The first time the game looks at your tile (a new game starts on Home's mat, and a save can too) it only remembers the tile. A jump from the town map does the same. The menu opens on the step that changes the tile. Closing it with B leaves you standing there, and it does not open again until you walk off and come back. A still works if you want the menu without leaving. Park, the track, the mountain trail, and the depot are not in that list, so you face that spot and press A.
+
+## The city sign
+
+There is one welcome sign. It stands on the sidewalk just west of Home's front mat, which is where a new runner appears (tile 4, 7, next to the mat at 5, 7). Turn left and press A. The plaque says Brick City and the motto, Every Mile Lays a Brick.
+
+The bug was in `CITY_SIGNS` in `src/game/town.js`, added when energy blocks and city signs landed. That list put the same plaque beside every place: Home, Grocery, Gym, Run Store, Park, the track, the mountain gate, and the depot. Each post was solid, and reading it showed the city name, the motto, and then the place name. So the town had eight "Brick City" signs.
+
+The extra posts are gone, collision and all. Those tiles are sidewalk or plaza again (the old mountain post was already on grass, which you cannot walk, but A no longer finds a sign there). The boards painted on the buildings stay: HOME, GROCERY, GYM, RUN STORE, PARK, TRACK, MOUNTAIN, and the DEPOT letters. They already say the building's own name. They do not use the city motto, and they are not posts you can bump, so turning them into a second set of signs would have been a duplicate. Sam at the depot is still the person who talks about the other cities. That was never the city plaque.
+
+The sign is not written into the save. `brick-city-save-v1` remembers the runner. Loading an old blob rebuilds the map from this file, so those saves still open and they see the single sign.
+
+The same check covers every city that has a map. `cityMaps()` in `src/game/town.js` is that list, and the test loops it. Right now the list is only Brick City (eight signs before this fix, one after). These towns are named in the design and in Sam's depot lines, and they are not implemented. No tile grid, no sign, no collision:
+
+| Town | Map in the game? | City info signs |
+|---|---|---|
+| Brick City | Yes. This is the overworld you walk. | 8 before, 1 after |
+| Ridgeview | No | none |
+| Lakeport | No | none |
+| Mesa Verde Flats | No | none |
+| Flatland | No | none |
+| Summit Hollow | No | none |
+
+When a later town gets tiles, add it to `cityMaps()` with one welcome sign and take its name off `UNBUILT_CITIES`. The loop will then require that map to have exactly one city info sign too.
 
 ## Controls
 

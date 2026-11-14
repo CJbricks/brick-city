@@ -26,8 +26,9 @@ export const GEL_ENERGY = 1;
 export const GEL_NUTRITION = 12;
 
 /**
- * One city record. Later towns (Ridgeview, Lakeport, …) can be added
- * beside Brick City and the signposts will read the same fields.
+ * One city record. Later towns (Ridgeview, Lakeport, and the rest)
+ * are named in the design and are not maps yet. See UNBUILT_CITIES
+ * in src/game/town.js. The welcome sign reads these fields.
  */
 export const CITIES = {
   "brick-city": {
