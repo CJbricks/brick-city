@@ -13,6 +13,10 @@
  * the new fields instead of rejecting the file. A wrong version (not 1)
  * still means "no save", so the title screen offers New Game.
  *
+ * Daily meal, snack, and nap counts were added on this same key. A blob
+ * from before those counts existed still loads. Missing numbers become 0,
+ * or 1 when the older yes/no flag says that plate or nap was already used.
+ *
  * v2 widened every tile from 16px to 32px. A position is stored in pixels,
  * so an old save's x/y would land on the wrong half of the new tile and
  * often inside a wall. New games stamp tileSize: 32. A save without that
@@ -48,6 +52,18 @@ export function deserialize(raw) {
     if (typeof data.gels !== "number") data.gels = 0;
     if (typeof data.calendar.homeMealUsed !== "boolean") data.calendar.homeMealUsed = false;
     if (typeof data.calendar.homeSnackUsed !== "boolean") data.calendar.homeSnackUsed = false;
+    // The counts are newer than the yes/no flags. An old brick-city-save-v1
+    // file has the flags and not the numbers. Missing means "start from the
+    // flag": true is 1 (they already used the old once-a-day plate or nap),
+    // false or absent is 0. Leaving the number missing would make the Home
+    // menu print "Meals undefined/3".
+    if (typeof data.napsToday !== "number") data.napsToday = data.nappedToday ? 1 : 0;
+    if (typeof data.calendar.homeMeals !== "number") {
+      data.calendar.homeMeals = data.calendar.homeMealUsed ? 1 : 0;
+    }
+    if (typeof data.calendar.homeSnacks !== "number") {
+      data.calendar.homeSnacks = data.calendar.homeSnackUsed ? 1 : 0;
+    }
     // Gear and sponsors are filled in, not required. A v1 closet that only
     // knows starter / road / trail / hybrid still loads. The house ids are
     // aliases, so those pairs stay equipped. Nutrition is pulled back

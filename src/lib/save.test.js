@@ -5,7 +5,9 @@
  * crashing on Resume.
  *
  * Version stays 1. A closet from before belts and sponsors existed is
- * filled in here, and the old shoe ids still resolve.
+ * filled in here, and the old shoe ids still resolve. A save from before
+ * daily meal, snack, and nap counts existed still loads too. The missing
+ * numbers default to 0.
  */
 
 import { describe, expect, it } from "vitest";
@@ -107,6 +109,38 @@ describe("save serialization", () => {
     expect(migrated.sponsors.shoeTerms).toBeNull();
     expect(migrated.sponsors.offers.shoe).toBeNull();
     expect(migrated.sponsors.cooldowns).toEqual({});
+    expect(migrated.version).toBe(1);
+  });
+
+  it("loads an old save that has no meal, snack, or nap counters", () => {
+    const legacy = createNewGame({ name: "Ada", gender: "female" });
+    delete legacy.napsToday;
+    delete legacy.nappedToday;
+    delete legacy.calendar.homeMeals;
+    delete legacy.calendar.homeSnacks;
+    delete legacy.calendar.homeMealUsed;
+    delete legacy.calendar.homeSnackUsed;
+    const loaded = deserialize(serialize(legacy));
+    expect(loaded).not.toBeNull();
+    expect(loaded.version).toBe(1);
+    expect(loaded.napsToday).toBe(0);
+    expect(loaded.nappedToday).toBe(false);
+    expect(loaded.calendar.homeMeals).toBe(0);
+    expect(loaded.calendar.homeSnacks).toBe(0);
+    expect(loaded.calendar.homeMealUsed).toBe(false);
+    expect(loaded.calendar.homeSnackUsed).toBe(false);
+
+    const used = createNewGame({ name: "Ada", gender: "male" });
+    delete used.napsToday;
+    delete used.calendar.homeMeals;
+    delete used.calendar.homeSnacks;
+    used.nappedToday = true;
+    used.calendar.homeMealUsed = true;
+    used.calendar.homeSnackUsed = true;
+    const migrated = deserialize(serialize(used));
+    expect(migrated.napsToday).toBe(1);
+    expect(migrated.calendar.homeMeals).toBe(1);
+    expect(migrated.calendar.homeSnacks).toBe(1);
     expect(migrated.version).toBe(1);
   });
 

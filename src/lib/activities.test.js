@@ -7,6 +7,10 @@
  * Track and park workouts are in here too. Threshold and Interval Run
  * have to raise Peak more than Endurance and cost two energy blocks.
  * Zone 2 raises both meters about evenly and costs one.
+ *
+ * Home meals, snacks, and naps are in here too. A free meal is a third
+ * of the FOOD cap. The fourth plate and the third snack cost coins.
+ * The third nap does not. Sleep puts the counters back to zero.
  */
 
 import { describe, expect, it } from "vitest";
@@ -23,9 +27,11 @@ import {
   applyShoe,
   applySleep,
   createNewGame,
+  homeMealPortion,
   menuFor,
   perform,
 } from "@/lib/activities";
+import { slotFromEnergy } from "@/lib/calendar";
 import { isMountainOpen, isTenKOpen, mountainStatus } from "@/lib/unlocks";
 import { xpToReachLevel } from "@/lib/xp";
 
@@ -269,50 +275,35 @@ describe("energy blocks and gels", () => {
     expect(slept.state.energy).toBe(10);
     expect(slept.state.calendar.slot).toBe(0);
     expect(slept.state.nappedToday).toBe(false);
+    expect(slept.state.napsToday).toBe(0);
   });
 
-  it("lets you nap once in the daytime without giving energy back", () => {
-    const first = applyNap(fresh());
-    expect(first.ok).toBe(true);
-    expect(first.state.energy).toBe(9);
-    expect(first.state.condition.fatigue).toBe(0);
-    expect(first.state.nappedToday).toBe(true);
-    const second = applyNap(first.state);
-    expect(second.ok).toBe(false);
-    const late = fresh();
-    late.energy = 4;
-    expect(applyNap(late).ok).toBe(false);
-  });
-
-  it("cooks once a day at home for free, then the kitchen closes until sleep", () => {
+  it("cooks at home for free without spending energy, and restocks after sleep", () => {
     const start = fresh();
     start.condition.nutrition = 40;
     start.energy = 3;
     const meal = applyHomeFood(start, "meal");
     expect(meal.ok).toBe(true);
-    expect(meal.state.condition.nutrition).toBe(64);
+    expect(meal.state.condition.nutrition).toBe(74);
     expect(meal.state.condition.mealName).toBe("Kitchen oatmeal");
     expect(meal.state.condition.mealQuality).toBe("good");
     expect(meal.state.condition.junk).toBe(false);
     expect(meal.state.energy).toBe(3);
     expect(meal.state.coins).toBe(48);
-    expect(meal.state.calendar.homeMealUsed).toBe(true);
-    const secondMeal = applyHomeFood(meal.state, "meal");
-    expect(secondMeal.ok).toBe(false);
-    expect(secondMeal.lines[0]).toBe("Already ate your home meal today.");
+    expect(meal.state.calendar.homeMeals).toBe(1);
 
     const snack = applyHomeFood(meal.state, "snack");
     expect(snack.ok).toBe(true);
-    expect(snack.state.condition.nutrition).toBe(76);
+    expect(snack.state.condition.nutrition).toBe(86);
     expect(snack.state.condition.mealName).toBe("Pantry snack");
     expect(snack.state.condition.mealQuality).toBe("poor");
     expect(snack.state.condition.junk).toBe(true);
     expect(snack.state.energy).toBe(3);
-    const secondSnack = applyHomeFood(snack.state, "snack");
-    expect(secondSnack.ok).toBe(false);
-    expect(secondSnack.lines[0]).toBe("Already had your home snack today.");
+    expect(snack.state.calendar.homeSnacks).toBe(1);
 
     const morning = applySleep(snack.state);
+    expect(morning.state.calendar.homeMeals).toBe(0);
+    expect(morning.state.calendar.homeSnacks).toBe(0);
     expect(morning.state.calendar.homeMealUsed).toBe(false);
     expect(morning.state.calendar.homeSnackUsed).toBe(false);
     expect(morning.state.energy).toBe(10);
@@ -452,5 +443,213 @@ describe("track, treadmill, and park workouts", () => {
     const broke = fresh();
     broke.energy = 0;
     expect(applyRun(broke, "zone-2").ok).toBe(false);
+  });
+});
+
+describe("daily meals, snacks, and naps", () => {
+  it("adds 34 food on the first meal and caps at 100", () => {
+    expect(homeMealPortion(100, 0)).toBe(34);
+    expect(homeMealPortion(100, 1)).toBe(33);
+    expect(homeMealPortion(100, 2)).toBe(33);
+
+    const empty = fresh();
+    empty.condition.nutrition = 0;
+    const first = applyHomeFood(empty, "meal");
+    expect(first.ok).toBe(true);
+    expect(first.state.condition.nutrition).toBe(34);
+
+    const high = fresh();
+    high.condition.nutrition = 90;
+    const capped = applyHomeFood(high, "meal");
+    expect(capped.state.condition.nutrition).toBe(100);
+  });
+
+  it("fills an empty bar to 100 across three free meals", () => {
+    let state = fresh();
+    state.condition.nutrition = 0;
+    const gained = [];
+    for (let i = 0; i < 3; i += 1) {
+      const before = state.condition.nutrition;
+      const meal = applyHomeFood(state, "meal");
+      expect(meal.ok).toBe(true);
+      expect(meal.state.coins).toBe(48);
+      gained.push(meal.state.condition.nutrition - before);
+      state = meal.state;
+    }
+    expect(gained).toEqual([34, 33, 33]);
+    expect(state.condition.nutrition).toBe(100);
+    expect(state.calendar.homeMeals).toBe(3);
+    expect(homeMealPortion(105, 0) + homeMealPortion(105, 1) + homeMealPortion(105, 2)).toBe(105);
+    expect(homeMealPortion(110, 0) + homeMealPortion(110, 1) + homeMealPortion(110, 2)).toBe(110);
+  });
+
+  it("blocks the fourth meal until you pay, and the grocery stays open", () => {
+    let state = fresh();
+    state.condition.nutrition = 0;
+    state.coins = 0;
+    for (let i = 0; i < 3; i += 1) {
+      const meal = applyHomeFood(state, "meal");
+      expect(meal.ok).toBe(true);
+      state = meal.state;
+    }
+    const fourth = applyHomeFood(state, "meal");
+    expect(fourth.ok).toBe(false);
+    expect(fourth.lines[0]).toBe("Free meals used. Buy one for 18 coins?");
+    expect(fourth.state.condition.nutrition).toBe(100);
+    expect(fourth.state.calendar.homeMeals).toBe(3);
+
+    state.coins = 18;
+    state.condition.nutrition = 40;
+    const bought = applyHomeFood(state, "meal");
+    expect(bought.ok).toBe(true);
+    expect(bought.state.coins).toBe(0);
+    expect(bought.state.condition.nutrition).toBe(73);
+    expect(bought.state.calendar.homeMeals).toBe(3);
+
+    const shopper = fresh();
+    shopper.calendar.homeMeals = 3;
+    shopper.calendar.homeMealUsed = true;
+    shopper.condition.nutrition = 40;
+    const grocery = applyPurchase(shopper, "meal");
+    expect(grocery.ok).toBe(true);
+    expect(grocery.state.coins).toBe(30);
+    expect(grocery.state.condition.nutrition).toBe(72);
+  });
+
+  it("blocks the third snack until you pay, and keeps the pantry effect", () => {
+    let state = fresh();
+    state.condition.nutrition = 40;
+    state.coins = 0;
+    const first = applyHomeFood(state, "snack");
+    expect(first.ok).toBe(true);
+    expect(first.state.condition.nutrition).toBe(52);
+    expect(first.state.condition.junk).toBe(true);
+    expect(first.state.condition.mealQuality).toBe("poor");
+    expect(first.state.condition.mealName).toBe("Pantry snack");
+    const second = applyHomeFood(first.state, "snack");
+    expect(second.ok).toBe(true);
+    expect(second.state.condition.nutrition).toBe(64);
+    expect(second.state.calendar.homeSnacks).toBe(2);
+    const third = applyHomeFood(second.state, "snack");
+    expect(third.ok).toBe(false);
+    expect(third.lines[0]).toBe("Free snacks used. Buy one for 7 coins?");
+    expect(third.state.calendar.homeSnacks).toBe(2);
+
+    second.state.coins = 7;
+    const paid = applyHomeFood(second.state, "snack");
+    expect(paid.ok).toBe(true);
+    expect(paid.state.coins).toBe(0);
+    expect(paid.state.condition.nutrition).toBe(76);
+    expect(paid.state.condition.junk).toBe(true);
+    expect(paid.state.calendar.homeSnacks).toBe(2);
+  });
+
+  it("adds 3 energy capped at 10, moves the clock one step, and blocks the third nap", () => {
+    const low = fresh();
+    low.energy = 4;
+    low.calendar.slot = slotFromEnergy(4);
+    const first = applyNap(low);
+    expect(first.ok).toBe(true);
+    expect(first.state.energy).toBe(7);
+    expect(first.state.calendar.slot).toBe(slotFromEnergy(4) + 1);
+    expect(first.state.napsToday).toBe(1);
+    expect(first.state.condition.fatigue).toBe(0);
+
+    const second = applyNap(first.state);
+    expect(second.ok).toBe(true);
+    expect(second.state.energy).toBe(10);
+    expect(second.state.napsToday).toBe(2);
+
+    const third = applyNap(second.state);
+    expect(third.ok).toBe(false);
+    expect(third.lines[0]).toBe("You've already napped twice today. Sleep will start a new day.");
+    expect(third.state.energy).toBe(10);
+    expect(third.state.napsToday).toBe(2);
+
+    const almost = fresh();
+    almost.energy = 8;
+    almost.calendar.slot = slotFromEnergy(8);
+    const capped = applyNap(almost);
+    expect(capped.ok).toBe(true);
+    expect(capped.state.energy).toBe(10);
+
+    const full = applyNap(fresh());
+    expect(full.state.energy).toBe(10);
+    expect(full.state.calendar.slot).toBe(1);
+    const later = applyRun(full.state, "long-run");
+    expect(later.state.energy).toBe(8);
+    expect(later.state.calendar.slot).toBe(2);
+  });
+
+  it("resets meal, snack, and nap counters after sleep", () => {
+    let state = fresh();
+    state.condition.nutrition = 40;
+    state = applyHomeFood(state, "meal").state;
+    state = applyHomeFood(state, "snack").state;
+    state = applyNap(state).state;
+    expect(state.calendar.homeMeals).toBe(1);
+    expect(state.calendar.homeSnacks).toBe(1);
+    expect(state.napsToday).toBe(1);
+    expect(state.nappedToday).toBe(true);
+
+    const morning = applySleep(state);
+    expect(morning.ok).toBe(true);
+    expect(morning.state.calendar.homeMeals).toBe(0);
+    expect(morning.state.calendar.homeSnacks).toBe(0);
+    expect(morning.state.napsToday).toBe(0);
+    expect(morning.state.nappedToday).toBe(false);
+    expect(morning.state.calendar.homeMealUsed).toBe(false);
+    expect(morning.state.calendar.homeSnackUsed).toBe(false);
+    expect(morning.state.energy).toBe(10);
+    expect(morning.state.calendar.slot).toBe(0);
+
+    const again = applyHomeFood(morning.state, "meal");
+    expect(again.ok).toBe(true);
+    expect(again.state.calendar.homeMeals).toBe(1);
+    const napped = applyNap(again.state);
+    expect(napped.ok).toBe(true);
+    expect(napped.state.napsToday).toBe(1);
+  });
+
+  it("shows the counters in the Home menu and offers coins instead of closing the kitchen", () => {
+    const open = menuFor("home", fresh());
+    expect(open.intro).toContain("Meals 0/3");
+    expect(open.intro).toContain("Snacks 0/2");
+    expect(open.intro).toContain("Naps 0/2");
+    const meal = open.items.find((entry) => entry.action.id === "meal");
+    const snack = open.items.find((entry) => entry.action.id === "snack");
+    const nap = open.items.find((entry) => entry.action.type === "nap");
+    expect(meal.detail).toContain("+34 FOOD");
+    expect(meal.detail).toContain("Meals 0/3");
+    expect(meal.disabled).toBe(false);
+    expect(snack.detail).toContain("+12 FOOD");
+    expect(nap.label).toBe("Nap");
+    expect(nap.disabled).toBe(false);
+    expect(open.items[0].label).toBe("Sleep");
+    expect(open.items[1].label).toBe("Nap");
+
+    const used = fresh();
+    used.calendar.homeMeals = 3;
+    used.calendar.homeMealUsed = true;
+    used.calendar.homeSnacks = 2;
+    used.calendar.homeSnackUsed = true;
+    used.napsToday = 2;
+    used.nappedToday = true;
+    const closed = menuFor("home", used);
+    expect(closed.intro).toContain("Meals 3/3 · Snacks 2/2 · Naps 2/2");
+    const paidMeal = closed.items.find((entry) => entry.action.id === "meal");
+    const paidSnack = closed.items.find((entry) => entry.action.id === "snack");
+    const tired = closed.items.find((entry) => entry.action.type === "nap");
+    expect(paidMeal.detail).toBe("Free meals used. Buy one for 18 coins?");
+    expect(paidMeal.disabled).toBe(false);
+    expect(paidSnack.detail).toBe("Free snacks used. Buy one for 7 coins?");
+    expect(paidSnack.disabled).toBe(false);
+    expect(tired.disabled).toBe(true);
+    expect(tired.disabledReason).toBe("You've already napped twice today. Sleep will start a new day.");
+
+    used.coins = 0;
+    const broke = menuFor("home", used);
+    expect(broke.items.find((entry) => entry.action.id === "meal").disabled).toBe(true);
+    expect(broke.items.find((entry) => entry.action.id === "meal").disabledReason).toBe("Not enough coins.");
   });
 });

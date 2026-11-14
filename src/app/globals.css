@@ -516,6 +516,15 @@ canvas {
   opacity: 0.55;
 }
 
+.menu-row.is-disabled {
+  background: #d5d0c6;
+  color: #6e685f;
+}
+
+.menu-row.is-disabled .menu-detail {
+  color: #6e685f;
+}
+
 .menu-header {
   width: 100%;
   text-align: left;

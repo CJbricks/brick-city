@@ -41,7 +41,7 @@ function CityPlaque() {
   );
 }
 
-export function MenuList({ title, intro, items, index, onPick, testId }) {
+export function MenuList({ title, intro, introTestId, items, index, onPick, testId }) {
   const listRef = useRef(null);
   useEffect(() => {
     const selected = listRef.current?.querySelector(".selected");
@@ -50,7 +50,7 @@ export function MenuList({ title, intro, items, index, onPick, testId }) {
   return (
     <Window title={title} testId={testId || "menu"}>
       <CityPlaque />
-      {intro ? <p>{intro}</p> : null}
+      {intro ? <p data-testid={introTestId || undefined}>{intro}</p> : null}
       <div ref={listRef}>
         {items.map((item, itemIndex) => (
           <button
@@ -59,7 +59,7 @@ export function MenuList({ title, intro, items, index, onPick, testId }) {
             className={
               item.header
                 ? `menu-header${itemIndex === index ? " selected" : ""}`
-                : `menu-row${itemIndex === index ? " selected" : ""}`
+                : `menu-row${itemIndex === index ? " selected" : ""}${item.disabled ? " is-disabled" : ""}`
             }
             data-testid={item.testId || undefined}
             onClick={() => onPick(itemIndex)}

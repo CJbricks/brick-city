@@ -305,8 +305,10 @@ export function PlayScreen({ game, setGame, onTitle }) {
         type: "list",
         title: menu.title,
         intro: menu.intro,
+        introTestId: menu.introTestId,
         items: menu.items,
         index: 0,
+        testId: menu.testId,
       });
       return;
     }
@@ -532,6 +534,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
             <MenuList
               title={panel.title}
               intro={panel.intro}
+              introTestId={panel.introTestId}
               items={panel.title === "Menu" ? systemItems(soundOn) : panel.items}
               index={panel.index}
               testId={panel.testId}
