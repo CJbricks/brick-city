@@ -57,7 +57,7 @@ The game runs on a **calendar**. Each day is split into time slots, and fatigue 
 
 **Calendar screen**: a menu screen showing this week, upcoming races, sponsor goals, and past weekly summaries.
 
-**What v1 plays:** the clock still has those five names, but actions spend **10 daily energy blocks** instead of being capped by the slot count. Training, shifts, the 5K, the rival mile, and a nap cost 1 block. A long run, ridge repeats, and the 10K cost 2. Eating and shopping cost 0: grocery food, gels, shoes, and the home kitchen never spend a block. Home can cook one free healthy meal (+24 nutrition, kitchen oatmeal) and one free snack (+12, pantry snack, junk) per day. Sleep refills energy to 10/10 and restocks the kitchen. A daytime nap costs 1 block, sheds fatigue, and does not refill energy (one nap a day). Time of day follows the blocks: two spent blocks move the sky one step, and 0 blocks is a spent night. Eating a gel gives +1 block (never past 10) and +12 nutrition. If a bonk is about to land and you are carrying a gel, the race pauses so you can eat it and finish, or push through. One city sign stands on the sidewalk beside Home: **Brick City**, motto **Every Mile Lays a Brick**. Buildings keep their own name boards. Concept art for the title, characters, HUD, and town is in `docs/concepts/`.
+**What v1 plays:** the clock still has those five names, but actions spend **10 daily energy blocks** instead of being capped by the slot count. Training, shifts, the 5K, and the rival mile cost 1 block. A long run, ridge repeats, and the 10K cost 2. Eating and shopping cost 0: grocery food, gels, shoes, and the home kitchen never spend a block. Home can cook three free meals a day (each about a third of max FOOD: +34, then +33, then +33 on the 100 cap) and two free snacks (+12, pantry snack, junk). After that the same plates cost 18 and 7 coins. Sleep refills energy to 10/10 and zeroes those counters. A nap, up to two a day, gives 3 energy back (never past 10) and moves the clock one step. Time of day follows the blocks: two spent blocks move the sky one step, and 0 blocks is a spent night. Eating a gel gives +1 block (never past 10) and +12 nutrition. If a bonk is about to land and you are carrying a gel, the race pauses so you can eat it and finish, or push through. One city sign stands on the sidewalk beside Home: **Brick City**, motto **Every Mile Lays a Brick**. Buildings keep their own name boards. Concept art for the title, characters, HUD, and town is in `docs/concepts/`.
 
 ## 2b. Money, work, sleep, and detraining
 
@@ -70,7 +70,7 @@ The game runs on a **calendar**. Each day is split into time slots, and fatigue 
 - Sponsors and race prize money add income later.
 
 **Sleep at Home**
-- Go home and choose **Sleep** to end the day, or take a **Nap** in a daytime slot.
+- Go home and choose **Sleep** to end the day, or take a **Nap** (up to two a day). A nap gives 3 energy back and moves the clock one step. Sleep is what refills the bar to 10 and resets the daily food and nap counters.
 - More sleep refills more of the Fatigue bar and improves sleep quality.
 
 **Detraining (the trade-off)**

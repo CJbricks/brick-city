@@ -35,6 +35,11 @@ export function canFit(slot, cost) {
  * Energy left decides the time of day. A full bar is Morning. Every two
  * blocks spent moves the clock one step. Zero blocks is "the night is
  * spent" (slot 5), which is still labeled Night and counts as a late bedtime.
+ *
+ * A nap does not use this to move the clock. Gaining blocks would walk
+ * the sky backward, and a nap is time passing. applyNap steps the slot
+ * forward by hand. Later spending adds the difference onto that slot
+ * instead of replacing it, so the nap's hour stays passed.
  */
 export function slotFromEnergy(energy) {
   const safe = Math.max(0, Math.min(MAX_ENERGY, typeof energy === "number" ? energy : MAX_ENERGY));

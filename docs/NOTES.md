@@ -74,6 +74,9 @@ Almost every tunable number is in `src/lib/constants.js`.
 | When rest starts costing fitness | `DETRAIN_FREE_DAYS` (2 free days) |
 | What counts as a hard or recovery week | `HARD_WEEK_AVG_FATIGUE`, `RECOVERY_WEEK_AVG_FATIGUE` |
 | Starting coins and starting meters | the `START_*` constants |
+| Free meals, snacks, and naps each day | `FREE_HOME_MEALS` (3), `FREE_HOME_SNACKS` (2), `NAPS_PER_DAY` (2) |
+| How much a nap or a home snack restores | `NAP_ENERGY` (3), `HOME_SNACK_NUTRITION` (12) |
+| Price of an extra meal or snack | `MEAL_COIN_COST` (18), `SNACK_COIN_COST` (7) |
 
 Run rewards (miles, fatigue, XP) are the `RUNS` object in `src/lib/activities.js`. Shoe prices, belt and vest stats, and the style trade-offs are in `src/lib/catalog.js`. Sponsor percents and unlocks are in `src/lib/sponsors.js`. `src/lib/race.js` turns that gear into a pace percent for the race in front of you. Race ideals ("a 5K wants more Peak than Endurance") are on each race in `RACES`.
 
@@ -95,17 +98,16 @@ The HUD clock still says Morning, Midday, Afternoon, Evening, or Night. What act
 
 | Action | Blocks |
 |---|---|
-| Easy run, zone 2, park trail, yards, track intervals, treadmill, strength, shift, nap, 5K, Remy | 1 |
+| Easy run, zone 2, park trail, yards, track intervals, treadmill, strength, shift, 5K, Remy | 1 |
 | Long run, ridge repeats, threshold, interval run, 10K | 2 |
 | Grocery food, gels, shoes, eating a gel, home kitchen | 0 |
+| Nap (up to 2 a day) | gives 3 back, never past 10 |
 
 If you don't have enough blocks, the menu says to sleep or eat a gel. The sky moves with the bar: two blocks spent is one step of the day. Zero blocks is a spent night. That slot is what `sleepPlan` still reads, so going to bed with a full bar is a short poor sleep, and going to bed after a real day is the good one.
 
-Sleep ends the day, refills energy to 10/10, clears the "already napped" flag, and restocks the home kitchen. Evening (a few blocks left) is the good 8-hour night. Going back to bed in the Morning still ends the day, but the quality is poor, and poor sleep is half of the bonk rule.
+Sleep ends the day, refills energy to 10/10, and puts the meal, snack, and nap counters back to zero. Evening (a few blocks left) is the good 8-hour night. Going back to bed in the Morning still ends the day, but the quality is poor, and poor sleep is half of the bonk rule.
 
-Home can serve one healthy meal (+24 nutrition, kitchen oatmeal, good quality) and one quick snack (+12, pantry snack, poor quality, and the next effort drains faster) each day. Both are free and cost no energy. After that the menu says "Already ate your home meal today." or "Already had your home snack today." The grocery also costs no energy. It costs coins, and it is not limited to one plate, which is why it still matters on a 10-block training day.
-
-A daytime nap is allowed only while the clock is still Morning, Midday, or Afternoon, and only once. It costs 1 block, drops fatigue by 14, and does not give the block back.
+A nap is not a short night. It gives energy back and moves the clock forward. The kitchen rules are in the next section.
 
 Eating a gel from Inventory (or the `I` key) needs a gel and an open block. It gives +1 energy, capped at 10, and +12 nutrition. At 10/10 the button stays disabled so you save the gel.
 
@@ -114,6 +116,45 @@ If a 5K, 10K, or mile against Remy is about to bonk and you have a gel, the game
 Sunday night (you go to bed while the weekday is Sunday) writes a weekly summary: miles, XP per track, average fatigue, average nutrition, average sleep, and whether the week cost you fitness. A kind week with some miles pays a small XP bonus. Several hard weeks in a row raise injury risk.
 
 Detraining does not happen because you took a rest day. One or two days without a run are free. On the third day off, Peak drops. Overall Endurance waits until day 6. A run, a gym session, or a race sets "trained today", and sleep then resets the counter. A shift at the Run Store does not. That is the week's puzzle: train, eat, work for coins, sleep.
+
+## Meals, snacks, and naps
+
+This is the kitchen and the couch. All of it happens at Home. The grocery is a different counter: it always takes coins, and it does not use these daily limits.
+
+The Home menu prints the day's counters at the top:
+
+`Meals 0/3 · Snacks 0/2 · Naps 0/2`
+
+Those numbers are "how many free ones you have already used today." They go back to zero when you sleep, because sleep is the new day. There is no midnight clock.
+
+### Meals
+
+You can cook **3 free meals** a day. A meal is kitchen oatmeal. It is good food, it does not count as junk, and it costs no energy.
+
+Each free meal restores about **one third of your max FOOD**. On the normal 0–100 bar that is **+34, then +33, then +33**. Three meals from an empty bar land on 100 exactly. The bar never goes past its cap, so a meal at 90 FOOD only fills the last 10 points.
+
+A belt raises the cap to 105, and a vest raises it to 110. The same rule applies: three free meals from empty fill that higher cap. The first plates get the leftover points when the cap does not divide by 3.
+
+After the third free meal the button does **not** gray out. It says `Free meals used. Buy one for 18 coins?` That bought plate is another kitchen meal (33 FOOD on the 100 cap, still capped). 18 coins is the same price as the grocery's pasta and greens. If you do not have 18 coins, the row grays out and says you need more coins. The grocery can still sell you a plate either way. Grocery food is not part of the 3.
+
+### Snacks
+
+You can take **2 free snacks** a day. A snack is the pantry snack: **+12 FOOD**, poor quality, and it counts as junk. The next hard effort burns a little extra food because of that. That is the snack the game already had. It still fits, so it was not changed to a different number.
+
+After the second free snack the button says `Free snacks used. Buy one for 7 coins?` Seven coins is the grocery pastry price. The bought snack is the same pantry snack (+12, and it still counts as junk). The grocery pastry (+14) is a separate purchase and is not limited to two.
+
+### Naps
+
+**Nap** sits next to **Sleep**. You can nap **2 times** a day. A nap does two things:
+
+1. It gives back **3 energy blocks**, and the bar stops at 10. If you already have 8, you go to 10, not 11. If you are already at 10, the bar stays full and the nap still counts.
+2. It passes time. The game does not track hours. A day is Morning, Midday, Afternoon, Evening, Night. A nap moves that clock **one step** forward (about two hours of the day). It does this even though energy went up. Going up in energy would otherwise rewind the clock, and a nap should not do that.
+
+A nap also eases fatigue a little (14 points, the same rest it used to give). It does not end the day, and it does not refill you to 10 unless you were already close.
+
+The third nap is refused. The row grays out and says you have already napped twice, and that sleep will start a new day. You cannot buy a third nap.
+
+Sleep itself is unchanged: it ends the day, refills energy to 10/10, and zeroes meals, snacks, and naps.
 
 ## Bonk and DNF
 
@@ -149,6 +190,7 @@ The save version stays `1`. Brand shoes, belts, vests, and sponsors were added w
 - No `sponsors` object means no shoe deal and no nutrition deal.
 - Shoe ids `road`, `trail`, and `hybrid` are the old house pairs (Tempo Daybreak, Peakline Lugger, Switchback Hybrid). They still exist. `resolveShoeId` in `src/lib/catalog.js` is the alias table. An id the catalog does not know becomes the starter trainers instead of crashing.
 - Nutrition is clamped to the cap the equipped carry item actually allows, so a broken number cannot sit past 110.
+- No `calendar.homeMeals`, `calendar.homeSnacks`, or `napsToday` means those counters start at 0. If the older yes/no flag is true (`homeMealUsed`, `homeSnackUsed`, or `nappedToday`), that one use counts as 1, so Resume does not hand back a plate or a nap that was already taken. The audio settings live in a different key, `brick-city-audio-v1`, and this load path does not touch them.
 
 ## Brand shoes
 

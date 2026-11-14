@@ -18,20 +18,32 @@
  * session. `peak` and `endurance` on a workout are the HUD meters (the
  * orange bolt and the blue heart), not the Speed or Endurance attribute
  * levels. `hard: true` is one strike toward soreness.
+ *
+ * Home food and rest live here too. Three free meals and two free snacks
+ * each day, then coins buy another plate. Two naps put energy back and
+ * move the clock one step. Sleep still ends the day, refills the bar to
+ * 10, and is the only place those daily counts go back to zero.
  */
 
-import { formatWhen, isSunday, sleepPlan, slotFromEnergy, summarizeWeek } from "@/lib/calendar";
+import { formatWhen, isSunday, sleepPlan, slotFromEnergy, slotLabel, summarizeWeek } from "@/lib/calendar";
 import {
+  FREE_HOME_MEALS,
+  FREE_HOME_SNACKS,
   GEL_ENERGY,
   GEL_NUTRITION,
   HARD_WEEK_AVG_FATIGUE,
+  HOME_SNACK_NUTRITION,
   MAX_ENERGY,
+  MEAL_COIN_COST,
+  NAP_ENERGY,
   NAP_FATIGUE_RELIEF,
   NAP_PEAK_LOSS_IF_DETRAINING,
+  NAPS_PER_DAY,
   OVERNIGHT_NUTRITION_DRAIN,
   RECOVERY_WEEK_AVG_FATIGUE,
   RECOVERY_WEEK_BONUS_XP,
   RECOVERY_WEEK_MIN_MILES,
+  SNACK_COIN_COST,
   START_COINS,
   START_ENDURANCE,
   START_FATIGUE,
@@ -180,8 +192,8 @@ export const SHOP = {
   meal: {
     id: "meal",
     label: "Healthy meal",
-    detail: "18 coins · 0 energy · pasta and greens",
-    cost: 18,
+    detail: `${MEAL_COIN_COST} coins · 0 energy · pasta and greens`,
+    cost: MEAL_COIN_COST,
     nutrition: 32,
     mealName: "Pasta and greens",
     mealQuality: "good",
@@ -191,8 +203,8 @@ export const SHOP = {
   snack: {
     id: "snack",
     label: "Quick snack",
-    detail: "7 coins · 0 energy · counter pastry",
-    cost: 7,
+    detail: `${SNACK_COIN_COST} coins · 0 energy · counter pastry`,
+    cost: SNACK_COIN_COST,
     nutrition: 14,
     mealName: "Counter pastry",
     mealQuality: "poor",
@@ -482,6 +494,9 @@ export function createNewGame({ name, gender }) {
       sleepSamples: [],
       homeMealUsed: false,
       homeSnackUsed: false,
+      // How many free plates are already gone today. Sleep sets both to 0.
+      homeMeals: 0,
+      homeSnacks: 0,
       trainedToday: false,
       daysSinceRun: 0,
       hardWeeks: 0,
@@ -502,6 +517,8 @@ export function createNewGame({ name, gender }) {
     gels: 0,
     energy: MAX_ENERGY,
     nappedToday: false,
+    // 0, 1, or 2. The boolean above is the old save flag. Both reset on sleep.
+    napsToday: 0,
     progress: {
       parkTrailRuns: 0,
       trackRuns: 0,
@@ -591,8 +608,25 @@ function spendEnergy(state, cost, drain) {
     }
     if (state.condition.junk) state.condition.junk = false;
   }
-  state.calendar.slot = slotFromEnergy(state.energy);
+  // Two spent blocks move the clock one step. Add that step onto whatever
+  // the clock already says, instead of replacing it from the bar. A nap
+  // puts blocks back and still moves the day forward, so replacing the
+  // clock from the bar alone would rewind the nap.
+  shiftSlot(state, have);
   return true;
+}
+
+/**
+ * Move the clock by how many steps this energy change would have moved
+ * it on its own. If the clock and the bar already agree, the result is
+ * the same as slotFromEnergy. If a nap pushed the clock ahead, we keep
+ * that lead and only add the new steps.
+ */
+function shiftSlot(state, energyBefore) {
+  const before = slotFromEnergy(energyBefore);
+  const after = slotFromEnergy(state.energy);
+  const current = typeof state.calendar.slot === "number" ? state.calendar.slot : before;
+  state.calendar.slot = Math.max(0, Math.min(5, current + (after - before)));
 }
 
 const STYLE_TRACKS = {
@@ -874,7 +908,15 @@ export function applySleep(state) {
   next.calendar.weekday = (next.calendar.weekday + 1) % 7;
   // Sleep is the only full refill. The clock goes back to Morning with it.
   next.energy = MAX_ENERGY;
+  // A new morning is the only reset these counters get. There is no
+  // midnight timer. "Today" means "since you last woke up", so the free
+  // meals, free snacks, and naps all go back to zero together here.
+  // Buying extra food with coins does not change that. Sleep still fills
+  // energy to 10/10, the same as it did before naps could give blocks back.
+  next.napsToday = 0;
   next.nappedToday = false;
+  next.calendar.homeMeals = 0;
+  next.calendar.homeSnacks = 0;
   next.calendar.homeMealUsed = false;
   next.calendar.homeSnackUsed = false;
   next.calendar.slot = slotFromEnergy(MAX_ENERGY);
@@ -899,30 +941,52 @@ export function applySleep(state) {
 }
 
 export function applyNap(state) {
-  // Daytime is Morning through Afternoon (slot 0-2), which is 5 or more
-  // energy blocks left. One nap a day. It spends a block and does not
-  // give any back. That is the difference between a nap and sleep.
-  if (slotFromEnergy(readEnergy(state)) >= 3) {
-    return refuse(state, ["Too late for a nap. Sleep will end the day instead."]);
-  }
-  if (state.nappedToday) {
-    return refuse(state, ["You already napped today. Sleep will refill energy."]);
-  }
-  if (readEnergy(state) < 1) {
-    return refuse(state, [LOW_ENERGY]);
+  // Two naps, then the couch is done until morning. Sleep is what clears
+  // the count (see applySleep). A third nap is refused so rest still has
+  // to become a night. There is no coin price for another nap, unlike food.
+  if (napCount(state) >= NAPS_PER_DAY) {
+    return refuse(state, ["You've already napped twice today. Sleep will start a new day."]);
   }
   const before = state;
   const next = clone(state);
-  next.condition.fatigue = clampMeter(next.condition.fatigue - NAP_FATIGUE_RELIEF);
+  const had = readEnergy(next);
+  next.energy = Math.min(MAX_ENERGY, had + NAP_ENERGY);
+  const gained = next.energy - had;
+  const fromSlot = typeof next.calendar.slot === "number" ? next.calendar.slot : slotFromEnergy(had);
+  // Gaining blocks would normally walk the sky backward, because the
+  // clock is "how many blocks are left". A nap is time passing, about
+  // two hours, which here is one step from Morning toward Night. Step
+  // the clock by hand so the refill does not undo it.
+  next.calendar.slot = Math.min(5, fromSlot + 1);
+  next.napsToday = napCount(state) + 1;
   next.nappedToday = true;
-  const lines = ["You stretch out on the couch. A short nap, not a new day. Energy stays spent."];
+  next.condition.fatigue = clampMeter(next.condition.fatigue - NAP_FATIGUE_RELIEF);
+  const fromLabel = slotLabel(fromSlot);
+  const toLabel = slotLabel(next.calendar.slot);
+  // Slot 5 is still labeled Night, so a nap that late would otherwise
+  // say the day moved from Night to Night. Say it moved only when the
+  // name on the clock actually changes.
+  const clock = fromLabel === toLabel
+    ? "The day is already at night."
+    : `The day moves from ${fromLabel} to ${toLabel}.`;
+  const lines = [
+    gained > 0
+      ? `You nap on the couch. +${gained} energy. ${clock}`
+      : `You nap on the couch. Energy stays ${MAX_ENERGY}/${MAX_ENERGY}. ${clock}`,
+  ];
   if (next.calendar.daysSinceRun >= 3) {
     next.condition.peak = clampMeter(next.condition.peak - NAP_PEAK_LOSS_IF_DETRAINING);
     lines.push("Extra rest while you are already detraining nicks Peak Fitness.");
   }
-  spendEnergy(next, 1, true);
   sample(next);
   return finish(before, next, lines);
+}
+
+function napCount(state) {
+  if (typeof state.napsToday === "number" && Number.isFinite(state.napsToday)) {
+    return Math.max(0, Math.floor(state.napsToday));
+  }
+  return state.nappedToday ? 1 : 0;
 }
 
 export function applyPurchase(state, itemId) {
@@ -952,47 +1016,95 @@ export function applyPurchase(state, itemId) {
   return finish(before, next, lines);
 }
 
+/**
+ * One free home meal is a third of the current FOOD cap.
+ * 100 does not divide by 3, so the first plate is 34 and the next two
+ * are 33. Three plates from an empty bar land on the cap exactly
+ * (34 + 33 + 33 = 100). A belt cap of 105 is three 35s. A vest cap of
+ * 110 is 37, 37, then 36. The caller still clamps, so a meal never
+ * draws the bar past the cap. A bought plate after the free three takes
+ * the smaller share (33 on a 100 cap).
+ */
+export function homeMealPortion(cap, mealsAlreadyEaten) {
+  const safeCap = Math.max(0, Math.round(Number(cap) || 0));
+  const base = Math.floor(safeCap / FREE_HOME_MEALS);
+  const extra = safeCap - base * FREE_HOME_MEALS;
+  const index = Math.max(0, Math.floor(Number(mealsAlreadyEaten) || 0));
+  if (index < extra) return base + 1;
+  return base;
+}
+
 const HOME_FOOD = {
   meal: {
-    nutrition: 24,
     mealName: "Kitchen oatmeal",
     mealQuality: "good",
     junk: false,
+    countKey: "homeMeals",
     flag: "homeMealUsed",
-    used: "Already ate your home meal today.",
-    lines: ["Kitchen oatmeal. Free, and it is a real meal."],
+    freeLimit: FREE_HOME_MEALS,
+    price: MEAL_COIN_COST,
+    noun: "meals",
+    freeLines: ["Kitchen oatmeal. Free, and it is a real meal."],
+    paidLine: (price) => `You buy another plate of kitchen oatmeal for ${price} coins.`,
   },
   snack: {
-    nutrition: 12,
+    nutrition: HOME_SNACK_NUTRITION,
     mealName: "Pantry snack",
     mealQuality: "poor",
     junk: true,
+    countKey: "homeSnacks",
     flag: "homeSnackUsed",
-    used: "Already had your home snack today.",
-    lines: ["A pantry snack. It fills you, then it fades."],
+    freeLimit: FREE_HOME_SNACKS,
+    price: SNACK_COIN_COST,
+    noun: "snacks",
+    freeLines: ["A pantry snack. It fills you, then it fades."],
+    paidLine: (price) => `You buy a pantry snack for ${price} coins. It fills you, then it fades.`,
   },
 };
 
+function dailyCount(calendar, key, legacyFlag) {
+  const value = calendar?.[key];
+  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, Math.floor(value));
+  return calendar?.[legacyFlag] ? 1 : 0;
+}
+
 /**
- * The kitchen is free and costs no energy, once a day for each dish.
- * The grocery stays useful because it is not limited to one plate, and
- * because a gel still has to be bought. Sleep clears both flags.
+ * The kitchen is free and costs no energy: three meals and two snacks
+ * a day. Past that, the same plate is for sale at the grocery price.
+ * The grocery itself stays unlimited. Sleep is what puts the free counts
+ * back to zero.
  */
 export function applyHomeFood(state, kind) {
   const food = HOME_FOOD[kind];
   if (!food) return refuse(state, ["The kitchen does not have that."]);
-  if (state.calendar[food.flag]) {
-    return refuse(state, [food.used]);
+  const eaten = dailyCount(state.calendar, food.countKey, food.flag);
+  const free = eaten < food.freeLimit;
+  // The free limit is a count, not a closed kitchen. Coins buy another
+  // plate of the same food, which is why this refuses only when the
+  // purse is short. Naps do not get this offer.
+  if (!free && state.coins < food.price) {
+    return refuse(state, [`Free ${food.noun} used. Buy one for ${food.price} coins?`]);
   }
   const before = state;
   const next = clone(state);
-  next.condition.nutrition = clampFood(next, next.condition.nutrition + food.nutrition);
+  if (!free) next.coins -= food.price;
+  const gain = kind === "meal"
+    ? homeMealPortion(maxNutritionFromGear(next.gear), eaten)
+    : food.nutrition;
+  next.condition.nutrition = clampFood(next, next.condition.nutrition + gain);
   next.condition.mealName = food.mealName;
   next.condition.mealQuality = food.mealQuality;
   next.condition.junk = food.junk;
-  next.calendar[food.flag] = true;
+  if (free) {
+    next.calendar[food.countKey] = eaten + 1;
+    // The old flag meant "the one free plate is gone". It now means the
+    // whole free allowance is gone, so a reader that still checks the
+    // boolean locks the free button only when you are actually out.
+    next.calendar[food.flag] = next.calendar[food.countKey] >= food.freeLimit;
+  }
   sample(next);
-  return finish(before, next, [...food.lines]);
+  const lines = free ? [...food.freeLines] : [food.paidLine(food.price)];
+  return finish(before, next, lines);
 }
 
 /**
@@ -1012,11 +1124,12 @@ export function applyEatGel(state) {
   const before = state;
   const next = clone(state);
   next.gels -= 1;
-  next.energy = Math.min(MAX_ENERGY, readEnergy(next) + GEL_ENERGY);
+  const had = readEnergy(next);
+  next.energy = Math.min(MAX_ENERGY, had + GEL_ENERGY);
   const bonus = nutritionTuning(next).gelBonus;
   const gain = GEL_NUTRITION + bonus;
   next.condition.nutrition = clampFood(next, next.condition.nutrition + gain);
-  next.calendar.slot = slotFromEnergy(next.energy);
+  shiftSlot(next, had);
   const extra = bonus ? ` ${nutritionTuning(next).name} adds ${bonus} more.` : "";
   return finish(before, next, [`You eat a Stride Fuel gel. +${GEL_ENERGY} energy, +${gain} nutrition.${extra}`]);
 }
@@ -1149,8 +1262,9 @@ function applyRescueGel(state) {
   state.gels -= 1;
   const bonus = nutritionTuning(state).gelBonus;
   state.condition.nutrition = clampFood(state, state.condition.nutrition + GEL_NUTRITION + bonus);
-  state.energy = Math.min(MAX_ENERGY, readEnergy(state) + GEL_ENERGY);
-  state.calendar.slot = slotFromEnergy(state.energy);
+  const had = readEnergy(state);
+  state.energy = Math.min(MAX_ENERGY, had + GEL_ENERGY);
+  shiftSlot(state, had);
 }
 
 function addRaceFuel(state) {
@@ -1575,49 +1689,87 @@ function runItem(state, runId) {
   );
 }
 
+function mealMenuItem(state) {
+  const eaten = dailyCount(state.calendar, "homeMeals", "homeMealUsed");
+  if (eaten < FREE_HOME_MEALS) {
+    const portion = homeMealPortion(maxNutritionFromGear(state.gear), eaten);
+    return item(
+      "Eat healthy meal",
+      `Free · +${portion} FOOD · Meals ${eaten}/${FREE_HOME_MEALS}`,
+      { type: "home-food", id: "meal" },
+    );
+  }
+  // Past the free three, the row stays pressable and names the price.
+  // It grays out only when the coins are not there.
+  const broke = state.coins < MEAL_COIN_COST;
+  return item(
+    "Eat healthy meal",
+    `Free meals used. Buy one for ${MEAL_COIN_COST} coins?`,
+    { type: "home-food", id: "meal" },
+    broke,
+    "Not enough coins.",
+  );
+}
+
+function snackMenuItem(state) {
+  const eaten = dailyCount(state.calendar, "homeSnacks", "homeSnackUsed");
+  if (eaten < FREE_HOME_SNACKS) {
+    return item(
+      "Eat quick snack",
+      `Free · +${HOME_SNACK_NUTRITION} FOOD · Snacks ${eaten}/${FREE_HOME_SNACKS}`,
+      { type: "home-food", id: "snack" },
+    );
+  }
+  const broke = state.coins < SNACK_COIN_COST;
+  return item(
+    "Eat quick snack",
+    `Free snacks used. Buy one for ${SNACK_COIN_COST} coins?`,
+    { type: "home-food", id: "snack" },
+    broke,
+    "Not enough coins.",
+  );
+}
+
+function napMenuItem(state) {
+  const naps = napCount(state);
+  const blocked = naps >= NAPS_PER_DAY;
+  return item(
+    "Nap",
+    blocked
+      ? `Naps ${naps}/${NAPS_PER_DAY} · You've already napped twice today. Sleep will start a new day.`
+      : `+${NAP_ENERGY} energy · one time step · Naps ${naps}/${NAPS_PER_DAY}`,
+    { type: "nap" },
+    blocked,
+    "You've already napped twice today. Sleep will start a new day.",
+  );
+}
+
 export function menuFor(locationId, state) {
-  const tooLateToNap = slotFromEnergy(readEnergy(state)) >= 3;
-  const alreadyNapped = Boolean(state.nappedToday);
-  const napBlocked = tooLateToNap || alreadyNapped || readEnergy(state) < 1;
-  const napReason = alreadyNapped
-    ? "You already napped today. Sleep will refill energy."
-    : tooLateToNap
-      ? "Naps are for daytime. Sleep instead."
-      : LOW_ENERGY;
   switch (locationId) {
-    case "home":
+    case "home": {
+      const meals = dailyCount(state.calendar, "homeMeals", "homeMealUsed");
+      const snacks = dailyCount(state.calendar, "homeSnacks", "homeSnackUsed");
+      const naps = napCount(state);
+      // Counters sit in the intro so they are on screen before the buttons.
+      // Meals and snacks switch to a coin offer at the limit. The nap row
+      // grays out instead, because a third nap is not for sale.
       return {
         title: "Home",
         speaker: "Home",
-        intro: "Shoes by the door. The couch knows your name.",
+        testId: "home-menu",
+        introTestId: "home-daily-counters",
+        intro: `Meals ${meals}/${FREE_HOME_MEALS} · Snacks ${snacks}/${FREE_HOME_SNACKS} · Naps ${naps}/${NAPS_PER_DAY}\nShoes by the door. The couch knows your name.`,
         items: [
           item("Sleep", "End the day · refill energy to 10/10", { type: "sleep" }),
-          item(
-            "Daytime Nap",
-            "1 energy · sheds fatigue · does not refill energy",
-            { type: "nap" },
-            napBlocked,
-            napReason,
-          ),
-          item(
-            "Eat healthy meal",
-            state.calendar.homeMealUsed ? "Used today" : "Free · +24 Nutrition (1/day)",
-            { type: "home-food", id: "meal" },
-            Boolean(state.calendar.homeMealUsed),
-            "Already ate your home meal today.",
-          ),
-          item(
-            "Eat quick snack",
-            state.calendar.homeSnackUsed ? "Used today" : "Free · +12 Nutrition (1/day)",
-            { type: "home-food", id: "snack" },
-            Boolean(state.calendar.homeSnackUsed),
-            "Already had your home snack today.",
-          ),
+          napMenuItem(state),
+          mealMenuItem(state),
+          snackMenuItem(state),
           item("Closet", "Shoes, belts, vests", { type: "open-gear" }),
           item("Sponsors", "Offers, deals, obligations", { type: "open-sponsors" }),
           item("Save Game", "This browser only", { type: "save" }),
         ],
       };
+    }
     case "gym":
       return {
         title: "Gym",

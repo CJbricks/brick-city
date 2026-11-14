@@ -102,6 +102,27 @@ export const OVERNIGHT_NUTRITION_DRAIN = 8;
 export const NAP_FATIGUE_RELIEF = 14;
 export const NAP_PEAK_LOSS_IF_DETRAINING = 1;
 
+/**
+ * Free food at Home. Sleep is what puts these back to zero. Coins can
+ * buy more after the free ones are gone. Naps do not have a paid extra.
+ * A home meal is one third of the FOOD cap (see homeMealPortion). The
+ * snack number is the old pantry snack, kept as-is: +12, and the next
+ * effort still burns a little faster.
+ */
+export const FREE_HOME_MEALS = 3;
+export const FREE_HOME_SNACKS = 2;
+export const HOME_SNACK_NUTRITION = 12;
+export const NAPS_PER_DAY = 2;
+/** Blocks a nap puts back. The bar never goes past MAX_ENERGY. */
+export const NAP_ENERGY = 3;
+
+/**
+ * What an extra plate costs once the free kitchen is used up. These are
+ * the same prices as the grocery, so eating at Home is not a discount.
+ */
+export const MEAL_COIN_COST = 18;
+export const SNACK_COIN_COST = 7;
+
 export const HARD_WEEK_AVG_FATIGUE = 60;
 export const RECOVERY_WEEK_AVG_FATIGUE = 35;
 export const RECOVERY_WEEK_MIN_MILES = 6;
