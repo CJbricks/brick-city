@@ -7,8 +7,9 @@
  * and show the result. Park and the mountain trail still need A.
  *
  * The closet, the Run Store racks, and the Sponsors list are the same kind
- * of menu, so the d-pad and the A/B buttons drive them. Saves go to
- * localStorage. There is no server and no Strava.
+ * of menu, so the d-pad and the A/B buttons drive them. A race win starts
+ * confetti in the town ticker. The dialogue does not wait for it. Saves
+ * go to localStorage. There is no server and no Strava.
  */
 
 "use client";
@@ -44,6 +45,7 @@ import {
 } from "@/lib/activities";
 import { describeNeeds, isMountainOpen, mountainStatus } from "@/lib/unlocks";
 import { writeSave } from "@/lib/save";
+import { CONFETTI_MS } from "@/game/confetti";
 
 const SYSTEM = [
   { label: "Runner status", detail: "Meters, attributes, gear, sponsors", action: { type: "open-status" } },
@@ -59,6 +61,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
   const [panel, setPanel] = useState(null);
   const [ticker, setTicker] = useState("");
   const [mapNote, setMapNote] = useState("");
+  const [partyId, setPartyId] = useState(0);
   const worldRef = useRef(null);
   const gameRef = useRef(game);
   const panelRef = useRef(panel);
@@ -71,6 +74,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
       game,
       frozen,
       mountainOpen: isMountainOpen(game),
+      partyId,
       onEnter(id) {
         // Ignore the callback if a window is already up. Closing it with
         // B leaves you standing on the mat; the walk code will not fire
@@ -110,18 +114,21 @@ export function PlayScreen({ game, setGame, onTitle }) {
     return pos ? { ...gameRef.current, position: pos } : gameRef.current;
   }
 
-  function commit(next, lines, nextTicker) {
+  function commit(next, lines, nextTicker, extra = {}) {
     setGame(next);
     if (nextTicker) setTicker(nextTicker);
+    // Confetti is a timer in the town ticker, not a menu. Input still works.
+    // CONFETTI_MS is the length of that timer. The id is what starts a new one.
+    if (extra.celebrate) setPartyId((current) => current + 1);
     if (lines && lines.length) {
-      setPanel({ type: "dialogue", speaker: "Brick City", pages: lines, index: 0 });
+      setPanel({ type: "dialogue", speaker: extra.speaker || "Brick City", pages: lines, index: 0 });
     } else {
       setPanel(null);
     }
   }
 
   function run(action, roll = Math.random()) {
-    const result = perform(currentState(), action, roll);
+    const result = perform(currentState(), action, roll, Math.random);
     // A bonk with a gel in the pocket waits here. The same roll is reused
     // when the player eats the gel or toughs it out, so the threat does
     // not get rerolled.
@@ -135,7 +142,10 @@ export function PlayScreen({ game, setGame, onTitle }) {
       });
       return;
     }
-    commit(result.state, result.lines, result.ticker);
+    commit(result.state, result.lines, result.ticker, {
+      celebrate: result.celebrate,
+      speaker: result.speaker,
+    });
   }
 
   function activate(item) {
@@ -455,7 +465,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
   }
 
   return (
-    <div className="play-root" data-testid="play-screen">
+    <div className="play-root" data-testid="play-screen" data-outfit={game.sponsors?.shoe || "default"} data-confetti-ms={CONFETTI_MS}>
       <div className="play-stage">
         <Overworld ref={worldRef} initialPosition={game.position} />
         <Hud game={game} onOpen={() => setPanel({ type: "status" })} />

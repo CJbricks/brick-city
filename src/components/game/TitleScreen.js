@@ -3,20 +3,22 @@
  * The cream title card: stacked brick BRICK CITY, one quote with no
  * quotation marks, a waving runner, Resume (only if this browser has a
  * save), and New Game. The logo and the wave are canvases so the pixels
- * stay square when the page scales.
+ * stay square when the page scales. Resume paints the saved shoe
+ * sponsor's colors on the waving runner.
  */
 
 "use client";
 
 import { useEffect, useRef } from "react";
 import { Button, Stack } from "@chakra-ui/react";
-import { paintLogo, paintWave } from "@/game/art";
+import { paintLogo, paintWave, runnerPalette } from "@/game/art";
 import { levelFromXp } from "@/lib/xp";
 
 export function TitleScreen({ quote, save, onResume, onNew }) {
   const logoRef = useRef(null);
   const waveRef = useRef(null);
   const gender = save?.runner?.gender || "male";
+  const sponsorId = save?.sponsors?.shoe || "";
 
   useEffect(() => {
     const canvas = logoRef.current;
@@ -39,14 +41,15 @@ export function TitleScreen({ quote, save, onResume, onNew }) {
     if (!canvas) return;
     let frame = 0;
     let timer = 0;
-    const draw = () => paintWave(canvas, gender, frame);
+    const look = runnerPalette(gender, sponsorId);
+    const draw = () => paintWave(canvas, gender, frame, look);
     draw();
     timer = window.setInterval(() => {
       frame = frame ? 0 : 1;
       draw();
     }, 320);
     return () => window.clearInterval(timer);
-  }, [gender]);
+  }, [gender, sponsorId]);
 
   const level = save ? levelFromXp(save.xp?.overall || 0) : 1;
 

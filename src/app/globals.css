@@ -8,7 +8,8 @@
  *
  * Sponsor lists and the shoe rack are long. The window scrolls instead of
  * growing under the touch bar. Section labels in a menu use .menu-header
- * so they don't look like buttons you can buy.
+ * so they don't look like buttons you can buy. The HUD portrait is a
+ * 32×40 canvas scaled as pixels, same as the town.
  */
 
 html,
@@ -290,6 +291,21 @@ canvas {
   right: 6px;
   z-index: 3;
   pointer-events: none;
+}
+
+.hud-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.hud-portrait {
+  width: 32px;
+  height: 40px;
+  flex: none;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background: #d7ecb8;
 }
 
 .hud-card {

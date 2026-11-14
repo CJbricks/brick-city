@@ -183,9 +183,11 @@ The HUD prints `FOOD 85 / 110` and fills the bar as a fraction of that cap. The 
 
 ## Sponsors
 
-`src/lib/sponsors.js` holds the deals. `activities.js` is what writes them onto the save when you press a button.
+`src/lib/sponsors.js` holds the deals. `src/lib/offers.js` decides when a brand asks. `activities.js` is what writes the answer onto the save when you press a button.
 
-You may hold **one shoe sponsor** and **one nutrition sponsor** at the same time. Signing a second shoe sponsor ends the first shoe deal. Shoes you already bought stay in the closet. The same rule applies to nutrition deals. You can end a deal from the menu and sign it again later.
+You may hold **one shoe sponsor** and **one nutrition sponsor** at the same time. Accepting a second shoe offer ends the first shoe deal. Shoes you already bought stay in the closet. The same idea applies to nutrition deals, except a nutrition brand does not poach. You can end a deal from the menu. That brand waits 7 days before it can ask again.
+
+Brands make the offer. The Sponsors menu is not a sign-anything list. See the beginner notes further down.
 
 Shoe-sponsor perks: a discount at the Run Store on that brand (shoes and matching belts or vests), a free replacement when that pair is worn out, bonus coins on a clean race finish, and a percent on the styles that brand covers. Styles they do not cover take a small penalty. Hoka and Adidas cover all three styles, so their trade-off is a small short-road penalty instead.
 
@@ -197,9 +199,9 @@ Nutrition-sponsor perks do **not** raise the 100 / 105 / 110 cap. They stack wit
 
 There is no speed penalty on a nutrition deal.
 
-Deals unlock early (about level 2 to 4, plus a short milestone such as a track workout, a park trail, the 5K, or a real meal) so you can find the menu in a first session. The locked row lists what is left.
+Big brands (Hoka, Brooks, Adidas, Nike, Honey Stinger, BPN) can offer around level 3 to 5 after a 5K or a 10K. Boutique brands (Norda, Speedland, Mount to Coast, Salomon, Satisfy, Maurten, Precision) wait for a higher level plus a trail run or a backyard yard. The locked rows say "not interested yet" and do not have a sign button.
 
-Standing starts at 80. An obligation (photo shoot, store appearance, expo booth, community run) shows up the morning after you sign, then every 4th day. Accepting it spends 1 energy and pays better than a shift, and standing rises. Skipping drops standing by 22. Under 45 the sponsor warns you. Under 25 they drop the deal. You can sign again. A new signature after a drop starts standing back at 80. Switching away and back keeps the standing you had, as long as it never fell that low.
+Standing starts at 80. An obligation (photo shoot, store appearance, expo booth, community run) shows up the morning after you accept, then every 4th day. Accepting it spends 1 energy and pays better than a shift, and standing rises. Skipping drops standing by 22. Under 45 the sponsor warns you. Under 25 they drop the deal and wait 14 days before they will offer again. A new offer after that drop starts standing back at 80. Switching away and back keeps the standing you had, as long as it never fell that low.
 
 Open Sponsors from the Run Store, from the pause menu, from the closet, or from the button on Runner Status. The list is a normal menu, so the d-pad and A/B buttons work on a phone.
 
@@ -292,6 +294,45 @@ In a menu, the D-pad moves the highlight instead of walking. A confirms. B close
 - **Quote:** add an object to `prototype/quotes.json`. Do not put quote marks in the text. The screens add none.
 - **Run:** add an entry to `RUNS` in `src/lib/activities.js`, then add a `runItem(state, "your-id")` line in `menuFor` for the building that should offer it.
 - **Building:** the grid is `src/game/town.js`. Tiles are letters (`r` road, `d` dirt, `t` tree, …). A place needs a walkable mat tile and an entry in `PLACES`. Drawing is `src/game/art.js`. There is a test that walks from Home to every place. If you wall someone in, that test fails.
+
+## Brands come to you
+
+You do not walk up to a logo and sign. `src/lib/offers.js` watches the result.
+
+A **road race** (the 5K, the 10K, or the mile against Remy) can interest Nike, Adidas, Brooks, and Hoka, plus the early fuel brands Honey Stinger and BPN. A **trail result** (park trail or ridge repeats) can interest Norda, Speedland, Mount to Coast, Satisfy, Salomon, and the trail lines of Nike, Adidas, and Hoka, plus Maurten and Precision. A **backyard yard** can interest Norda, Speedland, Mount to Coast, Adidas, Hoka, and Salomon, plus those same later fuel brands.
+
+How good the result was changes the chance:
+
+| Result | Chance of an offer |
+|---|---|
+| Win, or a boss win (you beat Remy) | Sure, if any eligible brand is free |
+| Top 3 (the fast-ish clock, score 40 or better) | Strong, about 7 in 10 |
+| You finished, nothing special | Small, a bit under 1 in 5 |
+| DNF | None |
+
+The roll is a function the screen passes in. Tests pass their own function so the same race does the same thing every time. `makeRng(seed)` is the seeded version.
+
+A race offer is a line in the finish dialogue. A trail run or a yard does not stop you on the path. The letter is on the kitchen table the next morning, which is `applySleep`.
+
+An offer lasts **3 in-game days** (it is gone on the morning of `offeredOn + 3`). Only one shoe offer and one nutrition offer can sit at once. Decline, or let it expire, and that brand waits **7 days**. If you accept a rival and leave your shoe brand, or they drop you for low standing, the wait is **14 days**.
+
+A rival poaches only on a strong shoe result (a win or a top 3), and only when their terms beat the contract you already signed. Accepting ends the old deal. The shoes in the closet stay.
+
+Higher levels raise the gear discount and the coins per race. The bump starts at the brand's own minimum level, so the first offer matches the catalog. It stops at 55% off and 36 bonus coins. The offer sentence shows those numbers.
+
+## Sponsor colors on the runner
+
+`src/game/brandColors.js` is the only place the brand colors live. Each shoe brand has a cap, a jacket, an accent, and shorts. There are no logos and no wordmarks on the sprite. The sprite has no backpack, so the third color is the chest band and the cuffs.
+
+`runnerPalette` in `src/game/art.js` copies the male or female palette and paints those clothes on top. No shoe sponsor means the original outfit. The walk sheet (all 12 frames, and the left-facing flip), the HUD portrait, and the title-screen wave all ask that function. The color is not saved by itself. The save stores `sponsors.shoe`, and the palette is looked up again on load, so a reload keeps the kit and accepting a deal changes it on the next frame.
+
+## Win confetti
+
+A 1st-place finish, including beating Remy, sets `celebrate` on the race result. Ordinary finishes and DNFs do not. `PlayScreen` bumps a party id. The town ticker in `Overworld.js` sees the new id and drops squares for 30 seconds (`CONFETTI_MS` in `src/game/confetti.js`).
+
+The fall is the one from Marathon City's `src/components/game/CityView.js`: each bit has an x, a y, a speed, and a color from that file's `CONFETTI` list, and a bit that leaves the bottom comes back at the top. The count, 36, is `raceDay.confetti` in Marathon City's `src/lib/rules.js`. Brick City draws the squares in screen pixels on top of the town, not on the map texture, and the graphics object does not take clicks, so you can keep walking and close the dialogue. After 30 seconds the array is thrown away.
+
+If the browser says `prefers-reduced-motion: reduce`, the count is 0. The win still happened. The screen stays still.
 
 ## What this build does not do yet
 

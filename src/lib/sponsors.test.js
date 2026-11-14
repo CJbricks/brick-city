@@ -17,6 +17,7 @@ import {
   createNewGame,
 } from "@/lib/activities";
 import { NUTRITION_SPONSOR_IDS, SHOE_SPONSOR_IDS, nutritionTuning, sponsorById } from "@/lib/sponsors";
+import { grantOffer } from "@/lib/offers";
 import { xpToReachLevel } from "@/lib/xp";
 
 function fresh() {
@@ -27,6 +28,25 @@ function atLevel(level) {
   const state = fresh();
   state.xp.overall = xpToReachLevel(level);
   return state;
+}
+
+function primed(level) {
+  const state = atLevel(level);
+  state.progress.fiveKFinished = true;
+  state.progress.tenKFinished = true;
+  state.progress.parkTrailRuns = 2;
+  state.progress.mountainRuns = 1;
+  state.progress.yards = 1;
+  state.progress.longRuns = 1;
+  state.progress.totalMiles = 20;
+  state.condition.mealQuality = "good";
+  return state;
+}
+
+function accept(state, kind, id) {
+  const offered = grantOffer(state, kind, id);
+  if (!offered.ok) return offered;
+  return applySignSponsor(offered.state, kind, id);
 }
 
 describe("nutrition sponsors", () => {
@@ -41,11 +61,10 @@ describe("nutrition sponsors", () => {
   });
 
   it("stacks a sleep floor and a slower drain on top of a vest without raising the cap", () => {
-    const state = atLevel(3);
-    state.progress.fiveKFinished = true;
+    const state = primed(6);
     state.gear.carry = "naked-vest";
     state.gear.ownedCarry = ["naked-vest"];
-    const signed = applySignSponsor(state, "nutrition", "maurten");
+    const signed = accept(state, "nutrition", "maurten");
     expect(signed.ok).toBe(true);
     expect(signed.state.sponsors.nutrition).toBe("maurten");
     signed.state.condition.nutrition = 20;
@@ -53,25 +72,22 @@ describe("nutrition sponsors", () => {
     expect(morning.state.condition.nutrition).toBe(52);
     expect(morning.state.gear.carry).toBe("naked-vest");
 
-    const hungry = atLevel(2);
-    hungry.progress.totalMiles = 2;
-    const bpn = applySignSponsor(hungry, "nutrition", "bpn");
+    const hungry = primed(4);
+    const bpn = accept(hungry, "nutrition", "bpn");
     const run = applyRun(bpn.state, "easy-run");
     expect(run.state.condition.nutrition).toBe(61);
     expect(nutritionTuning(run.state).drainCut).toBe(1);
   });
 
   it("discounts Honey Stinger gels and adds Precision gel food", () => {
-    const honey = atLevel(2);
-    honey.condition.mealQuality = "good";
-    const signed = applySignSponsor(honey, "nutrition", "honey-stinger");
+    const honey = primed(3);
+    const signed = accept(honey, "nutrition", "honey-stinger");
     const bought = applyPurchase(signed.state, "gel");
     expect(bought.state.gels).toBe(1);
     expect(bought.state.coins).toBe(40);
 
-    const precise = atLevel(3);
-    precise.progress.longRuns = 1;
-    const deal = applySignSponsor(precise, "nutrition", "precision");
+    const precise = primed(7);
+    const deal = accept(precise, "nutrition", "precision");
     deal.state.energy = 8;
     deal.state.condition.nutrition = 40;
     deal.state.gels = 1;
@@ -84,9 +100,8 @@ describe("nutrition sponsors", () => {
   });
 
   it("lets Honey Stinger fuel turn a sure bonk into a finish", () => {
-    const state = atLevel(2);
-    state.condition.mealQuality = "good";
-    const signed = applySignSponsor(state, "nutrition", "honey-stinger").state;
+    const state = primed(3);
+    const signed = accept(state, "nutrition", "honey-stinger").state;
     signed.condition.nutrition = 34;
     signed.condition.sleepQuality = "poor";
     const raced = applyRace(signed, "5k", 0.99);
@@ -112,12 +127,10 @@ describe("shoe sponsors", () => {
 
   it("refuses a locked deal and keeps only one shoe sponsor at a time", () => {
     expect(applySignSponsor(fresh(), "shoe", "brooks").ok).toBe(false);
-    const state = atLevel(2);
-    state.progress.totalMiles = 4;
-    state.progress.trackRuns = 1;
-    const brooks = applySignSponsor(state, "shoe", "brooks");
+    expect(applySignSponsor(primed(3), "shoe", "brooks").ok).toBe(false);
+    const brooks = accept(primed(3), "shoe", "brooks");
     expect(brooks.state.sponsors.shoe).toBe("brooks");
-    const hoka = applySignSponsor(brooks.state, "shoe", "hoka");
+    const hoka = accept(brooks.state, "shoe", "hoka");
     expect(hoka.ok).toBe(true);
     expect(hoka.state.sponsors.shoe).toBe("hoka");
     expect(hoka.state.sponsors.nutrition).toBeNull();
@@ -125,28 +138,27 @@ describe("shoe sponsors", () => {
   });
 
   it("keeps bought shoes when you switch and discounts the active brand", () => {
-    const state = atLevel(2);
-    state.progress.trackRuns = 1;
+    const state = primed(5);
     state.coins = 200;
-    const nike = applySignSponsor(state, "shoe", "nike");
+    const nike = accept(state, "shoe", "nike");
     const bought = applyShoe(nike.state, "nike-acg");
     expect(bought.ok).toBe(true);
     expect(bought.state.gear.owned).toContain("nike-acg");
     expect(bought.state.coins).toBe(200 - Math.round(150 * 0.65));
-    const brooks = applySignSponsor(bought.state, "shoe", "brooks");
+    const brooks = accept(bought.state, "shoe", "brooks");
     expect(brooks.state.sponsors.shoe).toBe("brooks");
     expect(brooks.state.gear.owned).toContain("nike-acg");
     expect(brooks.state.gear.equipped).toBe("nike-acg");
   });
 
   it("pays bonus coins on a clean finish and replaces a worn-out pair for free", () => {
-    const state = atLevel(2);
+    const state = primed(3);
     state.coins = 200;
-    const signed = applySignSponsor(state, "shoe", "brooks").state;
+    const signed = accept(state, "shoe", "brooks").state;
     const raced = applyRace(signed, "5k", 0.9);
     expect(raced.state.coins).toBe(200 + 28 + 8);
 
-    const worn = applySignSponsor(atLevel(2), "shoe", "brooks").state;
+    const worn = accept(primed(3), "shoe", "brooks").state;
     worn.coins = 108;
     const bought = applyShoe(worn, "brooks-hyperion");
     expect(bought.state.coins).toBe(0);
@@ -158,10 +170,8 @@ describe("shoe sponsors", () => {
   });
 
   it("lets you hold a nutrition sponsor beside the shoe sponsor", () => {
-    const state = atLevel(2);
-    state.progress.totalMiles = 2;
-    const shoe = applySignSponsor(state, "shoe", "brooks");
-    const food = applySignSponsor(shoe.state, "nutrition", "bpn");
+    const shoe = accept(primed(4), "shoe", "brooks");
+    const food = accept(shoe.state, "nutrition", "bpn");
     expect(food.state.sponsors.shoe).toBe("brooks");
     expect(food.state.sponsors.nutrition).toBe("bpn");
   });
@@ -169,7 +179,7 @@ describe("shoe sponsors", () => {
 
 describe("obligations and standing", () => {
   it("leaves a note the morning after you sign, and paying it raises standing", () => {
-    const signed = applySignSponsor(atLevel(2), "shoe", "brooks");
+    const signed = accept(primed(3), "shoe", "brooks");
     const morning = applySleep(signed.state);
     expect(morning.state.sponsors.obligation.sponsorId).toBe("brooks");
     expect(morning.state.sponsors.obligation.label).toBeTruthy();
@@ -183,7 +193,7 @@ describe("obligations and standing", () => {
   });
 
   it("drops the deal after repeated skips and lets you sign again", () => {
-    let state = applySignSponsor(atLevel(2), "shoe", "brooks").state;
+    let state = accept(primed(3), "shoe", "brooks").state;
     for (let i = 0; i < 3; i += 1) {
       state.sponsors.obligation = {
         id: `skip-${i}`,
@@ -197,14 +207,17 @@ describe("obligations and standing", () => {
     }
     expect(state.sponsors.shoe).toBeNull();
     expect(state.sponsors.standing.brooks).toBeLessThan(25);
-    const again = applySignSponsor(state, "shoe", "brooks");
+    expect(state.sponsors.cooldowns.brooks).toBe(state.calendar.day + 14);
+    expect(grantOffer(state, "shoe", "brooks").ok).toBe(false);
+    state.calendar.day += 14;
+    const again = accept(state, "shoe", "brooks");
     expect(again.ok).toBe(true);
     expect(again.state.sponsors.shoe).toBe("brooks");
     expect(again.state.sponsors.standing.brooks).toBe(80);
   });
 
   it("warns before the standing is low enough to drop the deal", () => {
-    const state = applySignSponsor(atLevel(2), "shoe", "brooks").state;
+    const state = accept(primed(3), "shoe", "brooks").state;
     state.sponsors.standing.brooks = 50;
     state.sponsors.obligation = {
       id: "warn",

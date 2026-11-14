@@ -4,7 +4,8 @@
  * traced from a Nintendo or Game Freak sprite, and nothing is loaded
  * from a PNG. Runners, tiles, buildings, the brick logo, and the
  * title-screen wave are functions, so a color tweak is a palette change
- * instead of a new file.
+ * instead of a new file. A shoe sponsor swaps the cap, jacket, and shorts
+ * through runnerPalette. The drawing stays the same. Only the colors change.
  *
  * v2 is 32×32 tiles and 32×40 runner frames (v1 was 16×16 and 16×20).
  * Canvases are still painted at 1x: one rectangle = one pixel. Pixi and
@@ -23,6 +24,7 @@
 
 import { BUILDINGS, CITY_SIGNS, COLS, ROWS, TILE, buildWorld } from "@/game/town";
 import { townLights } from "@/lib/lighting";
+import { applyBrandOutfit } from "@/game/brandColors";
 
 export const RUNNER_W = 32;
 export const RUNNER_H = 40;
@@ -494,8 +496,25 @@ function buildRunnerRows(pose, frame, gender) {
   return buildFront(frame, gender);
 }
 
-function blitRows(ctx, ox, oy, rows, palette) {
-  const colors = paintMap(PALETTES[palette] || PALETTES.male);
+function resolvePalette(palette, gender) {
+  if (palette && typeof palette === "object") return palette;
+  if (typeof palette === "string" && PALETTES[palette]) return PALETTES[palette];
+  return PALETTES[gender] || PALETTES.male;
+}
+
+/**
+ * Default clothes, unless a shoe sponsor is on the save. The same object
+ * is what the walk sheet, the HUD portrait, and the title wave paint, so
+ * a new deal recolors every frame at once. Nutrition sponsors do not
+ * change clothes.
+ */
+export function runnerPalette(gender, sponsorId) {
+  const base = PALETTES[gender === "female" ? "female" : "male"] || PALETTES.male;
+  return applyBrandOutfit(base, sponsorId);
+}
+
+function blitRows(ctx, ox, oy, rows, palette, gender) {
+  const colors = paintMap(resolvePalette(palette, gender));
   for (let y = 0; y < rows.length; y += 1) {
     const line = rows[y];
     for (let x = 0; x < line.length; x += 1) {
@@ -512,7 +531,7 @@ function blitRows(ctx, ox, oy, rows, palette) {
  * sprite for left. frame 0 and 2 are idle, 1 is stride A, 3 is stride B.
  */
 export function drawRunnerSprite(ctx, ox, oy, pose, frame, palette, gender) {
-  blitRows(ctx, ox, oy, buildRunnerRows(pose, frame, gender), palette || gender);
+  blitRows(ctx, ox, oy, buildRunnerRows(pose, frame, gender), palette || gender, gender);
 }
 
 /** Twelve frames: 4 down, 4 up, 4 side. Each four is idle, strideA, idle, strideB. */
@@ -537,7 +556,7 @@ export function makeRunnerSheet(palette, gender) {
  * The 3× blow-up is still nearest-neighbor: we draw the tiny picture
  * first, then scale that canvas, so the blocks stay square.
  */
-export function paintWave(canvas, gender, frame) {
+export function paintWave(canvas, gender, frame, palette) {
   const scale = 3;
   const rows = buildRunnerRows("wave", frame, gender);
   const tiny = document.createElement("canvas");
@@ -545,7 +564,7 @@ export function paintWave(canvas, gender, frame) {
   tiny.height = rows.length;
   const tinyCtx = tiny.getContext("2d");
   tinyCtx.imageSmoothingEnabled = false;
-  blitRows(tinyCtx, 0, 0, rows, gender);
+  blitRows(tinyCtx, 0, 0, rows, palette || gender, gender);
   canvas.width = RUNNER_W * scale;
   canvas.height = rows.length * scale;
   const ctx = canvas.getContext("2d");
