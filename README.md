@@ -257,7 +257,7 @@ Brands "notice you" once you reach a level **and** finish a key event. A brand r
 
 ### Private prototype: real brands
 
-This build is a private prototype. The owner asked for real running brands here so the gear, fuel-carry, and sponsor loop can be played before the public release. The fictional table above is still the plan for that release. The playable deals are Nike, Adidas, Hoka, Brooks, Norda, Speedland, Mount to Coast, Salomon, and Satisfy for shoes, plus BPN, Honey Stinger, Maurten, and Precision for nutrition. You wear one shoe sponsor and one nutrition sponsor. Belts add 5 max nutrition. Vests add 10 and cost a little speed in short road races. `docs/NOTES.md` explains how the save migrates.
+This build is a private prototype. The owner asked for real running brands here so the gear, fuel-carry, and sponsor loop can be played before the public release. The fictional table above is still the plan for that release. The playable deals are Nike, Adidas, Hoka, Brooks, Norda, Speedland, Mount to Coast, Salomon, and Satisfy for shoes, plus BPN, Honey Stinger, Maurten, and Precision for nutrition, plus Nathan, Osprey, REI, Salomon, Dera, CamelBak, Naked, and Satisfy for belts and vests (one gear sponsor covers that brand's belt and vest together). You wear one shoe sponsor, one nutrition sponsor, and one gear sponsor. Belts add 5 max nutrition. Vests add 10 and cost a little speed in short road races. `docs/NOTES.md` explains how the save migrates.
 
 ### Gear and trade-offs
 

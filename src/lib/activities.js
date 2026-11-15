@@ -12,7 +12,9 @@
  *
  * Shoes, belts, vests, and sponsor deals are applied here too. The numbers
  * live in catalog.js and sponsors.js. This file only decides what a button
- * does to the save: buy, equip, sign, skip, sleep, run, race.
+ * does to the save: buy, equip, sign, skip, sleep, run, race. A gear
+ * sponsor is the third slot. Signing one puts that brand's belt (or
+ * their vest, if they do not sell a belt) in the closet and on you.
  *
  * Workouts are the RUNS table. `slots` is the energy cost. 2 is a heavy
  * session. `peak` and `endurance` on a workout are the HUD meters (the
@@ -83,6 +85,7 @@ import {
 import {
   COOLDOWN_LEAVE,
   COOLDOWN_PASS,
+  GEAR_SPONSOR_IDS,
   NUTRITION_SPONSOR_IDS,
   SHOE_SPONSOR_IDS,
   STANDING_ACCEPT,
@@ -93,6 +96,8 @@ import {
   clampStanding,
   emptySponsors,
   gateStatus,
+  gearDealNumbers,
+  gearPerkText,
   nutritionPerkText,
   nutritionTuning,
   planObligation,
@@ -103,6 +108,7 @@ import {
   shoePerkText,
   sponsorById,
   sponsorPace,
+  sponsorSlotLines,
   sponsorSummaryLines,
   standingOf,
 } from "@/lib/sponsors";
@@ -1344,11 +1350,7 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
     grantXp(next, race.xp, race.style);
     addAttributes(next, race.attributes);
     next.coins += race.coins;
-    const deal = shoeDealNumbers(next);
-    if (deal?.raceCoins) {
-      next.coins += deal.raceCoins;
-      lines.push(`${deal.name} adds ${deal.raceCoins} coins for the finish.`);
-    }
+    payRaceCoins(next, lines);
     next.condition.fatigue = clampMeter(next.condition.fatigue + race.fatigue);
     next.condition.nutrition = clampFood(next, next.condition.nutrition + race.nutrition);
     next.condition.peak = clampMeter(next.condition.peak + race.peak);
@@ -1358,6 +1360,10 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
     if (raceId === "10k") next.progress.tenKFinished = true;
   }
   if (quality) {
+    // A DNF never gets here. Jogging it in still counts: you wore the
+    // kit to the finish, or you didn't. Settling first means a dropped
+    // brand is already on the long cooldown before anyone else offers.
+    settleWearObligation(next, lines);
     const notice = noticeBrands(next, lines, { style: race.style, quality, channel: "finish" }, rng);
     speaker = notice.speaker;
     celebrate = quality === "win";
@@ -1432,7 +1438,9 @@ export function applyRival(state, roll = 0.5, choice, rng = Math.random) {
   const fuel = addRaceFuel(next);
   if (fuel) lines.push(`${nutritionTuning(next).name} tops you up with ${fuel} nutrition at the gun.`);
   let win = false;
+  let finished = true;
   if (threat.bonk && !rescued && threat.dnf) {
+    finished = false;
     lines.push("You bonk before the second bend. Remy jogs it in and waits, arms folded.");
     lines.push("DNF. Remy doesn't gloat. Much.");
     if ((state.gels || 0) === 0) lines.push("A Stride Fuel gel could have saved this.");
@@ -1453,11 +1461,7 @@ export function applyRival(state, roll = 0.5, choice, rng = Math.random) {
       grantXp(next, RIVAL.winXp, "road");
       addAttributes(next, RIVAL.winAttributes);
       next.coins += RIVAL.coins;
-      const deal = shoeDealNumbers(next);
-      if (deal?.raceCoins) {
-        next.coins += deal.raceCoins;
-        lines.push(`${deal.name} adds ${deal.raceCoins} coins for the finish.`);
-      }
+      payRaceCoins(next, lines);
       next.progress.rivalWins += 1;
     } else {
       lines.push("Remy kicks with 100 meters left and you don't have an answer.");
@@ -1475,6 +1479,9 @@ export function applyRival(state, roll = 0.5, choice, rng = Math.random) {
   spendEnergy(next, energyCost, true);
   if (rescued) applyRescueGel(next);
   sample(next);
+  // A loss is still a race. The wear note looks at the belt or vest,
+  // not at who won. A DNF did not finish the race the note asked for.
+  if (finished) settleWearObligation(next, lines);
   // Beating Remy is a boss win. The offer is guaranteed when a road
   // brand is eligible. A loss does not draw anybody.
   if (win) {
@@ -1484,7 +1491,92 @@ export function applyRival(state, roll = 0.5, choice, rng = Math.random) {
 }
 
 function sponsorField(kind) {
-  return kind === "nutrition" ? "nutrition" : "shoe";
+  if (kind === "nutrition") return "nutrition";
+  if (kind === "gear") return "gear";
+  return "shoe";
+}
+
+function slotName(field) {
+  if (field === "nutrition") return "nutrition";
+  if (field === "gear") return "gear";
+  return "shoe";
+}
+
+function clearStoredTerms(sponsors, field) {
+  if (field === "shoe") sponsors.shoeTerms = null;
+  if (field === "gear") sponsors.gearTerms = null;
+}
+
+function payRaceCoins(state, lines) {
+  const shoe = shoeDealNumbers(state);
+  if (shoe?.raceCoins) {
+    state.coins += shoe.raceCoins;
+    lines.push(`${shoe.name} adds ${shoe.raceCoins} coins for the finish.`);
+  }
+  const gear = gearDealNumbers(state);
+  if (gear?.raceCoins) {
+    state.coins += gear.raceCoins;
+    lines.push(`${gear.name} adds ${gear.raceCoins} coins for the finish.`);
+  }
+}
+
+/**
+ * The gear note is not a photo shoot. It is checked when a race is
+ * actually finished. Wearing their belt or vest pays the note and
+ * raises standing. Racing in something else is a skip. A DNF does not
+ * call this, so the note waits for a race you finish.
+ */
+function settleWearObligation(state, lines) {
+  const job = state.sponsors?.obligation;
+  if (!job || job.kind !== "gear" || job.task !== "wear") return;
+  if (state.sponsors.gear !== job.sponsorId) {
+    state.sponsors.obligation = null;
+    return;
+  }
+  const sponsor = sponsorById("gear", job.sponsorId);
+  if (!sponsor) return;
+  const item = carryById(state.gear?.carry);
+  const wearing = Boolean(item && sponsor.brands.includes(item.brand));
+  if (wearing) {
+    const standing = clampStanding(standingOf(state, job.sponsorId) + STANDING_ACCEPT);
+    state.sponsors.standing[job.sponsorId] = standing;
+    state.sponsors.obligation = null;
+    state.coins += job.pay;
+    lines.push(`${sponsor.name} sees the ${item.name}. Wear obligation done. You earn ${job.pay} coins. Standing is ${standing}.`);
+    return;
+  }
+  const standing = clampStanding(standingOf(state, job.sponsorId) - STANDING_SKIP);
+  state.sponsors.standing[job.sponsorId] = standing;
+  state.sponsors.obligation = null;
+  lines.push(`You finished without a ${sponsor.name} belt or vest. Standing falls to ${standing}.`);
+  if (standing < STANDING_DROP) {
+    state.sponsors.gear = null;
+    state.sponsors.gearTerms = null;
+    setCooldown(state, job.sponsorId, COOLDOWN_LEAVE);
+    lines.push(`${sponsor.name} drops the deal. They will not offer again for ${COOLDOWN_LEAVE} days.`);
+  } else if (standing < STANDING_WARN) {
+    lines.push(`${sponsor.name} warns you. Skip another and they may walk.`);
+  }
+}
+
+function giveStarterCarry(state, sponsor, lines) {
+  const gift = carryById(sponsor.starter);
+  if (!gift) return;
+  if (!Array.isArray(state.gear.ownedCarry)) state.gear.ownedCarry = [];
+  const already = state.gear.ownedCarry.includes(gift.id);
+  if (!already) state.gear.ownedCarry = [...state.gear.ownedCarry, gift.id];
+  const wasOn = state.gear.carry === gift.id;
+  state.gear.carry = gift.id;
+  // A vest you were wearing can be taller than the new belt's cap.
+  // Pull the bar back so it cannot sit past the new maximum.
+  state.condition.nutrition = clampFood(state, state.condition.nutrition);
+  if (wasOn) {
+    lines.push(`You are already wearing the ${gift.name}.`);
+  } else if (already) {
+    lines.push(`You already own the ${gift.name}. You put it on.`);
+  } else {
+    lines.push(`${sponsor.name} includes a ${gift.name}. You put it on.`);
+  }
 }
 
 export function applySignSponsor(state, kind, id) {
@@ -1517,6 +1609,9 @@ export function applySignSponsor(state, kind, id) {
   if (field === "shoe") {
     next.sponsors.shoeTerms = { discount: offer.discount, raceCoins: offer.raceCoins };
   }
+  if (field === "gear") {
+    next.sponsors.gearTerms = { discount: offer.discount, raceCoins: offer.raceCoins };
+  }
   // Leaving a brand for another one is the long cooldown. The closet
   // stays. They just will not call for two weeks.
   if (previous && previous.id !== id) {
@@ -1535,8 +1630,11 @@ export function applySignSponsor(state, kind, id) {
   if (previous) {
     lines.push(`The ${previous.name} deal ends. Gear you already own stays in the closet. ${previous.name} will not offer again for ${COOLDOWN_LEAVE} days.`);
   }
-  lines.push(`You accept ${sponsor.name}. Standing is ${next.sponsors.standing[id]}. Only one ${field === "shoe" ? "shoe" : "nutrition"} sponsor at a time.`);
-  lines.push(field === "nutrition" ? nutritionPerkText(sponsor) : shoePerkText(sponsor, next.sponsors.shoeTerms));
+  lines.push(`You accept ${sponsor.name}. Standing is ${next.sponsors.standing[id]}. Only one ${slotName(field)} sponsor at a time.`);
+  if (field === "nutrition") lines.push(nutritionPerkText(sponsor));
+  else if (field === "gear") lines.push(gearPerkText(sponsor, next.sponsors.gearTerms));
+  else lines.push(shoePerkText(sponsor, next.sponsors.shoeTerms));
+  if (field === "gear") giveStarterCarry(next, sponsor, lines);
   return finish(before, next, lines);
 }
 
@@ -1562,7 +1660,7 @@ export function applyEndSponsor(state, kind) {
   const before = state;
   const next = clone(state);
   next.sponsors[field] = null;
-  if (field === "shoe") next.sponsors.shoeTerms = null;
+  clearStoredTerms(next.sponsors, field);
   if (next.sponsors.obligation?.kind === field) next.sponsors.obligation = null;
   // Ending it yourself is the short wait, not the 14-day leave. They
   // can come back after a week if a result earns it.
@@ -1576,6 +1674,11 @@ export function applyObligation(state, choice) {
   const sponsor = sponsorById(job.kind, job.sponsorId);
   if (!sponsor) return refuse(state, ["That deal already ended."]);
   if (choice === "accept") {
+    // The wear note is settled by the race, not by a button at home.
+    // Skip is still here, so you can refuse it without waiting for a start.
+    if (job.kind === "gear" && job.task === "wear") {
+      return refuse(state, ["Wear their belt or vest in your next race. Skipping is the menu choice."]);
+    }
     if (readEnergy(state) < 1) return refuse(state, [LOW_ENERGY]);
     const before = state;
     const next = clone(state);
@@ -1601,7 +1704,7 @@ export function applyObligation(state, choice) {
     if (standing < STANDING_DROP) {
       const field = sponsorField(job.kind);
       next.sponsors[field] = null;
-      if (field === "shoe") next.sponsors.shoeTerms = null;
+      clearStoredTerms(next.sponsors, field);
       // Being dropped is the long cooldown, same as leaving them for a rival.
       setCooldown(next, job.sponsorId, COOLDOWN_LEAVE);
       lines.push(`${sponsor.name} drops the deal. They will not offer again for ${COOLDOWN_LEAVE} days.`);
@@ -1880,8 +1983,16 @@ export function jobScript(jobId) {
   return JOBS[jobId] || null;
 }
 
-function headerItem(label, detail) {
-  return { label, detail: detail || "", action: { type: "noop" }, disabled: false, disabledReason: "", header: true };
+function headerItem(label, detail, testId) {
+  return {
+    label,
+    detail: detail || "",
+    action: { type: "noop" },
+    disabled: false,
+    disabledReason: "",
+    header: true,
+    testId,
+  };
 }
 
 function gelMenuDetail(state) {
@@ -2053,19 +2164,32 @@ export function closetItems(state) {
 
 function offerTermsDetail(kind, sponsor, offer) {
   if (kind === "nutrition") return nutritionPerkText(sponsor);
+  if (kind === "gear") return gearPerkText(sponsor, offer);
   return shoePerkText(sponsor, offer);
 }
 
+function emptySlotLabel(kind) {
+  if (kind === "shoe") return "No shoe sponsor";
+  if (kind === "gear") return "No gear sponsor";
+  return "No nutrition sponsor";
+}
+
+function signedTerms(state, kind) {
+  if (kind === "shoe") return shoeDealNumbers(state);
+  if (kind === "gear") return gearDealNumbers(state);
+  return null;
+}
+
 function sponsorRows(state, kind, ids) {
-  const field = kind === "nutrition" ? "nutrition" : "shoe";
+  const field = sponsorField(kind);
   const activeId = state.sponsors?.[field] || null;
   const pending = liveOffer(state, kind);
   const rows = [];
   if (activeId) {
     const sponsor = sponsorById(kind, activeId);
     if (sponsor) {
-      const terms = kind === "shoe" ? shoeDealNumbers(state) : null;
-      const perk = kind === "nutrition" ? nutritionPerkText(sponsor) : shoePerkText(sponsor, terms);
+      const terms = signedTerms(state, kind);
+      const perk = offerTermsDetail(kind, sponsor, terms);
       rows.push(item(
         `End ${sponsor.name} deal`,
         `Standing ${standingOf(state, sponsor.id)}. ${perk}`,
@@ -2074,7 +2198,7 @@ function sponsorRows(state, kind, ids) {
     }
   } else {
     rows.push(item(
-      kind === "shoe" ? "No shoe sponsor" : "No nutrition sponsor",
+      emptySlotLabel(kind),
       "Brands offer when a result in their style is good enough.",
       { type: "noop" },
       true,
@@ -2127,10 +2251,36 @@ function sponsorRows(state, kind, ids) {
   return rows;
 }
 
+function slotTestId(line) {
+  if (line.startsWith("Shoe sponsor")) return "sponsor-slot-shoe";
+  if (line.startsWith("Nutrition sponsor")) return "sponsor-slot-nutrition";
+  if (line.startsWith("Gear sponsor")) return "sponsor-slot-gear";
+  return undefined;
+}
+
 export function sponsorMenuItems(state) {
   const rows = [];
   const job = state.sponsors?.obligation;
-  if (job) {
+  if (job && job.kind === "gear" && job.task === "wear") {
+    const brand = sponsorById("gear", job.sponsorId);
+    const name = brand ? brand.name : "your sponsor";
+    const itemOn = carryById(state.gear?.carry);
+    const wearing = Boolean(brand && itemOn && brand.brands.includes(itemOn.brand));
+    rows.push(item(
+      wearing ? `${name} kit is on` : `Wear a ${name} belt or vest`,
+      wearing
+        ? `Your next race settles this. +${job.pay} coins if you finish in it.`
+        : `The note is your next race, in a ${name} belt or vest.`,
+      { type: "noop" },
+      true,
+      wearing ? "Start a race while wearing it." : "Equip their belt or vest, then race.",
+    ));
+    rows.push(item(
+      "Skip the wear note",
+      `${name} standing goes down. Too many skips ends the deal.`,
+      { type: "obligation", choice: "skip" },
+    ));
+  } else if (job) {
     const brand = sponsorById(job.kind, job.sponsorId);
     const name = brand ? brand.name : "your sponsor";
     const tired = readEnergy(state) < 1;
@@ -2146,13 +2296,18 @@ export function sponsorMenuItems(state) {
       `${name} standing goes down. Too many skips ends the deal.`,
       { type: "obligation", choice: "skip" },
     ));
-  } else if ((state.sponsors?.shoe || state.sponsors?.nutrition)) {
+  } else if (state.sponsors?.shoe || state.sponsors?.nutrition || state.sponsors?.gear) {
     rows.push(headerItem("No obligation today", "The next note shows up after you sleep."));
+  }
+  for (const line of sponsorSlotLines(state)) {
+    rows.push(headerItem(line, "", slotTestId(line)));
   }
   rows.push(headerItem("Shoe deals", "One shoe sponsor. Rivals can offer better terms."));
   rows.push(...sponsorRows(state, "shoe", SHOE_SPONSOR_IDS));
   rows.push(headerItem("Nutrition deals", "One fuel deal. Stacks with a belt or vest. No speed penalty."));
   rows.push(...sponsorRows(state, "nutrition", NUTRITION_SPONSOR_IDS));
+  rows.push(headerItem("Gear deals", "One belt-and-vest sponsor. Rivals can offer better terms."));
+  rows.push(...sponsorRows(state, "gear", GEAR_SPONSOR_IDS));
   return rows;
 }
 

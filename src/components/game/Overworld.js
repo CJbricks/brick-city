@@ -32,7 +32,7 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { RUNNER_FRAMES, RUNNER_H, RUNNER_W, makeRunnerSheet, renderWorld, runnerPalette } from "@/game/art";
+import { RUNNER_FRAMES, RUNNER_H, RUNNER_W, makeRunnerSheet, renderWorld, runnerLook } from "@/game/art";
 import { CONFETTI_MS, pieceCount, spawnPieces, stepPieces } from "@/game/confetti";
 import {
   TILE,
@@ -227,7 +227,12 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
       const lights = glowAnchors();
       const sheetCache = new Map();
       function framesFor(palette, gender) {
-        const look = typeof palette === "string" ? palette : `${palette?.cap}|${palette?.shirt}|${palette?.shorts}|${palette?.stripe}`;
+        // carry and carryKind are in the key so a new gear deal, or
+        // taking the vest off, builds a new sheet instead of reusing
+        // the plain shirt.
+        const look = typeof palette === "string"
+          ? palette
+          : `${palette?.cap}|${palette?.shirt}|${palette?.shorts}|${palette?.stripe}|${palette?.carry || ""}|${palette?.carryKind || ""}`;
         const key = `${look}:${gender}`;
         if (!sheetCache.has(key)) {
           const base = PIXI.Texture.from(makeRunnerSheet(palette, gender));
@@ -404,10 +409,10 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
         }
 
         const gender = game.runner.gender === "female" ? "female" : "male";
-        // Shoe sponsor id is the outfit. Every walk frame comes from this
-        // sheet, so the recolor is not just the standing pose.
-        const sponsorId = game.sponsors?.shoe || "";
-        const frames = framesFor(runnerPalette(gender, sponsorId), gender);
+        // Shoe sponsor id is the outfit. The gear sponsor, if you are
+        // wearing their belt or vest, tints that item. Every walk frame
+        // comes from this sheet, so the recolor is not just the standing pose.
+        const frames = framesFor(runnerLook(game), gender);
         // Sheet layout is 12 frames: down 0-3, up 4-7, side 8-11.
         // Each group plays idle, strideA, idle, strideB. Holding idle
         // between the two strides is the walk; % 4 is that cycle.

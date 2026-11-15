@@ -1,12 +1,18 @@
 /**
  * brandColors.js
- * Outfit colors for a shoe sponsor. Colors only: no logos, no wordmarks,
- * no stripes copied from a trademark. The runner's cap, jacket (the shirt
- * pixels), chest band, cuffs, and shorts swap to the brand. Skin, hair,
- * and shoes stay the default so the person is still the person.
+ * Outfit colors for a shoe sponsor, and one tint for a gear sponsor.
+ * Colors only: no logos, no wordmarks, no stripes copied from a trademark.
+ * The runner's cap, jacket (the shirt pixels), chest band, cuffs, and
+ * shorts swap to the shoe brand. Skin, hair, and shoes stay the default
+ * so the person is still the person.
  *
- * The sprite has no separate backpack, so the third color lands on the
- * chest band and the cuffs. That is the "accent" the eye reads at 32 pixels.
+ * The sprite has no separate backpack, so the third shoe color lands on
+ * the chest band and the cuffs. That is the "accent" the eye reads at
+ * 32 pixels.
+ *
+ * A gear sponsor does not recolor the clothes. It tints the belt or vest
+ * pixels only, and only while that brand's item is what you are wearing.
+ * The tint is one flat color. Nothing on the sprite is a logo.
  *
  * Hex values are the real colors (or the closest pixel-safe reading of a
  * named colorway when the brand never published a hex). Sources are in the
@@ -120,6 +126,48 @@ export const BRAND_OUTFIT_IDS = Object.keys(BRAND_OUTFITS);
 
 export function brandOutfit(sponsorId) {
   return BRAND_OUTFITS[sponsorId] || null;
+}
+
+/**
+ * One color for the belt or vest. Not an outfit. Shoe ids are not in
+ * this map, and gear ids are not in BRAND_OUTFITS, so a Salomon shoe
+ * deal and a Salomon gear deal cannot paint each other's pixels.
+ *
+ * Hex values are real brand colors, or the closest pixel-safe reading
+ * when the brand never published a hex. A color that would vanish into
+ * the dark outline (Osprey's black mark, Naked's black site) is swapped
+ * for a nearby panel color that still reads as that brand.
+ */
+export const GEAR_TINTS = {
+  // Nathan blue. The wordmark on nathansports.com is this bright blue
+  // on white. Light enough to read on both the white shirt and the red one.
+  nathan: "#0057b8",
+  // Osprey's mark is black, which disappears into the sprite outline.
+  // The moss on their pack fabric is the color a belt can actually show.
+  osprey: "#4f6b3a",
+  // REI co-op green, the green of the wordmark, darkened one step so it
+  // does not glow on the shirt.
+  rei: "#1f6a45",
+  // Same Salomon red as the shoe outfit. The gear deal only uses it on
+  // the belt or vest, not on the cap and jacket.
+  "salomon-gear": "#af0c1e",
+  // Dera does not publish a hex book. This is the orange on the dial
+  // hardware of the B01 belt, read as a pixel color.
+  dera: "#d4651a",
+  // CamelBak blue. The logo is this blue with a small orange, and the
+  // vest tint is the blue only. No mark is drawn.
+  camelbak: "#0072bc",
+  // Naked's site is black and white. Black would hide in the outline,
+  // and pure white vanishes on the male shirt. This is the gray of the
+  // vest panel, so the item still reads as a separate object.
+  naked: "#5c6570",
+  // The rose already used for the Satisfy shoe accent. On a gear deal
+  // it stays on the vest straps, not the whole outfit.
+  "satisfy-gear": "#d65d64",
+};
+
+export function gearTint(sponsorId) {
+  return GEAR_TINTS[sponsorId] || null;
 }
 
 /**
