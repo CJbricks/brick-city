@@ -21,6 +21,11 @@
  * arrived on this same key too. A missing pocket is empty. A missing
  * counter is zero. The version stays 1.
  *
+ * Race IQ, the coffee cup count, the Wi-Fi flag, and the leftover cup
+ * note arrived on this same key too. A blob from before the coffee shop
+ * has none of them. Race IQ becomes 0. The cup count becomes 0. Wi-Fi
+ * is unused today. There is no pace note waiting. The version stays 1.
+ *
  * The Run Store deck keeps shiftCursor and shiftsToday on the calendar.
  * Both arrived on this same key. A blob from before the deck has neither.
  * The shift code treats a missing cursor as "start from the day number"
@@ -67,6 +72,24 @@ export function deserialize(raw) {
       data.calendar.findsToday = 0;
     }
     if (typeof data.calendar.clinicTreated !== "boolean") data.calendar.clinicTreated = false;
+    // Race IQ is a new stat on the same save. Missing, negative, or
+    // not a number means the runner has never studied a race report.
+    if (typeof data.raceIq !== "number" || !Number.isFinite(data.raceIq) || data.raceIq < 0) {
+      data.raceIq = 0;
+    } else {
+      data.raceIq = Math.floor(data.raceIq);
+    }
+    if (typeof data.calendar.coffeesToday !== "number" || !Number.isFinite(data.calendar.coffeesToday) || data.calendar.coffeesToday < 0) {
+      data.calendar.coffeesToday = 0;
+    } else {
+      data.calendar.coffeesToday = Math.floor(data.calendar.coffeesToday);
+    }
+    if (typeof data.calendar.wifiToday !== "boolean") data.calendar.wifiToday = false;
+    // Only the two cup notes are real. Anything else (including a missing
+    // field on an old save) is "no coffee waiting".
+    if (data.condition.coffeeNext !== "boost" && data.condition.coffeeNext !== "jitter") {
+      data.condition.coffeeNext = null;
+    }
     if (typeof data.calendar.homeMealUsed !== "boolean") data.calendar.homeMealUsed = false;
     if (typeof data.calendar.homeSnackUsed !== "boolean") data.calendar.homeSnackUsed = false;
     // The counts are newer than the yes/no flags. An old brick-city-save-v1

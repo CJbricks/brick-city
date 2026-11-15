@@ -697,6 +697,59 @@ Sleep is what lets you book treatment again. The other cities are not maps yet. 
 
 An old `brick-city-save-v1` file has no sock slot, no hat, no shakes, and no find counter. Resume fills those with empty and zero. The version stays 1.
 
+## The coffee shop and Race IQ
+
+Every town has a coffee shop. Brick City's is on the map, south of the PT clinic. The door faces a sidewalk you can walk to from the clinic row, down the clear tile west of the clinic, so the new building does not wall anybody in. The other towns are still only names. Their shops are written down the same way their clinics are, so a later map has a price, a pastry, and a sentence to paint. Summit Hollow charges the most, matching the Summit Store and the Summit Hollow clinic.
+
+The names are original. They are not the real cafes they borrow a mood from, and the pictures are not those logos.
+
+| Town | Shop | What it looks like | Signature pastry |
+|---|---|---|---|
+| Brick City | Ravenline Roasters | Matte black, white trim, concrete and steel, the roaster in the window. Nitro and bags of beans. | Cold-brew brownie |
+| Ridgeview | Good Neighbor Roasting | A plant-filled warehouse, garage-door windows, a garden patio. | Garden crumb cake |
+| Lakeport | Inkline Coffee Bar | A small red-brick corner bar. Dark blue and green, chrome. The rosemary maple latte is the house pour. | Rosemary maple bar |
+| Mesa Verde Flats | Teal & Butter Bakeshop | Teal, coral, and mustard. Mid-century. | Lemon meringue croissant (the case also has kouign-amann) |
+| Flatland | Captain's 43rd Bakery | A colorful bohemian neighborhood bakery. | Cinnamon roll (kolaches once the first tray is gone) |
+| Summit Hollow | Old Post Books & Coffee | A bookstore cafe in an old post office. Oak shelves, a stained-glass nook. | Window nook bun |
+
+Inkline's counter has a joke: get the logo tattooed and the drip is free for life. Nobody has sat for it.
+
+The menu is the same three rows everywhere. Only the coins and the pastry name change.
+
+### Coffee
+
+A cup costs coins and **0 energy blocks**. It gives **+1 energy**, and the bar still stops at 10. It does not move the clock. Gaining a block would otherwise rewind the sky, and a cup at the counter is not a nap.
+
+The cup also leaves a note for your **next run or race only**.
+
+- Cups 1 and 2: a small pace bump (+2%).
+- Cup 3, and any cup after that on the same day: the note becomes **jittery** instead (−2.5%). A fourth cup does not get worse. There is only one note.
+- The energy still arrives on the jittery cup. "Instead" means instead of the bump, not instead of the coffee.
+
+A training run has no finish clock, so the note shows up as **2 fatigue** off (bump) or on (jitters), plus a line that says the pace. A race puts the same percent into the finish score and into the mile against Remy. The note is spent either way, including a bonk, because that start was the next race.
+
+Sleep throws the note away and sets the cup count back to 0. Caffeine does not keep overnight. If you buy a cup and go to bed without running, the morning does not start jittery, and it does not start with a free bump.
+
+### Pastry
+
+The pastry is a paid snack. It costs coins, **0 energy**, and it restores **16 FOOD**. A home snack is 12. The grocery counter pastry is 14. This is a little more, and it does not set the junk flag, because it is the thing they bake rather than the pantry leftover. There is no daily cap. You can buy another as long as you have the coins. Each shop's button uses that shop's pastry name.
+
+### Wi-Fi and Race IQ
+
+**Use the Wi-Fi** costs **1 time slot** and **no energy**. The clock moves one step (Morning toward Night), the same kind of step a nap takes, and you get a little hungry because a slot passed. The energy bar does not move.
+
+It raises a new stat, **Race IQ**. The first hour is worth 4. Hours after that are worth less. Once you know a lot, an hour is worth 1 and never 0. You only get **one hour a day**. Sleep opens another hour. Sleep does not erase Race IQ. Studying is the point, and it stays.
+
+Race IQ is not Speed or Mental Toughness. Those are attribute levels from training. Race IQ is what you learned from reports, maps, and splits. It only changes races:
+
+- **Maybe-bonk.** If only fuel or only sleep is bad, the game rolls. The line starts at 0.45. Race IQ lowers that line, and then it stops. The lowest it goes is 0.33. A sure bonk (nutrition under 40 and poor sleep, or fatigue at 80) is not a roll. Studying does not save an empty start.
+- **Finish.** The score that picks the clock gets a small bump. The percent and the flat bonus share one cap of **4 points**. That can nudge you across a nearby clock (29:05 to 26:40) if you were already close. It cannot turn a slow day into a win. The slowest clock stays the slowest clock when the score is still far under the line.
+- **Course note.** At 4, 12, and 24 Race IQ the race screen shows one line before the start. You see the best note you have unlocked, not a stack of them. The first hour of Wi-Fi is exactly the first note.
+
+Race IQ is on the runner status sheet (`Race IQ 4`). It is not on the corner HUD card. The phone card is already full. A coffee note, if one is waiting, is a line on that same sheet.
+
+An old `brick-city-save-v1` file has no Race IQ, no cup count, and no Wi-Fi flag. Resume fills Race IQ with 0, the cup count with 0, Wi-Fi with "not used today", and no pace note. The version stays 1.
+
 ## What this build does not do yet
 
 The half marathon itself, backyard race events, the other cities, and real-life run logging are in the design and not in this build. The menus mention the locked ones so the path is visible. Shoe sponsors and nutrition sponsors are in this private prototype. The fictional brand ladder in the README is the public-release plan.

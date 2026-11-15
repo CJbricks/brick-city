@@ -1241,6 +1241,8 @@ export function sceneryLayout() {
     boardRect("gym", "GYM", gym.x + 78, gym.y + 8),
     boardRect("store", "RUN STORE", store.x + 48, store.y + 78),
     boardRect("clinic", "PT", buildingOrigin("clinic").x + 108, buildingOrigin("clinic").y + 4),
+    // On the black wall, south of the door and clear of the sidewalk mat.
+    boardRect("cafe", "RAVENLINE", buildingOrigin("cafe").x + 140, buildingOrigin("cafe").y + 42),
     boardRect("mountain", "MOUNTAIN", 30 * TILE - 36, 6 * TILE - 30),
     // Road row above the park fence. The old y crossed into the rail's tile.
     boardRect("park", "PARK", 18 * TILE - 22, 21 * TILE + 4),
@@ -1346,6 +1348,46 @@ function drawStretchFigure(ctx, x, y) {
   ink(ctx, x + 17, y + 13, 4, 10, "#24366b");
   ink(ctx, x + 8, y + 18, 8, 4, OUTLINE);
   ink(ctx, x + 9, y + 19, 6, 2, "#f3c7a4");
+}
+
+function drawRoaster(ctx, x, y) {
+  // Hopper, a steel drum full of beans, and a warm glow in the drum.
+  // Original pixels. Not a bird and not a wordmark.
+  ink(ctx, x + 10, y, 24, 6, "#8a9098");
+  ink(ctx, x + 14, y + 5, 16, 6, "#2a2e33");
+  ink(ctx, x + 4, y + 10, 36, 20, "#c5ccd2");
+  ink(ctx, x + 6, y + 12, 32, 16, "#3a4048");
+  ink(ctx, x + 8, y + 14, 28, 12, "#1a1c1f");
+  ink(ctx, x + 12, y + 16, 16, 8, "#8a4b1a");
+  ink(ctx, x + 16, y + 18, 8, 4, "#e07a32");
+  ink(ctx, x + 18, y + 30, 6, 6, "#8a9098");
+}
+
+function drawCafe(ctx, ox, oy, scene) {
+  // Matte black, white trim, a concrete base, steel posts. The door sits
+  // on the north edge so it meets the sidewalk. The roaster is in the
+  // south window, which is the face the town sees. No logo.
+  ink(ctx, ox + 16, oy + 20, 224, 14, "#2a2e33");
+  ink(ctx, ox + 16, oy + 20, 224, 3, "#b7bcc2");
+  ink(ctx, ox + 20, oy + 32, 216, 90, "#f7f7f7");
+  ink(ctx, ox + 26, oy + 38, 204, 70, "#141414");
+  ink(ctx, ox + 26, oy + 96, 204, 20, "#8d8680");
+  ink(ctx, ox + 26, oy + 96, 204, 3, "#d4cdc4");
+  ink(ctx, ox + 40, oy + 42, 6, 62, "#8a9098");
+  ink(ctx, ox + 210, oy + 42, 6, 62, "#8a9098");
+  ink(ctx, ox + 40, oy + 42, 176, 4, "#c5ccd2");
+  doorPanel(ctx, ox + 100, oy + 2, 26, 30, "#f4f4f4");
+  ink(ctx, ox + 106, oy + 6, 14, 10, "#9fd8ea");
+  windowPane(ctx, ox + 34, oy + 50, 100, 44);
+  drawRoaster(ctx, ox + 48, oy + 52);
+  ink(ctx, ox + 38, oy + 52, 92, 2, "#d8f4ff");
+  ink(ctx, ox + 150, oy + 80, 22, 16, "#6b4428");
+  ink(ctx, ox + 154, oy + 84, 14, 6, "#c4a574");
+  ink(ctx, ox + 176, oy + 82, 18, 16, "#5c4030");
+  ink(ctx, ox + 206, oy + 78, 8, 18, "#c5ccd2");
+  ink(ctx, ox + 202, oy + 74, 16, 6, "#8a9098");
+  ink(ctx, ox + 208, oy + 94, 4, 6, "#1a1c1f");
+  paintBoard(ctx, scenePart(scene, "cafe"));
 }
 
 function drawClinic(ctx, ox, oy, scene) {
@@ -1595,6 +1637,7 @@ export function renderWorld(state, waterFrame = 0) {
     if (building.id === "gym") drawGym(ctx, px, py, scene);
     if (building.id === "store") drawStore(ctx, px, py, scene);
     if (building.id === "clinic") drawClinic(ctx, px, py, scene);
+    if (building.id === "cafe") drawCafe(ctx, px, py, scene);
   }
   drawFountain(ctx, waterFrame);
   drawGate(ctx, world.mountainOpen, scene);

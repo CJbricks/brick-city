@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
 import { createNewGame } from "@/lib/activities";
 import { paintActivationPads, sceneryLayout, tilesTouchedBy } from "@/game/art";
 import { COLS, DIR, ROWS, TRACK_GATE, TRACK_SIGN_TILES, UNBUILT_CITIES, activationTiles, buildWorld, canReach, cityMaps, entranceAt, footBlocked, homeSpawn, isBlocked, lookupInteract, noteArrival, PLACES, TILE, signCopy, trackLaneTiles, unreachableTiles, worldPixelSize } from "@/game/town";
-import { clinicRates } from "@/lib/constants";
+import { cafeRates, clinicRates } from "@/lib/constants";
 import { xpToReachLevel } from "@/lib/xp";
 import { deserialize } from "@/lib/save";
 
@@ -184,6 +184,7 @@ describe("town paths", () => {
     const gate = noteArrival({ tx: 30, ty: 9 }, { tx: 30, ty: 8 }, true);
     expect(gate.entered).toBeNull();
     expect(entranceAt(40, 10)).toBe("clinic");
+    expect(entranceAt(39, 15)).toBe("cafe");
   });
 
   it("keeps every walkable tile reachable, including the trails and the clinic", () => {
@@ -196,6 +197,11 @@ describe("town paths", () => {
     expect(closed.ground.some((row) => row.includes("h"))).toBe(true);
     expect(canReach(closed, origin, { tx: 40, ty: 10 })).toBe(true);
     expect(lookupInteract(closed, 40, 10, "down")).toBe("clinic");
+    expect(canReach(closed, origin, { tx: 39, ty: 15 })).toBe(true);
+    expect(lookupInteract(closed, 39, 15, "down")).toBe("cafe");
+    expect(closed.ground[15][39]).toBe("s");
+    expect(closed.ground[15][35]).toBe("s");
+    expect(closed.ground[10][35]).toBe("s");
 
     const openState = createNewGame({ name: "Ada", gender: "female" });
     openState.xp.overall = xpToReachLevel(8);
@@ -243,6 +249,19 @@ describe("town paths", () => {
     expect(summit.clinic.treatment).toBe(clinicRates("summit-hollow").treatment);
     expect(summit.clinic.treatment).toBeGreaterThan(clinicRates("brick-city").treatment);
     expect(summit.clinic.treatment).toBe(Math.max(...prices, clinicRates("brick-city").treatment));
+  });
+
+  it("plans a coffee shop for every unbuilt city, with Summit Hollow the priciest", () => {
+    expect(UNBUILT_CITIES.every((city) => city.cafe && city.cafe.name && city.cafe.pastry)).toBe(true);
+    const prices = UNBUILT_CITIES.map((city) => city.cafe.coffee);
+    const summit = UNBUILT_CITIES.find((city) => city.id === "summit-hollow");
+    expect(summit.cafe.coffee).toBe(cafeRates("summit-hollow").coffee);
+    expect(summit.cafe.coffee).toBeGreaterThan(cafeRates("brick-city").coffee);
+    expect(summit.cafe.pastryCost).toBeGreaterThan(cafeRates("brick-city").pastryCost);
+    expect(summit.cafe.coffee).toBe(Math.max(...prices, cafeRates("brick-city").coffee));
+    const names = new Set(UNBUILT_CITIES.map((city) => city.cafe.name));
+    names.add(cafeRates("brick-city").name);
+    expect(names.size).toBe(UNBUILT_CITIES.length + 1);
   });
 });
 

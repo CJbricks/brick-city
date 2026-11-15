@@ -33,6 +33,49 @@ export const PROTEIN_FATIGUE_RELIEF = 16;
 export const TISSUE_FATIGUE_RELIEF = 12;
 /** How many nights of an injury one treatment session removes. */
 export const CLINIC_TREATMENT_NIGHTS = 2;
+/**
+ * Coffee at a shop. Two cups a day leave a small pace bump on the next
+ * run or race. The third cup still gives the energy, but the bump
+ * becomes a jitter penalty. Sleep puts the cup count back to zero.
+ * The bump is a fraction of pace, same units as a shoe mod.
+ */
+export const COFFEE_ENERGY = 1;
+export const COFFEE_CUPS_BEFORE_JITTER = 2;
+export const COFFEE_PACE_BUMP = 0.02;
+export const COFFEE_JITTER_PACE = -0.025;
+/** Runs have no finish clock, so the same cup eases or adds this much fatigue. */
+export const COFFEE_FATIGUE_SWING = 2;
+/**
+ * A shop pastry. More FOOD than the home pantry snack (12) and the
+ * grocery counter pastry (14). It is real bakery food, so it does not
+ * set the junk flag the pantry snack sets.
+ */
+export const PASTRY_NUTRITION = 16;
+/**
+ * One hour on the shop Wi-Fi. The first hour is worth this many Race IQ
+ * points. Later hours are worth less (see wifiGain). Never below the floor.
+ * One hour a day. Sleep is what allows another.
+ */
+export const WIFI_GAIN_START = 4;
+export const WIFI_GAIN_FLOOR = 1;
+export const WIFI_GAIN_SLOW = 12;
+/**
+ * Race IQ in a race. The pace percent and the flat study bonus share
+ * one cap, so a huge number cannot turn a bad day into a win.
+ * Bonk chance drops a little and then stops dropping. A sure bonk
+ * (empty and underslept) is not a chance, so Race IQ does not touch it.
+ */
+export const RACE_IQ_PACE_PER = 0.001;
+export const RACE_IQ_PACE_CAP = 0.03;
+export const RACE_IQ_SCORE_PER = 0.15;
+export const RACE_IQ_SCORE_CAP = 4;
+export const RACE_IQ_LIFT_CAP = 4;
+export const RACE_IQ_BONK_PER = 0.004;
+export const RACE_IQ_BONK_CAP = 0.12;
+/** Course-note thresholds. The first hour of Wi-Fi is enough for the first line. */
+export const RACE_IQ_HINT_FIRST = 4;
+export const RACE_IQ_HINT_SECOND = 12;
+export const RACE_IQ_HINT_THIRD = 24;
 /** Tall-grass finds per morning. Sleep puts this back to zero. */
 export const FINDS_PER_DAY = 3;
 /** A soft flask arms this much nutrition for the next race, then it is gone. */
@@ -41,9 +84,11 @@ export const FLASK_RACE_BONUS = 2;
 /**
  * One record per town. Brick City is the only map you can walk.
  * The others are the design for later maps: same kinds of buildings,
- * including a PT clinic. Summit Hollow's clinic costs the most, the
- * same idea as its store (higher prices than every other city).
- * The welcome sign reads name and motto. Prices are coins.
+ * including a PT clinic and a coffee shop. Summit Hollow's clinic and
+ * its coffee shop cost the most, the same idea as its store (higher
+ * prices than every other city). The welcome sign reads name and motto.
+ * Prices are coins. Shop names are original. They are not the real
+ * cafes they are loosely inspired by, and they do not use those logos.
  */
 export const CITIES = {
   "brick-city": {
@@ -52,6 +97,14 @@ export const CITIES = {
     motto: "Every Mile Lays a Brick",
     built: true,
     clinic: { name: "Brick City PT", treatment: 22, tissue: 10 },
+    cafe: {
+      name: "Ravenline Roasters",
+      pastry: "Cold-brew brownie",
+      coffee: 8,
+      pastryCost: 9,
+      look: "Matte black walls, white trim, concrete and steel. The roaster is visible through the window.",
+      blurb: "Nitro on tap. Bags of beans by the steel counter.",
+    },
   },
   ridgeview: {
     id: "ridgeview",
@@ -59,6 +112,14 @@ export const CITIES = {
     motto: "The Ridge Keeps the Receipt",
     built: false,
     clinic: { name: "Ridgeview PT", treatment: 26, tissue: 12 },
+    cafe: {
+      name: "Good Neighbor Roasting",
+      pastry: "Garden crumb cake",
+      coffee: 10,
+      pastryCost: 11,
+      look: "A plant-filled warehouse with garage-door windows and a garden patio.",
+      blurb: "The garage door is the window. The patio is the other room.",
+    },
   },
   lakeport: {
     id: "lakeport",
@@ -66,6 +127,15 @@ export const CITIES = {
     motto: "Hold the Pace Through the Streets",
     built: false,
     clinic: { name: "Lakeport PT", treatment: 24, tissue: 11 },
+    cafe: {
+      name: "Inkline Coffee Bar",
+      pastry: "Rosemary maple bar",
+      coffee: 9,
+      pastryCost: 10,
+      look: "A small red-brick corner bar. Dark blue and green paint, chrome trim.",
+      blurb: "The rosemary maple latte is the house pour.",
+      joke: "Get the logo tattooed and the drip is free for life. We have not had a taker.",
+    },
   },
   "mesa-verde-flats": {
     id: "mesa-verde-flats",
@@ -73,6 +143,15 @@ export const CITIES = {
     motto: "Long Miles, Short Shade",
     built: false,
     clinic: { name: "Mesa Verde PT", treatment: 20, tissue: 9 },
+    cafe: {
+      name: "Teal & Butter Bakeshop",
+      pastry: "Lemon meringue croissant",
+      also: "kouign-amann",
+      coffee: 7,
+      pastryCost: 8,
+      look: "Teal, coral, and mustard. A mid-century awning.",
+      blurb: "The lemon meringue croissant is the one people wait for.",
+    },
   },
   flatland: {
     id: "flatland",
@@ -80,6 +159,15 @@ export const CITIES = {
     motto: "Last One Standing",
     built: false,
     clinic: { name: "Flatland PT", treatment: 18, tissue: 8 },
+    cafe: {
+      name: "Captain's 43rd Bakery",
+      pastry: "Cinnamon roll",
+      also: "kolache",
+      coffee: 6,
+      pastryCost: 7,
+      look: "A colorful bohemian bakery on a neighborhood corner.",
+      blurb: "Cinnamon rolls in the morning. Kolaches once the first tray is gone.",
+    },
   },
   "summit-hollow": {
     id: "summit-hollow",
@@ -87,6 +175,14 @@ export const CITIES = {
     motto: "Nothing Left but the Work",
     built: false,
     clinic: { name: "Summit Hollow PT", treatment: 40, tissue: 20 },
+    cafe: {
+      name: "Old Post Books & Coffee",
+      pastry: "Window nook bun",
+      coffee: 16,
+      pastryCost: 18,
+      look: "A bookstore cafe in an old post office. Oak shelves and a stained-glass nook.",
+      blurb: "Books in the front. The kettle is in the back. The prices match the altitude.",
+    },
   },
 };
 export const CITY_INFO = CITIES["brick-city"];
@@ -98,6 +194,11 @@ export function cityById(id) {
 /** Coins for a PT visit in that town. Unknown ids use Brick City. */
 export function clinicRates(cityId) {
   return cityById(cityId).clinic;
+}
+
+/** Coffee, pastry, and the words on that town's shop. Unknown ids use Brick City. */
+export function cafeRates(cityId) {
+  return cityById(cityId).cafe;
 }
 
 export const START_COINS = 48;
