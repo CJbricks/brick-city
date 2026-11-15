@@ -23,6 +23,10 @@
  * each day, then coins buy another plate. Two naps put energy back and
  * move the clock one step. Sleep still ends the day, refills the bar to
  * 10, and is the only place those daily counts go back to zero.
+ *
+ * Run Store work is one board row, "Work a shift", and it still costs
+ * 1 energy. The questions are a deck in shifts.js. This file asks which
+ * card is up, checks that the answer belongs to that card, then pays it.
  */
 
 import { formatWhen, isSunday, sleepPlan, slotFromEnergy, slotLabel, summarizeWeek } from "@/lib/calendar";
@@ -118,75 +122,12 @@ import {
   tenKStatus,
 } from "@/lib/unlocks";
 import { levelFromXp } from "@/lib/xp";
+import { JOBS, currentShift, noteShiftWorked, resolveShift, rollShiftOnSleep } from "@/lib/shifts";
 import { TILE, homeSpawn } from "@/game/town";
 
-const XP_KEYS = ["overall", "trail", "marathon", "ultra", "versatile"];
+export { JOBS, SHIFT_POOL, currentShift } from "@/lib/shifts";
 
-export const JOBS = {
-  shoes: {
-    id: "shoes",
-    label: "Help a customer",
-    detail: "1 energy · shoe advice",
-    speaker: "Customer",
-    text: "I'm running the park dirt loop today. What should I buy?",
-    choices: [
-      {
-        id: "trail",
-        label: "Trail shoes",
-        coins: 22,
-        reply: "They buy the Peakline Luggers. The till is heavier for it.",
-      },
-      {
-        id: "flats",
-        label: "Racing flats",
-        coins: 11,
-        reply: "They glance at the mud and buy them anyway. Smaller sale.",
-      },
-    ],
-  },
-  stock: {
-    id: "stock",
-    label: "Stock the gel wall",
-    detail: "1 energy · shelf work",
-    speaker: "Manager Nia",
-    text: "The gel wall is a mess before the lunch crowd. How do you sort it?",
-    choices: [
-      {
-        id: "flavor",
-        label: "By flavor",
-        coins: 16,
-        reply: "It looks nice. Someone still asks where the caffeinated ones are.",
-      },
-      {
-        id: "caffeine",
-        label: "By caffeine",
-        coins: 20,
-        reply: "Nia nods. The morning crowd finds what they need.",
-      },
-    ],
-  },
-  gait: {
-    id: "gait",
-    label: "Run a gait check",
-    detail: "1 energy · fitting stool",
-    speaker: "Manager Nia",
-    text: "A runner wants a gait check. What do you watch first?",
-    choices: [
-      {
-        id: "wear",
-        label: "Sole wear",
-        coins: 21,
-        reply: "The outer heel is chewed up. You point them at a stable shoe.",
-      },
-      {
-        id: "speed",
-        label: "How fast they look",
-        coins: 12,
-        reply: "They already know they're fast. They wanted the worn heel noticed.",
-      },
-    ],
-  },
-};
+const XP_KEYS = ["overall", "trail", "marathon", "ultra", "versatile"];
 
 export const SHOP = {
   meal: {
@@ -502,6 +443,12 @@ export function createNewGame({ name, gender }) {
       hardWeeks: 0,
       weekPeakLost: 0,
       weekEnduranceLost: 0,
+      // Bookmark in the Run Store deck. 0 is the shoe question. An old
+      // save has no cursor, and the deck then uses the day number.
+      shiftCursor: 0,
+      // Finished shifts since wake-up. Looking at a card does not count.
+      // Sleep is what sets this back to 0.
+      shiftsToday: 0,
     },
     coins: START_COINS,
     gear: {
@@ -904,6 +851,11 @@ export function applySleep(state) {
     next.pendingSummary = null;
   }
 
+  // A morning you never clocked in still turns one card, so two days
+  // don't open on the same customer. This has to happen before day++.
+  // An old save has no cursor and still reads the day you are leaving.
+  // Bumping after the day changes would skip an extra card.
+  rollShiftOnSleep(next.calendar);
   next.calendar.day += 1;
   next.calendar.weekday = (next.calendar.weekday + 1) % 7;
   // Sleep is the only full refill. The clock goes back to Morning with it.
@@ -1223,9 +1175,13 @@ export function applyEquip(state, shoeId) {
 }
 
 export function applyShift(state, jobId, choiceId) {
-  const job = JOBS[jobId];
-  if (!job) return refuse(state, ["That shift isn't on the board."]);
-  const choice = job.choices.find((item) => item.id === choiceId);
+  // resolveShift picks the original scene for an old shoes/stock/gait
+  // id, and today's card for everything else. The choice is looked up
+  // only on that card, so a coin value from a different question can't
+  // sneak through.
+  const scenario = resolveShift(state, jobId);
+  if (!scenario) return refuse(state, ["That shift isn't on the board."]);
+  const choice = scenario.choices.find((item) => item.id === choiceId);
   if (!choice) return refuse(state, ["Pick one of the options."]);
   if (readEnergy(state) < 1) {
     return refuse(state, [LOW_ENERGY]);
@@ -1235,6 +1191,7 @@ export function applyShift(state, jobId, choiceId) {
   next.coins += choice.coins;
   next.condition.fatigue = clampMeter(next.condition.fatigue + 4);
   spendEnergy(next, 1, true);
+  noteShiftWorked(next.calendar);
   sample(next);
   return finish(before, next, [choice.reply, `You earn ${choice.coins} coins.`]);
 }
@@ -1788,9 +1745,9 @@ export function menuFor(locationId, state) {
         speaker: "Run Store",
         intro: "Manager Nia is lacing a demo shoe on the stool.",
         items: [
-          ...Object.values(JOBS).map((job) =>
-            item(job.label, job.detail, { type: "open-shift", job: job.id }, readEnergy(state) < 1, LOW_ENERGY),
-          ),
+          // One row, every day. The card behind it changes. The label
+          // and the 1 energy cost do not, so the board stays put.
+          item("Work a shift", "1 energy", { type: "open-shift" }, readEnergy(state) < 1, LOW_ENERGY),
           item("Shop shoes", "Trail, Marathon, Backyard", { type: "open-shoe-categories" }),
           item("Belts & vests", "+5 or +10 max nutrition", { type: "open-carry-shop" }),
           item("Sponsors", "Offers, deals, obligations", { type: "open-sponsors" }),
@@ -1876,7 +1833,13 @@ export function menuFor(locationId, state) {
   }
 }
 
-export function jobScript(jobId) {
+export function jobScript(jobId, state) {
+  // No id, or the board's generic "shift", means whoever is up today.
+  // An old id (shoes, stock, gait, or a later card) still opens that
+  // scene, so a half-finished click from before the deck isn't blank.
+  if (!jobId || jobId === "shift") {
+    return currentShift(state && state.calendar ? state : { calendar: { day: 1, shiftCursor: 0 } });
+  }
   return JOBS[jobId] || null;
 }
 

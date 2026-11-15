@@ -242,7 +242,12 @@ export function PlayScreen({ game, setGame, onTitle }) {
       return;
     }
     if (action.type === "open-shift") {
-      const job = jobScript(action.job);
+      // The board row has no card id. jobScript reads today's bookmark
+      // so backing out and opening the shift again shows the same
+      // customer. The id stored here is that card, and applyShift
+      // checks the answer against it.
+      const job = jobScript(action.job, currentState());
+      if (!job) return;
       setPanel({
         type: "dialogue",
         speaker: job.speaker,

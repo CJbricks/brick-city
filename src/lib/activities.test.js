@@ -11,6 +11,11 @@
  * Home meals, snacks, and naps are in here too. A free meal is a third
  * of the FOOD cap. The fourth plate and the third snack cost coins.
  * The third nap does not. Sleep puts the counters back to zero.
+ *
+ * The Run Store deck is in here too. Every card needs one best-paying
+ * answer. The same card stays up if you look twice in one day. The
+ * next day, and the next shift today, move on. Old saves and the old
+ * shoes / stock / gait ids still pay.
  */
 
 import { describe, expect, it } from "vitest";
@@ -32,6 +37,8 @@ import {
   perform,
 } from "@/lib/activities";
 import { slotFromEnergy } from "@/lib/calendar";
+import { SHIFT_POOL, currentShift } from "@/lib/shifts";
+import { deserialize, serialize } from "@/lib/save";
 import { isMountainOpen, isTenKOpen, mountainStatus } from "@/lib/unlocks";
 import { xpToReachLevel } from "@/lib/xp";
 
@@ -89,6 +96,286 @@ describe("runs, food, and shifts", () => {
     expect(result.state.coins).toBe(69);
     expect(result.state.calendar.trainedToday).toBe(false);
     expect(result.state.condition.fatigue).toBe(16);
+  });
+});
+
+function bestChoice(scenario) {
+  return scenario.choices.reduce((best, choice) => (choice.coins > best.coins ? choice : best));
+}
+
+describe("the run store shift deck", () => {
+  it("gives every card one top-paying answer inside the coin bands", () => {
+    const speakers = new Set([
+      "Customer",
+      "Manager Nia",
+      "Juniper Hale",
+      "Coach Bram",
+      "Nell Park",
+      "Priya Sen",
+      "Otto Bramble",
+      "Sable Ortiz",
+      "Tomas Reed",
+    ]);
+    const banned = [
+      "Nike",
+      "Hoka",
+      "Brooks",
+      "Adidas",
+      "Salomon",
+      "Asics",
+      "Saucony",
+      "New Balance",
+      "Maurten",
+      "Gatorade",
+      "Nuun",
+      "Balega",
+      "Injinji",
+      "Smartwool",
+      "Altra",
+    ];
+    const blob = JSON.stringify(SHIFT_POOL);
+    for (const name of banned) {
+      expect(blob.toLowerCase()).not.toContain(name.toLowerCase());
+    }
+
+    expect(SHIFT_POOL.length).toBeGreaterThanOrEqual(24);
+    expect(SHIFT_POOL.slice(0, 3).map((scenario) => scenario.id)).toEqual(["shoes", "stock", "gait"]);
+    const ids = SHIFT_POOL.map((scenario) => scenario.id);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    for (const scenario of SHIFT_POOL) {
+      expect(speakers.has(scenario.speaker)).toBe(true);
+      expect(scenario.text.trim().length).toBeGreaterThan(0);
+      expect(scenario.choices.length).toBeGreaterThanOrEqual(2);
+      expect(scenario.choices.length).toBeLessThanOrEqual(3);
+      const choiceIds = scenario.choices.map((choice) => choice.id);
+      expect(new Set(choiceIds).size).toBe(choiceIds.length);
+
+      const ranked = [...scenario.choices].sort((a, b) => b.coins - a.coins);
+      const tops = scenario.choices.filter((choice) => choice.coins === ranked[0].coins);
+      expect(tops).toHaveLength(1);
+      expect(ranked[0].coins).toBeGreaterThanOrEqual(20);
+      expect(ranked[0].coins).toBeLessThanOrEqual(22);
+      expect(ranked[0].label.trim().length).toBeGreaterThan(0);
+      expect(ranked[0].reply.trim().length).toBeGreaterThan(0);
+
+      if (scenario.choices.length === 2) {
+        expect(ranked[1].coins).toBeGreaterThanOrEqual(11);
+        expect(ranked[1].coins).toBeLessThanOrEqual(16);
+        expect(ranked[1].coins).toBeLessThan(ranked[0].coins);
+      } else {
+        expect(ranked[1].coins).toBeGreaterThanOrEqual(17);
+        expect(ranked[1].coins).toBeLessThanOrEqual(19);
+        expect(ranked[1].coins).toBeLessThan(ranked[0].coins);
+        expect(ranked[2].coins).toBeGreaterThanOrEqual(11);
+        expect(ranked[2].coins).toBeLessThanOrEqual(16);
+        expect(ranked[2].coins).toBeLessThan(ranked[1].coins);
+      }
+      for (const choice of scenario.choices) {
+        expect(choice.label.trim().length).toBeGreaterThan(0);
+        expect(choice.reply.trim().length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("keeps the original three scenes and the six extra floor jobs", () => {
+    const shoes = SHIFT_POOL.find((scenario) => scenario.id === "shoes");
+    expect(shoes).toMatchObject({
+      speaker: "Customer",
+      text: "I'm running the park dirt loop today. What should I buy?",
+      choices: [
+        {
+          id: "trail",
+          label: "Trail shoes",
+          coins: 22,
+          reply: "They buy the Peakline Luggers. The till is heavier for it.",
+        },
+        {
+          id: "flats",
+          label: "Racing flats",
+          coins: 11,
+          reply: "They glance at the mud and buy them anyway. Smaller sale.",
+        },
+      ],
+    });
+    const stock = SHIFT_POOL.find((scenario) => scenario.id === "stock");
+    expect(stock.choices.map((choice) => choice.id)).toEqual(["flavor", "caffeine"]);
+    expect(stock.choices.find((choice) => choice.id === "caffeine").coins).toBe(20);
+    const gait = SHIFT_POOL.find((scenario) => scenario.id === "gait");
+    expect(gait.text).toBe("A runner wants a gait check. What do you watch first?");
+    expect(gait.choices.find((choice) => choice.id === "wear").coins).toBe(21);
+
+    const byId = Object.fromEntries(SHIFT_POOL.map((scenario) => [scenario.id, scenario]));
+    expect(byId["first-timer"].text).toMatch(/dress shoes/);
+    expect(byId["first-timer"].text).toMatch(/9/);
+    expect(bestChoice(byId["first-timer"]).label.toLowerCase()).toMatch(/thumb/);
+    expect(byId["race-rush"].text).toMatch(/5K/);
+    expect(bestChoice(byId["race-rush"]).label.toLowerCase()).toMatch(/sock/);
+    const raceWeak = byId["race-rush"].choices.find((choice) => choice.id !== bestChoice(byId["race-rush"]).id);
+    expect(raceWeak.coins).toBeLessThan(bestChoice(byId["race-rush"]).coins);
+    expect(raceWeak.reply.toLowerCase()).toMatch(/return/);
+    expect(byId["muddy-return"].text.toLowerCase()).toMatch(/mud/);
+    expect(bestChoice(byId["muddy-return"]).label.toLowerCase()).toMatch(/exchange/);
+    expect(byId["group-run"].text.toLowerCase()).toMatch(/jog/);
+    expect(bestChoice(byId["group-run"]).label.toLowerCase()).toMatch(/pace/);
+    expect(byId["group-run"].choices.some((choice) => choice.reply.toLowerCase().includes("straggler"))).toBe(true);
+    expect(byId["hot-hydration"].text.toLowerCase()).toMatch(/hot/);
+    expect(bestChoice(byId["hot-hydration"]).label.toLowerCase()).toMatch(/electrolyte/);
+    expect(byId["sock-blister"].text.toLowerCase()).toMatch(/cotton/);
+    expect(bestChoice(byId["sock-blister"]).label.toLowerCase()).toMatch(/merino/);
+  });
+
+  it("lists one shift on the board and keeps the label when the card changes", () => {
+    const store = menuFor("store", fresh());
+    const shifts = store.items.filter((entry) => entry.action.type === "open-shift");
+    expect(shifts).toHaveLength(1);
+    expect(shifts[0].label).toBe("Work a shift");
+    expect(shifts[0].detail).toBe("1 energy");
+    expect(shifts[0].disabled).toBe(false);
+
+    const tired = fresh();
+    tired.energy = 0;
+    const blocked = menuFor("store", tired).items.find((entry) => entry.action.type === "open-shift");
+    expect(blocked.disabled).toBe(true);
+
+    const later = fresh();
+    later.calendar.shiftCursor = 4;
+    const laterMenu = menuFor("store", later).items.find((entry) => entry.action.type === "open-shift");
+    expect(laterMenu.label).toBe("Work a shift");
+    expect(laterMenu.detail).toBe("1 energy");
+  });
+
+  it("stays on the same card all day, then changes without repeating yesterday", () => {
+    const state = fresh();
+    const opening = currentShift(state);
+    expect(opening.id).toBe("shoes");
+    expect(currentShift(state)).toBe(opening);
+
+    const looked = fresh();
+    const firstLook = currentShift(looked).id;
+    expect(currentShift(looked).id).toBe(firstLook);
+    expect(looked.calendar.shiftCursor).toBe(0);
+
+    const nextDay = applySleep(fresh()).state;
+    expect(currentShift(nextDay).id).toBe("stock");
+    expect(currentShift(nextDay).id).not.toBe(opening.id);
+
+    const third = applySleep(nextDay).state;
+    expect(currentShift(third).id).toBe("gait");
+    expect(currentShift(third).id).not.toBe(currentShift(nextDay).id);
+  });
+
+  it("gives each finished shift today a new card and pays that card's coins", () => {
+    let state = fresh();
+    const first = currentShift(state);
+    const firstBest = bestChoice(first);
+    const worked = applyShift(state, first.id, firstBest.id);
+    expect(worked.ok).toBe(true);
+    expect(worked.state.coins).toBe(48 + firstBest.coins);
+    expect(worked.state.calendar.shiftsToday).toBe(1);
+    const shownNext = currentShift(worked.state).id;
+    expect(shownNext).not.toBe(first.id);
+    expect(currentShift(worked.state).id).toBe(shownNext);
+    expect(worked.state.calendar.shiftCursor).toBe(1);
+
+    const second = currentShift(worked.state);
+    const secondBest = bestChoice(second);
+    const again = applyShift(worked.state, second.id, secondBest.id);
+    expect(again.ok).toBe(true);
+    expect(again.state.coins).toBe(48 + firstBest.coins + secondBest.coins);
+    expect(again.state.calendar.trainedToday).toBe(false);
+
+    const wrong = applyShift(worked.state, second.id, firstBest.id);
+    expect(wrong.ok).toBe(false);
+    expect(wrong.state).toBe(worked.state);
+
+    const seen = [first.id, second.id];
+    let morning = applySleep(again.state).state;
+    expect(seen).not.toContain(currentShift(morning).id);
+    expect(morning.calendar.shiftsToday).toBe(0);
+  });
+
+  it("walks the whole deck, then wraps to the first card", () => {
+    let state = fresh();
+    const seen = [];
+    for (let i = 0; i < SHIFT_POOL.length; i += 1) {
+      state.energy = 10;
+      const card = currentShift(state);
+      seen.push(card.id);
+      const paid = applyShift(state, card.id, bestChoice(card).id);
+      expect(paid.ok).toBe(true);
+      expect(paid.state.coins).toBe(state.coins + bestChoice(card).coins);
+      state = paid.state;
+    }
+    expect(seen).toEqual(SHIFT_POOL.map((scenario) => scenario.id));
+    expect(new Set(seen).size).toBe(SHIFT_POOL.length);
+    expect(currentShift(state).id).toBe(SHIFT_POOL[0].id);
+  });
+
+  it("refuses a card that is not on the counter, and still pays the old job ids", () => {
+    const state = fresh();
+    const today = currentShift(state);
+    const later = SHIFT_POOL.find((scenario) => scenario.id === "sock-blister");
+    const forged = applyShift(state, later.id, bestChoice(later).id);
+    expect(forged.ok).toBe(false);
+    expect(forged.state).toBe(state);
+    expect(state.calendar.shiftCursor).toBe(0);
+    expect(state.coins).toBe(48);
+
+    const missed = applyShift(state, today.id, "wear");
+    expect(missed.ok).toBe(false);
+    expect(missed.state).toBe(state);
+
+    const shoes = applyShift(fresh(), "shoes", "trail");
+    expect(shoes.ok).toBe(true);
+    expect(shoes.state.coins).toBe(70);
+    const stock = applyShift(fresh(), "stock", "caffeine");
+    expect(stock.ok).toBe(true);
+    expect(stock.state.coins).toBe(68);
+    const weak = applyShift(fresh(), "gait", "speed");
+    expect(weak.ok).toBe(true);
+    expect(weak.state.coins).toBe(60);
+    expect(applyShift(fresh(), "shoes", "wear").ok).toBe(false);
+    expect(applyShift(fresh(), "not-a-job", "trail").ok).toBe(false);
+    const viaMenu = perform(fresh(), { type: "shift", job: "stock", choice: "flavor" });
+    expect(viaMenu.ok).toBe(true);
+    expect(viaMenu.state.coins).toBe(64);
+
+    const broke = fresh();
+    broke.energy = 0;
+    const refused = applyShift(broke, "gait", "wear");
+    expect(refused.ok).toBe(false);
+    expect(refused.state).toBe(broke);
+    expect(broke.coins).toBe(48);
+    expect(broke.calendar.shiftCursor).toBe(0);
+  });
+
+  it("loads an old save with no deck bookmark and still runs a shift", () => {
+    const legacy = fresh();
+    delete legacy.calendar.shiftCursor;
+    delete legacy.calendar.shiftsToday;
+    const loaded = deserialize(serialize(legacy));
+    expect(loaded).not.toBeNull();
+    expect(loaded.version).toBe(1);
+    expect(loaded.runner.name).toBe("ADA");
+    expect(loaded.calendar.shiftCursor).toBeUndefined();
+    expect(loaded.calendar.shiftsToday).toBeUndefined();
+    expect(currentShift(loaded).id).toBe("shoes");
+
+    loaded.calendar.day = 2;
+    expect(currentShift(loaded).id).toBe("stock");
+    expect(currentShift(loaded).id).not.toBe("shoes");
+    loaded.calendar.shiftsToday = 1;
+    expect(currentShift(loaded).id).toBe("gait");
+    expect(loaded.calendar.shiftCursor).toBeUndefined();
+
+    const paid = applyShift(loaded, "gait", "wear");
+    expect(paid.ok).toBe(true);
+    expect(paid.state.coins).toBe(loaded.coins + 21);
+    expect(paid.state.calendar.shiftCursor).toBe(3);
+    const byDay = applyShift(deserialize(serialize(legacy)), currentShift(deserialize(serialize(legacy))).id, "trail");
+    expect(byDay.ok).toBe(true);
+    expect(byDay.state.coins).toBe(70);
   });
 });
 

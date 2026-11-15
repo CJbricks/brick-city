@@ -17,6 +17,12 @@
  * from before those counts existed still loads. Missing numbers become 0,
  * or 1 when the older yes/no flag says that plate or nap was already used.
  *
+ * The Run Store deck keeps shiftCursor and shiftsToday on the calendar.
+ * Both arrived on this same key. A blob from before the deck has neither.
+ * The shift code treats a missing cursor as "start from the day number"
+ * and a missing count as zero. Resume does not need a new save version,
+ * and an old job id (shoes, stock, gait) still names its original scene.
+ *
  * v2 widened every tile from 16px to 32px. A position is stored in pixels,
  * so an old save's x/y would land on the wrong half of the new tile and
  * often inside a wall. New games stamp tileSize: 32. A save without that
