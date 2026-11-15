@@ -98,7 +98,10 @@ export const CITIES = {
     built: true,
     clinic: { name: "Brick City PT", treatment: 22, tissue: 10 },
     cafe: {
-      name: "Ravenline Roasters",
+      // Display name only. The door id on the map is "cafe", and
+      // brick-city-save-v1 does not store this string, so a rename
+      // does not need a migration from the old name.
+      name: "Tangentline Roasters",
       pastry: "Cold-brew brownie",
       coffee: 8,
       pastryCost: 9,

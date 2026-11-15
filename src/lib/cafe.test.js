@@ -144,7 +144,7 @@ describe("coffee shop", () => {
     const names = Object.values(CITIES).map((city) => city.cafe.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names).toEqual(expect.arrayContaining([
-      "Ravenline Roasters",
+      "Tangentline Roasters",
       "Good Neighbor Roasting",
       "Inkline Coffee Bar",
       "Teal & Butter Bakeshop",
@@ -179,7 +179,7 @@ describe("coffee shop", () => {
 
     const brick = menuFor("cafe", fresh());
     expect(brick.testId).toBe("cafe-menu");
-    expect(brick.title).toBe("Ravenline Roasters");
+    expect(brick.title).toBe("Tangentline Roasters");
     expect(brick.items[1].label).toBe("Cold-brew brownie");
     expect(brick.items[1].detail).toMatch(new RegExp(`\\+${PASTRY_NUTRITION} FOOD`));
 

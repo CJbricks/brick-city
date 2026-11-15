@@ -1241,8 +1241,9 @@ export function sceneryLayout() {
     boardRect("gym", "GYM", gym.x + 78, gym.y + 8),
     boardRect("store", "RUN STORE", store.x + 48, store.y + 78),
     boardRect("clinic", "PT", buildingOrigin("clinic").x + 108, buildingOrigin("clinic").y + 4),
-    // On the black wall, south of the door and clear of the sidewalk mat.
-    boardRect("cafe", "RAVENLINE", buildingOrigin("cafe").x + 140, buildingOrigin("cafe").y + 42),
+    // TANGENTLINE is 12 letters. It sits on the black wall to the right of
+    // the roaster window, and it stops at the wall's right edge.
+    boardRect("cafe", "TANGENTLINE", buildingOrigin("cafe").x + 122, buildingOrigin("cafe").y + 42),
     boardRect("mountain", "MOUNTAIN", 30 * TILE - 36, 6 * TILE - 30),
     // Road row above the park fence. The old y crossed into the rail's tile.
     boardRect("park", "PARK", 18 * TILE - 22, 21 * TILE + 4),
@@ -1378,9 +1379,9 @@ function drawCafe(ctx, ox, oy, scene) {
   ink(ctx, ox + 40, oy + 42, 176, 4, "#c5ccd2");
   doorPanel(ctx, ox + 100, oy + 2, 26, 30, "#f4f4f4");
   ink(ctx, ox + 106, oy + 6, 14, 10, "#9fd8ea");
-  windowPane(ctx, ox + 34, oy + 50, 100, 44);
-  drawRoaster(ctx, ox + 48, oy + 52);
-  ink(ctx, ox + 38, oy + 52, 92, 2, "#d8f4ff");
+  windowPane(ctx, ox + 30, oy + 50, 88, 44);
+  drawRoaster(ctx, ox + 42, oy + 52);
+  ink(ctx, ox + 34, oy + 52, 80, 2, "#d8f4ff");
   ink(ctx, ox + 150, oy + 80, 22, 16, "#6b4428");
   ink(ctx, ox + 154, oy + 84, 14, 6, "#c4a574");
   ink(ctx, ox + 176, oy + 82, 18, 16, "#5c4030");

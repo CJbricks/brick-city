@@ -106,7 +106,7 @@ export function townLights() {
       window("store", store.x + 156, store.y + 22, 26, 16),
       window("clinic", clinic.x + 108, clinic.y + 78, 28, 22),
       // Same rectangle drawCafe uses for the roaster window.
-      window("cafe", cafe.x + 34, cafe.y + 50, 100, 44),
+      window("cafe", cafe.x + 30, cafe.y + 50, 88, 44),
     ],
     lanterns: [
       { id: "home", x: home.x + 112, y: home.y + 108, r: 14 },

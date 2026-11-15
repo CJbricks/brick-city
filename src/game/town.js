@@ -80,7 +80,8 @@ export const BUILDINGS = [
   { id: "clinic", x: 38, y: 11, w: 6, h: 4, door: { x: 40, y: 11 } },
   // South of the clinic. The door faces north onto the sidewalk at y=15.
   // The path to that sidewalk runs down tile x=35, which is clear of the
-  // track fence (tile 34) and of the clinic (x=38). Ravenline Roasters.
+  // track fence (tile 34) and of the clinic (x=38). Tangentline Roasters.
+  // id stays "cafe". The painted name is not written into the save.
   { id: "cafe", x: 36, y: 16, w: 8, h: 4, door: { x: 39, y: 16 } },
 ];
 
@@ -177,7 +178,7 @@ export const PLACES = [
   { id: "mountain", name: "Mountain Gate", tx: 30, ty: 8, facing: "up", lock: "mountain" },
   { id: "depot", name: "World Depot", tx: 19, ty: 17, facing: "up" },
   { id: "clinic", name: "PT Clinic", tx: 40, ty: 10, facing: "down" },
-  { id: "cafe", name: "Ravenline Roasters", tx: 39, ty: 15, facing: "down" },
+  { id: "cafe", name: "Tangentline Roasters", tx: 39, ty: 15, facing: "down" },
 ];
 
 const NPCS = [

@@ -705,7 +705,7 @@ The names are original. They are not the real cafes they borrow a mood from, and
 
 | Town | Shop | What it looks like | Signature pastry |
 |---|---|---|---|
-| Brick City | Ravenline Roasters | Matte black, white trim, concrete and steel, the roaster in the window. Nitro and bags of beans. | Cold-brew brownie |
+| Brick City | Tangentline Roasters | Matte black, white trim, concrete and steel, the roaster in the window. Nitro and bags of beans. | Cold-brew brownie |
 | Ridgeview | Good Neighbor Roasting | A plant-filled warehouse, garage-door windows, a garden patio. | Garden crumb cake |
 | Lakeport | Inkline Coffee Bar | A small red-brick corner bar. Dark blue and green, chrome. The rosemary maple latte is the house pour. | Rosemary maple bar |
 | Mesa Verde Flats | Teal & Butter Bakeshop | Teal, coral, and mustard. Mid-century. | Lemon meringue croissant (the case also has kouign-amann) |
@@ -749,6 +749,8 @@ Race IQ is not Speed or Mental Toughness. Those are attribute levels from traini
 Race IQ is on the runner status sheet (`Race IQ 4`). It is not on the corner HUD card. The phone card is already full. A coffee note, if one is waiting, is a line on that same sheet.
 
 An old `brick-city-save-v1` file has no Race IQ, no cup count, and no Wi-Fi flag. Resume fills Race IQ with 0, the cup count with 0, Wi-Fi with "not used today", and no pace note. The version stays 1.
+
+The shop's name is not in the save. The door on the map is the id `cafe`. Resume rebuilds the sign from this file, so a renamed shop does not need a second key or a lookup from an older name.
 
 ## What this build does not do yet
 

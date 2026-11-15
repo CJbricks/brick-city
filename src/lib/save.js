@@ -25,6 +25,8 @@
  * note arrived on this same key too. A blob from before the coffee shop
  * has none of them. Race IQ becomes 0. The cup count becomes 0. Wi-Fi
  * is unused today. There is no pace note waiting. The version stays 1.
+ * The shop name is not a field. The map door is the id "cafe", so
+ * renaming the sign does not change what an old blob has to load.
  *
  * The Run Store deck keeps shiftCursor and shiftsToday on the calendar.
  * Both arrived on this same key. A blob from before the deck has neither.
