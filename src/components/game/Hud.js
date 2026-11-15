@@ -29,6 +29,8 @@ import { MAX_ENERGY } from "@/lib/constants";
 import { maxNutritionFromGear } from "@/lib/catalog";
 import { levelProgress } from "@/lib/xp";
 import { drawRunnerSprite, runnerPalette } from "@/game/art";
+import { gearTint } from "@/game/brandColors";
+import { sponsoredCarry } from "@/lib/sponsors";
 
 const METERS = [
   { key: "endurance", short: "END", color: "#3d7edb", icon: "heart" },
@@ -118,7 +120,7 @@ function CoinCount({ coins }) {
   );
 }
 
-function Portrait({ gender, sponsorId }) {
+function Portrait({ gender, sponsorId, carryColor, carryKind, gearId }) {
   const ref = useRef(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -127,9 +129,11 @@ function Portrait({ gender, sponsorId }) {
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     // Same palette the walk sheet uses, so the face in the corner matches
-    // the runner on the road the moment a deal is accepted.
-    drawRunnerSprite(ctx, 0, 0, "down", 0, runnerPalette(gender, sponsorId), gender);
-  }, [gender, sponsorId]);
+    // the runner on the road the moment a deal is accepted. The carry
+    // color is the gear sponsor's belt or vest, not a second outfit.
+    const carry = carryColor ? { carry: carryColor, carryKind } : null;
+    drawRunnerSprite(ctx, 0, 0, "down", 0, runnerPalette(gender, sponsorId, carry), gender);
+  }, [gender, sponsorId, carryColor, carryKind]);
   return (
     <canvas
       ref={ref}
@@ -138,6 +142,7 @@ function Portrait({ gender, sponsorId }) {
       height={40}
       data-testid="hud-portrait"
       data-outfit={sponsorId || "default"}
+      data-gear={gearId || "none"}
       aria-hidden="true"
     />
   );
@@ -178,7 +183,13 @@ export function Hud({ game, onOpen }) {
     <div className="hud-wrap">
       <button type="button" className="hud-card" data-testid="hud" onClick={onOpen}>
         <div className="hud-top">
-          <Portrait gender={game.runner?.gender} sponsorId={game.sponsors?.shoe || ""} />
+          <Portrait
+            gender={game.runner?.gender}
+            sponsorId={game.sponsors?.shoe || ""}
+            carryColor={gearTint(sponsoredCarry(game)?.id) || ""}
+            carryKind={sponsoredCarry(game)?.kind || ""}
+            gearId={game.sponsors?.gear || ""}
+          />
           <LevelAndEnergy game={game} />
         </div>
         <span className="food-line" data-testid="hud-nutrition">{`FOOD ${foodNow} / ${foodMax}`}</span>

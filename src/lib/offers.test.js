@@ -18,12 +18,13 @@ import {
 import {
   CHANCE_FINISH,
   CHANCE_PODIUM,
+  RESULT_BRANDS,
   grantOffer,
   makeRng,
   rollOffers,
   scaledTerms,
 } from "@/lib/offers";
-import { SHOE_SPONSOR_IDS, gateStatus, sponsorById } from "@/lib/sponsors";
+import { GEAR_SPONSOR_IDS, NUTRITION_SPONSOR_IDS, SHOE_SPONSOR_IDS, gateStatus, sponsorById } from "@/lib/sponsors";
 import { finishQuality } from "@/lib/race";
 import { xpToReachLevel } from "@/lib/xp";
 
@@ -46,7 +47,7 @@ function silence(state, ids) {
 
 function except(state, keep) {
   const held = new Set(keep);
-  silence(state, [...SHOE_SPONSOR_IDS, "bpn", "honey-stinger", "maurten", "precision"].filter((id) => !held.has(id)));
+  silence(state, [...SHOE_SPONSOR_IDS, ...NUTRITION_SPONSOR_IDS, ...GEAR_SPONSOR_IDS].filter((id) => !held.has(id)));
 }
 
 describe("offer triggers", () => {
@@ -244,5 +245,106 @@ describe("offer triggers", () => {
     expect(labels).toContain("Decline Brooks");
     expect(labels.some((label) => label.startsWith("Sign"))).toBe(false);
     expect(labels.some((label) => label.includes("not interested yet"))).toBe(true);
+    expect(labels.some((label) => label.startsWith("Gear sponsor:"))).toBe(true);
+  });
+});
+
+const BELT_GEAR = ["nathan", "osprey", "rei", "dera"];
+const VEST_GEAR = ["camelbak", "naked", "satisfy-gear", "salomon-gear"];
+
+function weight(list, ids) {
+  return ids.reduce((sum, id) => sum + list.filter((entry) => entry === id).length, 0);
+}
+
+describe("gear offers", () => {
+  it("leans road results toward belts and trail or ultra results toward vests", () => {
+    for (const id of GEAR_SPONSOR_IDS) {
+      expect(RESULT_BRANDS.road.gear).toContain(id);
+      expect(RESULT_BRANDS.trail.gear).toContain(id);
+      expect(RESULT_BRANDS.versatile.gear).toContain(id);
+    }
+    expect(weight(RESULT_BRANDS.road.gear, BELT_GEAR)).toBeGreaterThan(weight(RESULT_BRANDS.road.gear, VEST_GEAR));
+    expect(weight(RESULT_BRANDS.trail.gear, VEST_GEAR)).toBeGreaterThan(weight(RESULT_BRANDS.trail.gear, BELT_GEAR));
+    expect(weight(RESULT_BRANDS.versatile.gear, VEST_GEAR)).toBeGreaterThan(weight(RESULT_BRANDS.versatile.gear, BELT_GEAR));
+
+    const road = primed(8);
+    except(road, ["osprey", "camelbak"]);
+    rollOffers(road, { style: "road", quality: "win", channel: "finish" }, () => 0);
+    expect(road.sponsors.offers.gear.id).toBe("osprey");
+
+    const trail = primed(8);
+    except(trail, ["osprey", "camelbak"]);
+    rollOffers(trail, { style: "trail", quality: "win", channel: "finish" }, () => 0);
+    expect(trail.sponsors.offers.gear.id).toBe("camelbak");
+
+    const ultra = primed(8);
+    except(ultra, ["osprey", "naked"]);
+    rollOffers(ultra, { style: "versatile", quality: "win", channel: "finish" }, () => 0);
+    expect(ultra.sponsors.offers.gear.id).toBe("naked");
+  });
+
+  it("offers, expires, and declines a gear deal on the shoe timetable", () => {
+    let state = grantOffer(primed(3), "gear", "nathan").state;
+    expect(state.sponsors.offers.gear.id).toBe("nathan");
+    expect(state.sponsors.offers.gear.discount).toBe(0.25);
+    expect(state.sponsors.offers.gear.raceCoins).toBe(4);
+    const started = state.calendar.day;
+    state = applySleep(state).state;
+    state = applySleep(state).state;
+    state = applySleep(state).state;
+    expect(state.calendar.day).toBe(started + 3);
+    expect(state.sponsors.offers.gear).toBeNull();
+    expect(state.sponsors.cooldowns.nathan).toBe(state.calendar.day + 7);
+
+    const offered = grantOffer(primed(4), "gear", "osprey").state;
+    const declined = applyDeclineOffer(offered, "gear");
+    expect(declined.state.sponsors.offers.gear).toBeNull();
+    expect(declined.state.sponsors.cooldowns.osprey).toBe(offered.calendar.day + 7);
+    expect(grantOffer(declined.state, "gear", "osprey").ok).toBe(false);
+    expect(grantOffer(declined.state, "shoe", "brooks").ok).toBe(true);
+  });
+
+  it("lets a rival gear brand poach, keeps the closet, and cools the old brand for 14 days", () => {
+    const signed = applySignSponsor(grantOffer(primed(4), "gear", "osprey").state, "gear", "osprey");
+    expect(signed.state.gear.carry).toBe("osprey-belt");
+    const later = signed.state;
+    later.xp.overall = xpToReachLevel(8);
+    later.condition.endurance = 90;
+    later.condition.peak = 90;
+    later.condition.fatigue = 5;
+    except(later, ["nathan"]);
+    const poached = applyRace(later, "5k", 0.9, undefined, () => 0);
+    expect(poached.state.sponsors.offers.gear.poach).toBe(true);
+    expect(poached.state.sponsors.offers.gear.id).toBe("nathan");
+    expect(poached.state.sponsors.offers.gear.discount).toBeGreaterThan(signed.state.sponsors.gearTerms.discount);
+    expect(poached.lines.join(" ")).toMatch(/14 days/);
+    expect(poached.lines.join(" ")).toMatch(/Nathan Zipster/);
+    const accepted = applySignSponsor(poached.state, "gear", "nathan");
+    expect(accepted.state.sponsors.gear).toBe("nathan");
+    expect(accepted.state.sponsors.cooldowns.osprey).toBe(accepted.state.calendar.day + 14);
+    expect(accepted.state.gear.ownedCarry).toEqual(["osprey-belt", "nathan-belt"]);
+    expect(accepted.state.gear.carry).toBe("nathan-belt");
+    expect(accepted.state.gear.equipped).toBe("starter");
+  });
+
+  it("does not let a Salomon shoe cooldown block the Salomon gear deal", () => {
+    const offered = grantOffer(primed(7), "shoe", "salomon").state;
+    const declined = applyDeclineOffer(offered, "shoe");
+    expect(declined.state.sponsors.cooldowns.salomon).toBe(offered.calendar.day + 7);
+    const gear = grantOffer(declined.state, "gear", "salomon-gear");
+    expect(gear.ok).toBe(true);
+    expect(gear.state.sponsors.offers.gear.id).toBe("salomon-gear");
+  });
+
+  it("scales a gear contract the same way as a shoe contract", () => {
+    const osprey = sponsorById("gear", "osprey");
+    expect(scaledTerms(osprey, 4)).toEqual({ discount: 0.28, raceCoins: 5 });
+    const higher = scaledTerms(osprey, 8);
+    expect(higher.discount).toBeGreaterThan(0.28);
+    expect(higher.raceCoins).toBeGreaterThan(5);
+    expect(higher.discount).toBeLessThanOrEqual(0.55);
+    const capped = scaledTerms(osprey, 40);
+    expect(capped.discount).toBe(0.55);
+    expect(capped.raceCoins).toBe(36);
   });
 });

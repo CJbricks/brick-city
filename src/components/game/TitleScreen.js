@@ -4,7 +4,8 @@
  * quotation marks, a waving runner, Resume (only if this browser has a
  * save), and New Game. The logo and the wave are canvases so the pixels
  * stay square when the page scales. Resume paints the saved shoe
- * sponsor's colors on the waving runner. New Game, Resume, and the
+ * sponsor's colors on the waving runner, and a gear sponsor tints the
+ * belt or vest if that save is wearing it. New Game, Resume, and the
  * sound button call unlockAudio in the click, before the screen changes.
  */
 
@@ -13,7 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Stack } from "@chakra-ui/react";
 import { subscribeAudio, toggleMuted, unlockAudio } from "@/game/audio/engine";
-import { paintLogo, paintWave, runnerPalette } from "@/game/art";
+import { paintLogo, paintWave, runnerLook } from "@/game/art";
 import { levelFromXp } from "@/lib/xp";
 
 export function TitleScreen({ quote, save, onResume, onNew }) {
@@ -21,7 +22,10 @@ export function TitleScreen({ quote, save, onResume, onNew }) {
   const waveRef = useRef(null);
   const [soundOn, setSoundOn] = useState(true);
   const gender = save?.runner?.gender || "male";
-  const sponsorId = save?.sponsors?.shoe || "";
+  const look = runnerLook(save);
+  // Strings, not the palette object. A new object every render would
+  // restart the wave timer when the sound button toggles.
+  const lookKey = `${look.cap}|${look.shirt}|${look.shorts}|${look.carry || ""}|${look.carryKind || ""}`;
 
   useEffect(() => subscribeAudio((prefs) => setSoundOn(!prefs.muted)), []);
 
@@ -46,15 +50,18 @@ export function TitleScreen({ quote, save, onResume, onNew }) {
     if (!canvas) return;
     let frame = 0;
     let timer = 0;
-    const look = runnerPalette(gender, sponsorId);
-    const draw = () => paintWave(canvas, gender, frame, look);
+    // Captured when the colors change. The palette object itself is new
+    // every render, and restarting the timer on that would freeze the wave
+    // each time the sound button updates.
+    const painted = runnerLook(save);
+    const draw = () => paintWave(canvas, gender, frame, painted);
     draw();
     timer = window.setInterval(() => {
       frame = frame ? 0 : 1;
       draw();
     }, 320);
     return () => window.clearInterval(timer);
-  }, [gender, sponsorId]);
+  }, [gender, lookKey, save]);
 
   const level = save ? levelFromXp(save.xp?.overall || 0) : 1;
 

@@ -60,7 +60,7 @@ import { CONFETTI_MS } from "@/game/confetti";
 function systemItems(soundOn) {
   return [
     { label: "Runner status", detail: "Meters, attributes, gear, sponsors", action: { type: "open-status" } },
-    { label: "Sponsors", detail: "Shoe deals and fuel deals", action: { type: "open-sponsors" } },
+    { label: "Sponsors", detail: "Shoe, nutrition, and gear deals", action: { type: "open-sponsors" } },
     { label: "This week", detail: "Miles, races, old summaries", action: { type: "open-week" } },
     { label: "Closet", detail: "Shoes, belts, vests", action: { type: "open-gear" } },
     { label: "How to play", detail: "Buttons", action: { type: "open-help" } },
@@ -529,7 +529,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
   }
 
   return (
-    <div className="play-root" data-testid="play-screen" data-outfit={game.sponsors?.shoe || "default"} data-confetti-ms={CONFETTI_MS}>
+    <div className="play-root" data-testid="play-screen" data-outfit={game.sponsors?.shoe || "default"} data-gear={game.sponsors?.gear || "none"} data-confetti-ms={CONFETTI_MS}>
       <div className="play-stage">
         <Overworld ref={worldRef} initialPosition={game.position} />
         <Hud game={game} onOpen={() => setPanel({ type: "status" })} />

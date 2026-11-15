@@ -84,11 +84,13 @@ describe("save serialization", () => {
     expect(migrated.gear.ownedCarry).toEqual([]);
     expect(migrated.sponsors.shoe).toBeNull();
     expect(migrated.sponsors.nutrition).toBeNull();
+    expect(migrated.sponsors.gear).toBeNull();
     expect(migrated.sponsors.obligation).toBeNull();
-    expect(migrated.sponsors.offers).toEqual({ shoe: null, nutrition: null });
+    expect(migrated.sponsors.offers).toEqual({ shoe: null, nutrition: null, gear: null });
     expect(migrated.sponsors.cooldowns).toEqual({});
     expect(migrated.sponsors.mailbox).toEqual([]);
     expect(migrated.sponsors.shoeTerms).toBeNull();
+    expect(migrated.sponsors.gearTerms).toBeNull();
     expect(migrated.condition.nutrition).toBe(100);
     expect(migrated.version).toBe(1);
   });
@@ -105,9 +107,12 @@ describe("save serialization", () => {
     const migrated = deserialize(serialize(legacy));
     expect(migrated.sponsors.shoe).toBe("nike");
     expect(migrated.sponsors.nutrition).toBe("bpn");
+    expect(migrated.sponsors.gear).toBeNull();
+    expect(migrated.sponsors.gearTerms).toBeNull();
     expect(migrated.sponsors.standing.nike).toBe(66);
     expect(migrated.sponsors.shoeTerms).toBeNull();
     expect(migrated.sponsors.offers.shoe).toBeNull();
+    expect(migrated.sponsors.offers.gear).toBeNull();
     expect(migrated.sponsors.cooldowns).toEqual({});
     expect(migrated.version).toBe(1);
   });

@@ -5,7 +5,10 @@
  * from a PNG. Runners, tiles, buildings, the brick logo, and the
  * title-screen wave are functions, so a color tweak is a palette change
  * instead of a new file. A shoe sponsor swaps the cap, jacket, and shorts
- * through runnerPalette. The drawing stays the same. Only the colors change.
+ * through runnerPalette. A gear sponsor does not recolor the clothes.
+ * It tints the belt or vest (letter v) with one brand color, and only
+ * when that brand's item is on. The drawing stays the same. Only the
+ * colors change. There is no logo on the clothes or on the carry item.
  *
  * v2 is 32×32 tiles and 32×40 runner frames (v1 was 16×16 and 16×20).
  * Canvases are still painted at 1x: one rectangle = one pixel. Pixi and
@@ -38,7 +41,8 @@
 
 import { BUILDINGS, CITY_SIGNS, COLS, ROWS, TILE, activationTiles, buildWorld } from "@/game/town";
 import { townLights } from "@/lib/lighting";
-import { applyBrandOutfit } from "@/game/brandColors";
+import { applyBrandOutfit, gearTint } from "@/game/brandColors";
+import { sponsoredCarry } from "@/lib/sponsors";
 
 export const RUNNER_W = 32;
 export const RUNNER_H = 40;
@@ -237,7 +241,52 @@ function paintMap(pal) {
     L: pal.lace,
     l: sole.base,
     f: sole.dark,
+    // Belt or vest. Missing means those pixels are not drawn, so a
+    // runner with no sponsored carry item keeps the plain shirt.
+    v: pal.carry,
   };
+}
+
+function shirtXs(chars) {
+  const xs = [];
+  chars.forEach((ch, x) => {
+    if (ch === "T" || ch === "t" || ch === "u" || ch === "R") xs.push(x);
+  });
+  return xs;
+}
+
+function dyeShirtRow(rows, y) {
+  if (!rows[y]) return;
+  const chars = rows[y].split("");
+  const xs = shirtXs(chars);
+  if (xs.length < 3) return;
+  // Leave the outer shirt pixel. It is the edge of the torso, and
+  // painting it makes the belt look wider than the body.
+  for (let i = 1; i < xs.length - 1; i += 1) chars[xs[i]] = "v";
+  rows[y] = chars.join("");
+}
+
+function dyeStraps(rows, y) {
+  if (!rows[y]) return;
+  const chars = rows[y].split("");
+  const xs = shirtXs(chars);
+  if (xs.length < 6) return;
+  chars[xs[1]] = "v";
+  chars[xs[2]] = "v";
+  chars[xs[xs.length - 3]] = "v";
+  chars[xs[xs.length - 2]] = "v";
+  rows[y] = chars.join("");
+}
+
+/**
+ * A belt is the waist row. A vest adds two straps on the chest.
+ * Letter v is the gear-sponsor tint. No wordmark, no logo shape.
+ */
+function stampCarry(rows, kind, band) {
+  if ((kind !== "belt" && kind !== "vest") || !band) return;
+  dyeShirtRow(rows, band.waist);
+  if (kind !== "vest") return;
+  for (let y = band.chestTop; y <= band.chestBottom; y += 1) dyeStraps(rows, y);
 }
 
 function newRows(height) {
@@ -385,7 +434,7 @@ function frontBody(rows, y0) {
   for (const [dy, body] of lines) writeCentered(rows, y0 + dy, body);
 }
 
-function buildFront(frame, gender, { wave = false, height = RUNNER_H, y0 = 2 } = {}) {
+function buildFront(frame, gender, { wave = false, height = RUNNER_H, y0 = 2, carryKind = null } = {}) {
   const phase = wave ? 0 : phaseOf(frame);
   const rows = newRows(height);
   const armY = y0 + 16;
@@ -416,10 +465,13 @@ function buildFront(frame, gender, { wave = false, height = RUNNER_H, y0 = 2 } =
   }
   stampLegs(rows, y0 + 24, phase);
   if (gender === "female") stampPonytail(rows, "down", y0);
+  // After the shirt, before the feet are planted, so the belt stays on
+  // the waist when the whole body shifts down to the frame.
+  stampCarry(rows, carryKind, { waist: y0 + 20, chestTop: y0 + 16, chestBottom: y0 + 19 });
   return applyBob(plantFeet(rows), wave ? 0 : phase === 0 ? 0 : -1);
 }
 
-function buildUp(frame, gender) {
+function buildUp(frame, gender, carryKind) {
   const phase = phaseOf(frame);
   const rows = newRows(RUNNER_H);
   const leftReach = phase === 1 ? -1 : phase === -1 ? 1 : 0;
@@ -451,10 +503,11 @@ function buildUp(frame, gender) {
   for (const [dy, body] of lines) writeCentered(rows, 2 + dy, body);
   stampLegs(rows, 24, phase);
   if (gender === "female") stampPonytail(rows, "up", 2);
+  stampCarry(rows, carryKind, { waist: 20, chestTop: 16, chestBottom: 19 });
   return applyBob(plantFeet(rows), phase === 0 ? 0 : -1);
 }
 
-function buildSide(frame, gender) {
+function buildSide(frame, gender, carryKind) {
   const phase = phaseOf(frame);
   const rows = newRows(RUNNER_H);
   const y0 = 4;
@@ -500,14 +553,17 @@ function buildSide(frame, gender) {
   const armReach = phase === 1 ? 1 : phase === -1 ? -1 : 0;
   stampArm(rows, 11, y0 + 12, armReach);
   if (gender === "female") stampPonytail(rows, "side", y0);
+  // Last shirt row of the side body is the waist. The three rows above
+  // it are the chest, where a vest's straps sit.
+  stampCarry(rows, carryKind, { waist: y0 + 15, chestTop: y0 + 12, chestBottom: y0 + 14 });
   return applyBob(plantFeet(rows), phase === 0 ? 0 : -1);
 }
 
-function buildRunnerRows(pose, frame, gender) {
-  if (pose === "wave") return buildFront(frame, gender, { wave: true, height: 48, y0: 10 });
-  if (pose === "up") return buildUp(frame, gender);
-  if (pose === "side") return buildSide(frame, gender);
-  return buildFront(frame, gender);
+function buildRunnerRows(pose, frame, gender, carryKind) {
+  if (pose === "wave") return buildFront(frame, gender, { wave: true, height: 48, y0: 10, carryKind });
+  if (pose === "up") return buildUp(frame, gender, carryKind);
+  if (pose === "side") return buildSide(frame, gender, carryKind);
+  return buildFront(frame, gender, { carryKind });
 }
 
 function resolvePalette(palette, gender) {
@@ -520,11 +576,26 @@ function resolvePalette(palette, gender) {
  * Default clothes, unless a shoe sponsor is on the save. The same object
  * is what the walk sheet, the HUD portrait, and the title wave paint, so
  * a new deal recolors every frame at once. Nutrition sponsors do not
- * change clothes.
+ * change clothes. A gear tint is a separate field: carry and carryKind.
+ * It does not replace the shirt color. The v pixels read it.
  */
-export function runnerPalette(gender, sponsorId) {
+export function runnerPalette(gender, sponsorId, carry) {
   const base = PALETTES[gender === "female" ? "female" : "male"] || PALETTES.male;
-  return applyBrandOutfit(base, sponsorId);
+  const painted = applyBrandOutfit(base, sponsorId);
+  if (!carry?.carry) return painted;
+  return { ...painted, carry: carry.carry, carryKind: carry.carryKind || "belt" };
+}
+
+/**
+ * Shoe sponsor on the clothes, gear sponsor on the belt or vest.
+ * The tint is looked up from the deal id. It is not stored in the save.
+ * Wearing a different brand's item leaves the shirt alone.
+ */
+export function runnerLook(state) {
+  const worn = sponsoredCarry(state);
+  const tint = worn ? gearTint(worn.id) : null;
+  const carry = tint ? { carry: tint, carryKind: worn.kind } : null;
+  return runnerPalette(state?.runner?.gender, state?.sponsors?.shoe || null, carry);
 }
 
 function blitRows(ctx, ox, oy, rows, palette, gender) {
@@ -545,7 +616,8 @@ function blitRows(ctx, ox, oy, rows, palette, gender) {
  * sprite for left. frame 0 and 2 are idle, 1 is stride A, 3 is stride B.
  */
 export function drawRunnerSprite(ctx, ox, oy, pose, frame, palette, gender) {
-  blitRows(ctx, ox, oy, buildRunnerRows(pose, frame, gender), palette || gender, gender);
+  const pal = resolvePalette(palette, gender);
+  blitRows(ctx, ox, oy, buildRunnerRows(pose, frame, gender, pal.carryKind), pal, gender);
 }
 
 /** Twelve frames: 4 down, 4 up, 4 side. Each four is idle, strideA, idle, strideB. */
@@ -572,7 +644,8 @@ export function makeRunnerSheet(palette, gender) {
  */
 export function paintWave(canvas, gender, frame, palette) {
   const scale = 3;
-  const rows = buildRunnerRows("wave", frame, gender);
+  const pal = resolvePalette(palette, gender);
+  const rows = buildRunnerRows("wave", frame, gender, pal.carryKind);
   const tiny = document.createElement("canvas");
   tiny.width = RUNNER_W;
   tiny.height = rows.length;

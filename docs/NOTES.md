@@ -218,7 +218,7 @@ A save also remembers `tileSize`. v2 tiles are 32 pixels. v1 tiles were 16, and 
 The save version stays `1`. Brand shoes, belts, vests, and sponsors were added without a new key, because an old browser save has to keep loading. `deserialize` fills whatever is missing:
 
 - No `gear.carry` means you are not wearing a belt or vest. Max nutrition stays 100.
-- No `sponsors` object means no shoe deal and no nutrition deal.
+- No `sponsors` object means no shoe deal, no nutrition deal, and no gear deal. A save that has shoe and nutrition fields but no `sponsors.gear` loads with the gear slot empty. The closet is not given a belt or a vest to fill it.
 - Shoe ids `road`, `trail`, and `hybrid` are the old house pairs (Tempo Daybreak, Peakline Lugger, Switchback Hybrid). They still exist. `resolveShoeId` in `src/lib/catalog.js` is the alias table. An id the catalog does not know becomes the starter trainers instead of crashing.
 - Nutrition is clamped to the cap the equipped carry item actually allows, so a broken number cannot sit past 110.
 - No `calendar.homeMeals`, `calendar.homeSnacks`, or `napsToday` means those counters start at 0. If the older yes/no flag is true (`homeMealUsed`, `homeSnackUsed`, or `nappedToday`), that one use counts as 1, so Resume does not hand back a plate or a nap that was already taken. The audio settings live in a different key, `brick-city-audio-v1`, and this load path does not touch them.
@@ -259,7 +259,7 @@ The HUD prints `FOOD 85 / 110` and fills the bar as a fraction of that cap. The 
 
 `src/lib/sponsors.js` holds the deals. `src/lib/offers.js` decides when a brand asks. `activities.js` is what writes the answer onto the save when you press a button.
 
-You may hold **one shoe sponsor** and **one nutrition sponsor** at the same time. Accepting a second shoe offer ends the first shoe deal. Shoes you already bought stay in the closet. The same idea applies to nutrition deals, except a nutrition brand does not poach. You can end a deal from the menu. That brand waits 7 days before it can ask again.
+You may hold **one shoe sponsor**, **one nutrition sponsor**, and **one gear sponsor** at the same time. Accepting a second shoe offer ends the first shoe deal. Shoes you already bought stay in the closet. The same idea applies to nutrition deals, except a nutrition brand does not poach, and to gear deals, which can be poached. You can end a deal from the menu. That brand waits 7 days before it can ask again. Gear sponsors are the belt-and-vest deals. They have their own section below.
 
 Brands make the offer. The Sponsors menu is not a sign-anything list. See the beginner notes further down.
 
@@ -277,7 +277,35 @@ Big brands (Hoka, Brooks, Adidas, Nike, Honey Stinger, BPN) can offer around lev
 
 Standing starts at 80. An obligation (photo shoot, store appearance, expo booth, community run) shows up the morning after you accept, then every 4th day. Accepting it spends 1 energy and pays better than a shift, and standing rises. Skipping drops standing by 22. Under 45 the sponsor warns you. Under 25 they drop the deal and wait 14 days before they will offer again. A new offer after that drop starts standing back at 80. Switching away and back keeps the standing you had, as long as it never fell that low.
 
-Open Sponsors from the Run Store, from the pause menu, from the closet, or from the button on Runner Status. The list is a normal menu, so the d-pad and A/B buttons work on a phone.
+Open Sponsors from the Run Store, from the pause menu, from the closet, or from the button on Runner Status. The top of that menu names the three slots (shoe, nutrition, gear) before the longer lists. The list is a normal menu, so the d-pad and A/B buttons work on a phone.
+
+## Gear sponsors
+
+A gear sponsor is one deal that covers a brand's belt and vest together. It is not a third nutrition deal, and it is not a second shoe deal. You still wear one pair of shoes. You still hold one fuel sponsor. The new slot is the carry item.
+
+The brands are the ones already on the belt and vest rack: Nathan, Osprey, REI, Salomon, Dera, CamelBak, Naked, and Satisfy. Naked is a real brand name, spelled that way. The game treats it like Nathan or Osprey. There is no special rule and no joke.
+
+If the brand sells both (Nathan, REI, Salomon), the deal discounts both the belt and the vest. If the brand sells only a belt (Osprey, Dera) or only a vest (CamelBak, Naked, Satisfy), the deal covers that one item. Salomon can also be your shoe sponsor at the same time. Those are two different contracts. Saying no to the shoe offer does not stop the gear offer, and the other way around.
+
+What you get when you sign:
+
+- A discount on that brand's belt and vest at the Run Store. The percent grows with your level and stops at 55%, same as shoes.
+- A free item the moment you accept. If they sell a belt, that belt is the free one and you put it on. If they only sell a vest, the vest is the free one. Anything you already owned stays in the closet.
+- A small pile of extra coins on a clean race finish. It is smaller than a shoe bonus. It stacks with the shoe bonus if you have both.
+
+The cost of the deal is a note that says "Wear their belt or vest in your next race." It shows up the morning after you sign, then on the same every-fourth-day rhythm as the other notes. Finish a race while wearing their belt or vest and the note is done: standing goes up, and the note pays you. Finish in something else, or skip the note from the menu, and standing goes down. Under 25 they drop you and wait 14 days. A DNF does not count as the race, so the note stays until you actually finish one. You cannot clear a wear note by spending an energy block at home. The race is the check.
+
+How a brand decides to ask is the same machinery as shoes. `src/lib/offers.js` rolls it. An offer lasts 3 days. Decline or expiry waits 7 days. A rival can poach on a win or a top-3 finish when their terms are better, and the brand you leave waits 14 days. A plain finish does not poach. Terms start at the numbers in the catalog and step up with your level.
+
+Which brands are likely depends on the result:
+
+- A road result (the 5K, the 10K, the mile against Remy) is more likely to be a belt brand: Nathan, Osprey, REI, Dera.
+- A trail result, or a backyard yard (that is the ultra-style result in this build), is more likely to be a vest brand: CamelBak, Naked, Satisfy, and Salomon.
+- Every gear brand is still in both lists once, so a road win can still draw a vest. "More" means more often, not "only."
+
+The runner's clothes stay the shoe sponsor's colors. A gear sponsor may tint the belt or the vest you are wearing, using one flat color from `src/game/brandColors.js`. That tint is not a logo and not a wordmark. If you are not wearing their item, the shirt is unchanged. The color is not saved by itself. The save stores `sponsors.gear` and `gear.carry`, and the picture is looked up again on load.
+
+An old `brick-city-save-v1` file has no gear field. Resume gives you `gear: null`. It does not invent a sponsor, and it does not put a belt in the closet.
 
 ## Why the quote waits until after mount
 
@@ -438,7 +466,7 @@ The roll is a function the screen passes in. Tests pass their own function so th
 
 A race offer is a line in the finish dialogue. A trail run or a yard does not stop you on the path. The letter is on the kitchen table the next morning, which is `applySleep`.
 
-An offer lasts **3 in-game days** (it is gone on the morning of `offeredOn + 3`). Only one shoe offer and one nutrition offer can sit at once. Decline, or let it expire, and that brand waits **7 days**. If you accept a rival and leave your shoe brand, or they drop you for low standing, the wait is **14 days**.
+An offer lasts **3 in-game days** (it is gone on the morning of `offeredOn + 3`). Only one shoe offer, one nutrition offer, and one gear offer can sit at once. Decline, or let it expire, and that brand waits **7 days**. If you accept a rival and leave your shoe brand or your gear brand, or they drop you for low standing, the wait is **14 days**.
 
 A rival poaches only on a strong shoe result (a win or a top 3), and only when their terms beat the contract you already signed. Accepting ends the old deal. The shoes in the closet stay.
 
@@ -448,7 +476,7 @@ Higher levels raise the gear discount and the coins per race. The bump starts at
 
 `src/game/brandColors.js` is the only place the brand colors live. Each shoe brand has a cap, a jacket, an accent, and shorts. There are no logos and no wordmarks on the sprite. The sprite has no backpack, so the third color is the chest band and the cuffs.
 
-`runnerPalette` in `src/game/art.js` copies the male or female palette and paints those clothes on top. No shoe sponsor means the original outfit. The walk sheet (all 12 frames, and the left-facing flip), the HUD portrait, and the title-screen wave all ask that function. The color is not saved by itself. The save stores `sponsors.shoe`, and the palette is looked up again on load, so a reload keeps the kit and accepting a deal changes it on the next frame.
+`runnerPalette` in `src/game/art.js` copies the male or female palette and paints those clothes on top. No shoe sponsor means the original outfit. A gear sponsor does not use that outfit swap. `runnerLook` adds one carry color when you are wearing that brand's belt or vest. The walk sheet (all 12 frames, and the left-facing flip), the HUD portrait, and the title-screen wave all ask that function. The color is not saved by itself. The save stores `sponsors.shoe`, `sponsors.gear`, and `gear.carry`, and the palette is looked up again on load, so a reload keeps the kit and accepting a deal changes it on the next frame.
 
 ## Win confetti
 

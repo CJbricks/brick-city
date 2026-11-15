@@ -8,13 +8,19 @@
  * is a function the caller passes in, so a test can force the offer
  * without touching Math.random.
  *
- * One shoe offer and one nutrition offer can be pending. Each lasts 3
- * in-game days. Decline or expiry waits 7 days before that brand asks
- * again. Leaving a shoe brand (you accepted a rival, or they dropped you)
- * waits 14 days. A rival shoe brand can poach on a strong result, and
- * the new terms have to beat the contract you already signed.
+ * One shoe offer, one nutrition offer, and one gear offer can be
+ * pending. Each lasts 3 in-game days. Decline or expiry waits 7 days
+ * before that brand asks again. Leaving a shoe or gear brand (you
+ * accepted a rival, or they dropped you) waits 14 days. A rival can
+ * poach on a strong result, and the new terms have to beat the contract
+ * you already signed. Nutrition brands do not poach.
+ *
+ * Gear is the belt and the vest as one deal. A road result leans toward
+ * belt brands. A trail or ultra result leans toward vest brands. Every
+ * gear brand is still in both lists, so the other kind can still call.
  */
 
+import { carryById } from "@/lib/catalog";
 import {
   COOLDOWN_LEAVE,
   COOLDOWN_PASS,
@@ -26,6 +32,8 @@ import {
   RACE_COIN_CAP,
   RACE_COIN_STEP,
   gateStatus,
+  gearCoverPhrase,
+  gearDealNumbers,
   nutritionPerkText,
   runnerLevelOf,
   shoeDealNumbers,
@@ -44,21 +52,61 @@ export const CHANCE_FINISH = 0.18;
  * yards are the versatile list. Brooks stays a road brand. Satisfy stays
  * a trail brand. Nutrition follows the same split: the early fuel brands
  * watch road races, and Maurten and Precision watch dirt and yards.
+ *
+ * Gear ids are repeated on purpose. The picker chooses one slot in the
+ * list, so a brand listed three times is three times as likely. Road
+ * results repeat the belt brands (Nathan, Osprey, REI, Dera). Trail
+ * results and backyard ultras repeat the vest brands (CamelBak, Naked,
+ * Satisfy, and Salomon, whose vest is the one people know). Each brand
+ * is still in the other list once, so a road win can still draw a vest.
  */
+function repeatBrand(id, times) {
+  return Array.from({ length: times }, () => id);
+}
+
+const ROAD_GEAR = [
+  ...repeatBrand("osprey", 3),
+  ...repeatBrand("rei", 3),
+  ...repeatBrand("nathan", 2),
+  ...repeatBrand("dera", 3),
+  "salomon-gear",
+  "camelbak",
+  "naked",
+  "satisfy-gear",
+];
+
+const DIRT_GEAR = [
+  ...repeatBrand("camelbak", 3),
+  ...repeatBrand("naked", 3),
+  ...repeatBrand("satisfy-gear", 3),
+  ...repeatBrand("salomon-gear", 3),
+  ...repeatBrand("nathan", 2),
+  "rei",
+  "osprey",
+  "dera",
+];
+
 export const RESULT_BRANDS = {
   road: {
     shoe: ["nike", "adidas", "brooks", "hoka"],
     nutrition: ["bpn", "honey-stinger"],
+    gear: ROAD_GEAR,
   },
   trail: {
     shoe: ["norda", "speedland", "mount-to-coast", "satisfy", "salomon", "nike", "adidas", "hoka"],
     nutrition: ["maurten", "precision"],
+    gear: DIRT_GEAR,
   },
   versatile: {
     shoe: ["norda", "speedland", "mount-to-coast", "adidas", "hoka", "salomon"],
     nutrition: ["maurten", "precision"],
+    // A backyard yard is an ultra. Vest brands watch it the same way
+    // they watch a trail result.
+    gear: DIRT_GEAR,
   },
 };
+
+const OFFER_KINDS = ["shoe", "nutrition", "gear"];
 
 export function makeRng(seed) {
   // Numerical Recipes LCG. Same seed, same sequence, in every browser.
@@ -100,10 +148,18 @@ export function scaledTerms(sponsor, level, options = {}) {
 
 export function ensureSponsors(state) {
   if (!state.sponsors || typeof state.sponsors !== "object") return;
-  if (!state.sponsors.offers) state.sponsors.offers = { shoe: null, nutrition: null };
+  if (!state.sponsors.offers || typeof state.sponsors.offers !== "object") {
+    state.sponsors.offers = { shoe: null, nutrition: null, gear: null };
+  } else if (!("gear" in state.sponsors.offers)) {
+    // A save loaded before this slot existed. The missing key is "no
+    // offer", not a reason to throw the shoe note away.
+    state.sponsors.offers.gear = null;
+  }
+  if (!("gear" in state.sponsors)) state.sponsors.gear = null;
   if (!state.sponsors.cooldowns || typeof state.sponsors.cooldowns !== "object") state.sponsors.cooldowns = {};
   if (!Array.isArray(state.sponsors.mailbox)) state.sponsors.mailbox = [];
   if (!("shoeTerms" in state.sponsors)) state.sponsors.shoeTerms = null;
+  if (!("gearTerms" in state.sponsors)) state.sponsors.gearTerms = null;
 }
 
 function dayOf(state) {
@@ -130,13 +186,21 @@ function beatsContract(offerTerms, current) {
   return offerTerms.discount > current.discount + 0.001 || offerTerms.raceCoins > current.raceCoins;
 }
 
+function contractFor(state, kind) {
+  if (kind === "gear") return gearDealNumbers(state);
+  if (kind === "shoe") return shoeDealNumbers(state);
+  return null;
+}
+
 function buildOffer(state, kind, id, poach) {
   const sponsor = sponsorById(kind, id);
   const level = runnerLevelOf(state);
   const day = dayOf(state);
-  const terms = kind === "shoe"
-    ? scaledTerms(sponsor, level, { poach })
-    : { discount: 0, raceCoins: 0 };
+  // Nutrition has no discount and no race coins. Shoe and gear both
+  // scale the same way, including the bump a rival pays to poach.
+  const terms = kind === "nutrition"
+    ? { discount: 0, raceCoins: 0 }
+    : scaledTerms(sponsor, level, { poach });
   return {
     id,
     kind,
@@ -158,9 +222,9 @@ function eligibleIds(state, kind, style, poach) {
     const sponsor = sponsorById(kind, id);
     if (!sponsor || !gateStatus(state, sponsor).open) continue;
     if (poach) {
-      if (kind !== "shoe") continue;
+      if (kind !== "shoe" && kind !== "gear") continue;
       const terms = scaledTerms(sponsor, runnerLevelOf(state), { poach: true });
-      if (!beatsContract(terms, shoeDealNumbers(state))) continue;
+      if (!beatsContract(terms, contractFor(state, kind))) continue;
     }
     ids.push(id);
   }
@@ -174,9 +238,12 @@ function eligibleIds(state, kind, style, poach) {
  */
 function considerKind(state, kind, event, rng) {
   if (liveOffer(state, kind)) return null;
-  const poach = kind === "shoe" && Boolean(state.sponsors?.shoe);
+  const held = Boolean(state.sponsors?.[kind]);
+  // A plain finish does not talk a rival into spending more. Nutrition
+  // never poaches: one fuel deal is enough until you end it.
+  const poach = (kind === "shoe" || kind === "gear") && held;
   if (poach && event.quality === "finish") return null;
-  if (kind === "nutrition" && state.sponsors?.nutrition) return null;
+  if (kind === "nutrition" && held) return null;
   const ids = eligibleIds(state, kind, event.style, poach);
   if (ids.length === 0) return null;
   // A win skips the roll. Calling rng here would make a "sure thing"
@@ -200,11 +267,21 @@ export function offerSentence(offer, state, where) {
     return `${intro} ${nutritionPerkText(sponsor)} The offer lasts ${OFFER_DAYS} days. Open Sponsors to accept or decline.`;
   }
   const pct = Math.round(offer.discount * 100);
+  const field = offer.kind === "gear" ? "gear" : "shoe";
   let extra = "";
-  if (offer.poach && state.sponsors?.shoe && state.sponsors.shoe !== offer.id) {
-    const current = sponsorById("shoe", state.sponsors.shoe);
+  if (offer.poach && state.sponsors?.[field] && state.sponsors[field] !== offer.id) {
+    const current = sponsorById(offer.kind, state.sponsors[field]);
     const left = current?.name || "Your current brand";
-    extra = ` That beats the ${left} deal. Accepting ends it. Shoes you already own stay in the closet, and ${left} will not call for ${COOLDOWN_LEAVE} days.`;
+    const kept = offer.kind === "gear"
+      ? "The belt or vest you already own stays in the closet"
+      : "Shoes you already own stay in the closet";
+    extra = ` That beats the ${left} deal. Accepting ends it. ${kept}, and ${left} will not call for ${COOLDOWN_LEAVE} days.`;
+  }
+  if (offer.kind === "gear") {
+    const gift = carryById(sponsor?.starter);
+    const free = gift ? ` Signing includes a ${gift.name}.` : "";
+    const covered = sponsor ? gearCoverPhrase(sponsor) : `${name} belts and vests`;
+    return `${intro} ${pct}% off ${covered}, plus ${offer.raceCoins} coins on a clean finish.${free}${extra} The offer lasts ${OFFER_DAYS} days. Open Sponsors to accept or decline.`;
   }
   return `${intro} ${pct}% off ${name} gear, plus ${offer.raceCoins} coins on a clean finish.${extra} The offer lasts ${OFFER_DAYS} days. Open Sponsors to accept or decline.`;
 }
@@ -224,7 +301,7 @@ export function rollOffers(state, event, rng = Math.random) {
   const quality = event?.quality || "finish";
   const channel = event?.channel === "letter" ? "letter" : "finish";
   if (!RESULT_BRANDS[style]) return { lines, created };
-  for (const kind of ["shoe", "nutrition"]) {
+  for (const kind of OFFER_KINDS) {
     const offer = considerKind(state, kind, { style, quality }, rng);
     if (!offer) continue;
     if (channel === "letter") {
@@ -262,7 +339,7 @@ export function expireOffers(state) {
   ensureSponsors(state);
   const lines = [];
   const day = dayOf(state);
-  for (const kind of ["shoe", "nutrition"]) {
+  for (const kind of OFFER_KINDS) {
     const offer = state.sponsors.offers[kind];
     if (!offer || day < offer.expiresOn) continue;
     const sponsor = sponsorById(kind, offer.id);
