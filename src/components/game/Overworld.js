@@ -44,6 +44,7 @@ import {
   tileOf,
   worldPixelSize,
 } from "@/game/town";
+import { forageArea } from "@/lib/forage";
 import { MOODS, glowAnchors, lightingForSlot } from "@/lib/lighting";
 
 function chooseScale(cssW, cssH) {
@@ -401,10 +402,15 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
           jumped.current = false;
         } else {
           const stepOn = noteArrival(arrival, here, moving && !frozen);
+          const changed = arrival && (arrival.tx !== here.tx || arrival.ty !== here.ty);
           arrival = stepOn.previous;
           if (stepOn.entered) {
             held.current = { up: false, down: false, left: false, right: false };
             live.onEnter?.(stepOn.entered);
+          } else if (changed && moving && !frozen && collision.ground[here.ty]?.[here.tx] === "h" && forageArea(here.tx, here.ty)) {
+            // A new tile of deep grass, not every pixel of the same tile.
+            // The find itself is pure (forage.js). This only notices the step.
+            live.onGrass?.(here);
           }
         }
 

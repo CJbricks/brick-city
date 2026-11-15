@@ -17,6 +17,10 @@
  * from before those counts existed still loads. Missing numbers become 0,
  * or 1 when the older yes/no flag says that plate or nap was already used.
  *
+ * Socks, hats, shakes, flasks, tall-grass finds, and the PT visit flag
+ * arrived on this same key too. A missing pocket is empty. A missing
+ * counter is zero. The version stays 1.
+ *
  * The Run Store deck keeps shiftCursor and shiftsToday on the calendar.
  * Both arrived on this same key. A blob from before the deck has neither.
  * The shift code treats a missing cursor as "start from the day number"
@@ -56,6 +60,13 @@ export function deserialize(raw) {
     }
     if (typeof data.nappedToday !== "boolean") data.nappedToday = false;
     if (typeof data.gels !== "number") data.gels = 0;
+    if (typeof data.shakes !== "number" || data.shakes < 0) data.shakes = 0;
+    if (typeof data.flasks !== "number" || data.flasks < 0) data.flasks = 0;
+    if (typeof data.flaskReady !== "number" || data.flaskReady < 0) data.flaskReady = 0;
+    if (typeof data.calendar.findsToday !== "number" || data.calendar.findsToday < 0) {
+      data.calendar.findsToday = 0;
+    }
+    if (typeof data.calendar.clinicTreated !== "boolean") data.calendar.clinicTreated = false;
     if (typeof data.calendar.homeMealUsed !== "boolean") data.calendar.homeMealUsed = false;
     if (typeof data.calendar.homeSnackUsed !== "boolean") data.calendar.homeSnackUsed = false;
     // The counts are newer than the yes/no flags. An old brick-city-save-v1

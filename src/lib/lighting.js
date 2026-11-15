@@ -92,6 +92,7 @@ export function townLights() {
   const grocery = { x: 14 * T, y: 2 * T };
   const gym = { x: 2 * T, y: 11 * T };
   const store = { x: 2 * T, y: 23 * T };
+  const clinic = { x: 38 * T, y: 11 * T };
   return {
     windows: [
       window("home", home.x + 62, home.y + 70, 22, 18),
@@ -102,6 +103,7 @@ export function townLights() {
       window("gym", gym.x + 96, gym.y + 78, 26, 18),
       window("store", store.x + 36, store.y + 22, 26, 16),
       window("store", store.x + 156, store.y + 22, 26, 16),
+      window("clinic", clinic.x + 108, clinic.y + 78, 28, 22),
     ],
     lanterns: [
       { id: "home", x: home.x + 112, y: home.y + 108, r: 14 },

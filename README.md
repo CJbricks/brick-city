@@ -306,7 +306,7 @@ Brick City doesn't grow. Instead, **finishing a city's local races unlocks new c
 - To unlock the next city, finish the current city's key local races (for example, Brick City's 5K, 10K, and half marathon), plus a level requirement.
 - Travel between unlocked cities from a **world map** (a bus station or train depot in each town). Travel takes a time slot.
 - **City layout rule:** every themed city has
-  - **The same training spots**: home or rented room, gym, run store, grocery, park, track, and nearby trails, so training always works the same way.
+  - **The same training spots**: home or rented room, gym, run store, grocery, park, track, a PT clinic, and nearby trails, so training always works the same way. The clinic treats an injury for coins. Summit Hollow's clinic is priced higher than the other cities, matching the Summit Store.
   - **3–4 premier events** in the city's specialty (big XP, sponsor attention, boss duels).
   - **A few smaller "off-theme" events** (a local half, a 50K, and so on) so you can still train other styles there.
 - Cities (all fictional; names to tune):
@@ -345,7 +345,7 @@ The **last and hardest city**. You unlock it only after finishing the other citi
   - **The Last Soul**: a premier backyard ultra.
   - **Sticky's Backyard**: the ultimate backyard (inspired by Big's Backyard Ultra).
 - **Final bosses:** each event has its own final boss, the strongest runners in the game. Beat all of them to complete Summit Hollow and finish the game.
-- **The Summit Store** sells **any gear** you're missing, but at **higher prices** than any other city.
+- **The Summit Store** sells **any gear** you're missing, but at **higher prices** than any other city. The PT clinic there is priced the same way: a treatment costs more than in any earlier city.
 - Same training spots as every city, but harsher conditions: altitude, cold, and higher injury risk.
 
 

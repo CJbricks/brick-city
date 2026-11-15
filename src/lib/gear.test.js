@@ -17,11 +17,23 @@ import {
 } from "@/lib/catalog";
 import { BELT_NUTRITION, MAX_NUTRITION, VEST_NUTRITION } from "@/lib/constants";
 import {
+  applyBuyHat,
+  applyBuySock,
+  applyEquipHat,
+  applyEquipSock,
+  applyProtein,
   applyPurchase,
   applyRun,
   applyUnequipCarry,
+  applyUnequipHat,
+  applyUnequipSock,
   createNewGame,
+  menuFor,
+  perform,
 } from "@/lib/activities";
+import { HAT_IDS, SOCK_IDS, hatById, sockById } from "@/lib/catalog";
+import { runnerLook } from "@/game/art";
+import { HAT_COLORS } from "@/game/brandColors";
 import { RACES, gearLine, gearModForStyle, readiness } from "@/lib/race";
 import { isMountainOpen } from "@/lib/unlocks";
 import { xpToReachLevel } from "@/lib/xp";
@@ -131,13 +143,16 @@ describe("brand shoes", () => {
 describe("belts and vests", () => {
   it("lists five belts at +5 and six vests at +10", () => {
     expect(BELT_IDS).toHaveLength(5);
-    expect(Object.values(CARRY).filter((item) => item.kind === "vest")).toHaveLength(6);
+    expect(Object.values(CARRY).filter((item) => item.kind === "vest" && !item.wild)).toHaveLength(6);
+    expect(carryNutrition(CARRY["generic-belt"])).toBe(3);
+    expect(carryNutrition(CARRY["generic-vest"])).toBe(7);
+    expect(CARRY["generic-vest"].shortRoad).toBeLessThan(CARRY["camelbak-vest"].shortRoad);
     for (const id of BELT_IDS) {
       expect(CARRY[id].kind).toBe("belt");
       expect(carryNutrition(CARRY[id])).toBe(BELT_NUTRITION);
       expect(CARRY[id].shortRoad).toBe(0);
     }
-    for (const id of Object.keys(CARRY).filter((key) => CARRY[key].kind === "vest")) {
+    for (const id of Object.keys(CARRY).filter((key) => CARRY[key].kind === "vest" && !CARRY[key].wild)) {
       expect(carryNutrition(CARRY[id])).toBe(VEST_NUTRITION);
       expect(CARRY[id].shortRoad).toBeLessThan(0);
     }
@@ -178,5 +193,98 @@ describe("belts and vests", () => {
     belted.gear.carry = "dera-b01";
     expect(readiness(belted, RACES["5k"]).gearMod).toBeCloseTo(0);
     expect(maxNutritionFromGear(belted.gear)).toBe(105);
+  });
+});
+
+describe("socks, hats, shakes, and BPN gels", () => {
+  it("sells socks and hats, and equips and unequips them", () => {
+    const store = menuFor("store", fresh());
+    expect(store.items.map((row) => row.label)).toEqual(expect.arrayContaining(["Socks", "Hats", "Protein shake"]));
+    const buyer = fresh();
+    buyer.coins = 80;
+    const socks = applyBuySock(buyer, "darn-tough");
+    expect(socks.ok).toBe(true);
+    expect(socks.state.gear.socks).toBe("darn-tough");
+    expect(socks.state.gear.ownedSocks).toContain("darn-tough");
+    expect(socks.state.coins).toBe(80 - sockById("darn-tough").price);
+    const off = applyUnequipSock(socks.state);
+    expect(off.state.gear.socks).toBeNull();
+    expect(off.state.gear.ownedSocks).toContain("darn-tough");
+    const on = applyEquipSock(off.state, "darn-tough");
+    expect(on.state.gear.socks).toBe("darn-tough");
+
+    const hat = applyBuyHat(on.state, "ciele");
+    expect(hat.state.gear.hat).toBe("ciele");
+    expect(applyUnequipHat(hat.state).state.gear.hat).toBeNull();
+    expect(applyEquipHat(applyUnequipHat(hat.state).state, "ciele").state.gear.hat).toBe("ciele");
+
+    const broke = fresh();
+    broke.coins = 1;
+    expect(applyBuySock(broke, "balega").ok).toBe(false);
+    expect(broke.coins).toBe(1);
+    expect(applyBuyHat(broke, "rnnr").ok).toBe(false);
+  });
+
+  it("cuts long-ultra fatigue with socks and tiring-run fatigue with a hat", () => {
+    const plain = applyRun(fresh(), "long-run");
+    const socked = fresh();
+    socked.gear.socks = "darn-tough";
+    socked.gear.ownedSocks = ["darn-tough"];
+    const long = applyRun(socked, "long-run");
+    expect(plain.state.condition.fatigue - long.state.condition.fatigue).toBe(sockById("darn-tough").ultraFatigueCut);
+
+    const bare = applyRun(fresh(), "park-trail");
+    const hatted = fresh();
+    hatted.gear.hat = "ciele";
+    hatted.gear.ownedHats = ["ciele"];
+    const trail = applyRun(hatted, "park-trail");
+    expect(bare.state.condition.fatigue - trail.state.condition.fatigue).toBe(hatById("ciele").heatCut);
+
+    const easyBare = applyRun(fresh(), "easy-run");
+    const easyHat = applyRun(hatted, "easy-run");
+    expect(easyHat.state.condition.fatigue).toBe(easyBare.state.condition.fatigue);
+  });
+
+  it("paints the hat color on the cap and leaves the shirt alone", () => {
+    expect(HAT_IDS).toEqual(expect.arrayContaining(["ciele", "bandit", "nike-acg-hat", "rnnr", "bpn-hat"]));
+    expect(SOCK_IDS).toContain("injinji");
+    const state = fresh();
+    state.gear.hat = "ciele";
+    state.sponsors.shoe = "nike";
+    const look = runnerLook(state);
+    expect(look.cap).toBe(HAT_COLORS.ciele.color);
+    expect(look.panel).toBe(HAT_COLORS.ciele.panel);
+    expect(look.shirt).not.toBe(HAT_COLORS.ciele.color);
+  });
+
+  it("drinks a protein shake for fatigue and soreness at no energy cost", () => {
+    const state = fresh();
+    state.shakes = 1;
+    state.condition.fatigue = 40;
+    state.condition.sore = true;
+    const drunk = applyProtein(state);
+    expect(drunk.ok).toBe(true);
+    expect(drunk.state.condition.fatigue).toBe(24);
+    expect(drunk.state.condition.sore).toBe(false);
+    expect(drunk.state.shakes).toBe(0);
+    expect(drunk.state.energy).toBe(state.energy);
+    expect(applyProtein(drunk.state).ok).toBe(false);
+  });
+
+  it("sells a BPN gel at the sponsor discount, same as other gels", () => {
+    const grocery = menuFor("grocery", fresh());
+    expect(grocery.items.map((row) => row.action.id)).toContain("bpn-gel");
+    const full = applyPurchase(fresh(), "bpn-gel");
+    expect(full.state.gels).toBe(1);
+    expect(full.state.coins).toBe(48 - 14);
+    const sponsored = fresh();
+    sponsored.sponsors.nutrition = "bpn";
+    const deal = applyPurchase(sponsored, "bpn-gel");
+    expect(deal.state.coins).toBe(48 - Math.round(14 * 0.75));
+    expect(deal.lines.join(" ")).toMatch(/BPN/);
+    const shake = perform(fresh(), { type: "buy", id: "shake" });
+    expect(shake.ok).toBe(true);
+    expect(shake.state.shakes).toBe(1);
+    expect(shake.state.energy).toBe(10);
   });
 });

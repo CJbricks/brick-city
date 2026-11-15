@@ -194,3 +194,27 @@ export function paletteLooksValid(outfit) {
   if (!outfit) return false;
   return [outfit.cap, outfit.panel, outfit.jacket, outfit.accent, outfit.shorts].every((hex) => HEX.test(hex));
 }
+
+/**
+ * Running-hat colors. One crown and one panel, no wordmark and no logo.
+ * These override the cap pixels when a hat is equipped, so the shoe
+ * sponsor keeps the shirt and the hat is still the thing on the head.
+ *
+ * Hexes are pixel readings of a common colorway, not a copied mark.
+ * Ciele's caps are often a bright all-over color. Bandit kits are
+ * black and white. Nike ACG uses khaki more than the volt road kit.
+ * rnnr hats read as a light cap with a hot accent. BPN kits are black
+ * and a deep green; the hat is the green so it does not vanish into
+ * the outline.
+ */
+export const HAT_COLORS = {
+  ciele: { color: "#ff5c33", panel: "#fff1ea" },
+  bandit: { color: "#111111", panel: "#f4f4f4" },
+  "nike-acg": { color: "#c4a574", panel: "#efe6d2" },
+  rnnr: { color: "#f7f4ee", panel: "#ff4d2e" },
+  bpn: { color: "#0b6b4f", panel: "#e7f4ee" },
+};
+
+export function hatColors(colorKey) {
+  return HAT_COLORS[colorKey] || null;
+}

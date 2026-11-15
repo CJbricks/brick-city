@@ -1,11 +1,14 @@
 /**
  * catalog.js
- * The shoe closet and the fuel-carry rack.
+ * The shoe closet, the fuel-carry rack, socks, and running hats.
  *
  * Shoes decide which style of running you are good at. A belt or a vest
- * decides how much food you can carry. You wear one pair and, optionally,
- * one fuel item. Sponsors (src/lib/sponsors.js) discount this list. They
- * do not replace it.
+ * decides how much food you can carry. Socks trim a little fatigue on a
+ * long run. A hat trims a little fatigue on any hard run (the stand-in
+ * for sun, because the game has no weather meter). You wear one pair of
+ * shoes, optionally one fuel item, one pair of socks, and one hat.
+ * Sponsors (src/lib/sponsors.js) discount shoes, belts, vests, and gels.
+ * They do not replace this list.
  *
  * The house pairs `road`, `trail`, and `hybrid` stay in the catalog so a
  * save from before the brand shoes existed still names a real pair.
@@ -400,7 +403,149 @@ export const CARRY = {
     shortRoad: -0.05,
     blurb: "Silk vest. +10 max nutrition. The 5K notices the bottles.",
   },
+  // Wild finds only. Weaker than the store rack on purpose: a belt the
+  // shop sells is +5, this one is +3. A store vest is +10, this one is +7
+  // and a little slower in a short road race. `wild` keeps them off the shelf.
+  "generic-belt": {
+    id: "generic-belt",
+    name: "Generic running belt",
+    brand: "Plain",
+    kind: "belt",
+    price: 0,
+    nutrition: 3,
+    shortRoad: 0,
+    wild: true,
+    blurb: "Unbranded belt from the grass. +3 max nutrition. No speed penalty.",
+  },
+  "generic-vest": {
+    id: "generic-vest",
+    name: "Generic hydration vest",
+    brand: "Plain",
+    kind: "vest",
+    price: 0,
+    nutrition: 7,
+    shortRoad: -0.05,
+    wild: true,
+    blurb: "Unbranded vest from the grass. +7 max nutrition. A little slow in a short road race.",
+  },
 };
+
+/**
+ * Socks. ultraFatigueCut is points taken off the fatigue a long ultra
+ * adds (the long run, ridge repeats, yards). blisterShield drops the
+ * worn-out-shoe strike that leads to a blister. The numbers are small
+ * on purpose. color is a brand color for the menu, never a logo.
+ * The Run Store shift already has a sock-wall question. This is that wall.
+ */
+export const SOCKS = {
+  "socks-generic": {
+    id: "socks-generic",
+    name: "Running socks",
+    brand: "Brickside",
+    price: 8,
+    ultraFatigueCut: 2,
+    blisterShield: false,
+    color: "#f4f4f4",
+    blurb: "Plain pair. −2 fatigue on a long ultra.",
+  },
+  balega: {
+    id: "balega",
+    name: "Balega Hidden Comfort",
+    brand: "Balega",
+    price: 16,
+    ultraFatigueCut: 3,
+    blisterShield: false,
+    color: "#f2c14e",
+    blurb: "Padded pair. −3 fatigue on a long ultra.",
+  },
+  "darn-tough": {
+    id: "darn-tough",
+    name: "Darn Tough Run",
+    brand: "Darn Tough",
+    price: 22,
+    ultraFatigueCut: 4,
+    blisterShield: true,
+    color: "#6b4428",
+    blurb: "Merino pair. −4 fatigue on a long ultra, and worn shoes blister less.",
+  },
+  feetures: {
+    id: "feetures",
+    name: "Feetures Elite Light",
+    brand: "Feetures",
+    price: 18,
+    ultraFatigueCut: 3,
+    blisterShield: false,
+    color: "#2aa6a0",
+    blurb: "Light pair. −3 fatigue on a long ultra.",
+  },
+  injinji: {
+    id: "injinji",
+    name: "Injinji Run Lightweight",
+    brand: "Injinji",
+    price: 20,
+    ultraFatigueCut: 3,
+    blisterShield: true,
+    color: "#1d4ed8",
+    blurb: "Toe pair. −3 fatigue on a long ultra, and worn shoes blister less.",
+  },
+};
+
+export const SOCK_IDS = ["socks-generic", "balega", "darn-tough", "feetures", "injinji"];
+
+/**
+ * Hats. heatCut is points taken off fatigue after a run that adds fatigue.
+ * There is no sun meter, so this small cut is the heat resistance.
+ * colorKey looks up HAT_COLORS. The sprite's cap pixels wear that color.
+ */
+export const HATS = {
+  ciele: {
+    id: "ciele",
+    name: "Ciele GOCap",
+    brand: "Ciele",
+    price: 28,
+    heatCut: 2,
+    colorKey: "ciele",
+    blurb: "Bright cap. −2 fatigue on a run that tires you out.",
+  },
+  bandit: {
+    id: "bandit",
+    name: "Bandit Superlight",
+    brand: "Bandit",
+    price: 26,
+    heatCut: 1,
+    colorKey: "bandit",
+    blurb: "Light cap. −1 fatigue on a tiring run.",
+  },
+  "nike-acg-hat": {
+    id: "nike-acg-hat",
+    name: "Nike ACG Cap",
+    brand: "Nike ACG",
+    price: 32,
+    heatCut: 2,
+    colorKey: "nike-acg",
+    blurb: "Trail cap. −2 fatigue on a tiring run.",
+  },
+  rnnr: {
+    id: "rnnr",
+    name: "rnnr Pace Hat",
+    brand: "rnnr",
+    price: 24,
+    heatCut: 1,
+    colorKey: "rnnr",
+    blurb: "Race cap. −1 fatigue on a tiring run.",
+  },
+  "bpn-hat": {
+    id: "bpn-hat",
+    name: "BPN Run Hat",
+    brand: "BPN",
+    price: 30,
+    heatCut: 2,
+    colorKey: "bpn",
+    blurb: "Green cap. −2 fatigue on a tiring run.",
+  },
+};
+
+export const HAT_IDS = ["ciele", "bandit", "nike-acg-hat", "rnnr", "bpn-hat"];
 
 export const BELT_IDS = [
   "nathan-belt",
@@ -462,9 +607,32 @@ export function isKnownCarry(id) {
   return Boolean(carryById(id));
 }
 
-/** Kind is the source of truth. A belt is always +5 and a vest always +10. */
+export function sockById(id) {
+  if (!id || !SOCKS[id]) return null;
+  return SOCKS[id];
+}
+
+export function isKnownSock(id) {
+  return Boolean(sockById(id));
+}
+
+export function hatById(id) {
+  if (!id || !HATS[id]) return null;
+  return HATS[id];
+}
+
+export function isKnownHat(id) {
+  return Boolean(hatById(id));
+}
+
+/**
+ * Kind is the source of truth for shop belts and vests: +5 and +10.
+ * A wild generic piece sets its own `nutrition` so it can be weaker
+ * without inventing a third kind.
+ */
 export function carryNutrition(item) {
   if (!item) return 0;
+  if (typeof item.nutrition === "number") return item.nutrition;
   if (item.kind === "vest") return VEST_NUTRITION;
   if (item.kind === "belt") return BELT_NUTRITION;
   return 0;
@@ -540,7 +708,27 @@ export function normalizeGear(gear) {
   }
   if (carry && !ownedCarry.includes(carry)) ownedCarry.push(carry);
 
-  return { equipped, owned, miles, carry, ownedCarry };
+  // Socks and hats arrived on the same save key. A blob from before
+  // them has neither pocket. Missing means empty, not a free pair.
+  const socks = isKnownSock(source.socks) ? source.socks : null;
+  const ownedSocks = [];
+  if (Array.isArray(source.ownedSocks)) {
+    for (const id of source.ownedSocks) {
+      if (isKnownSock(id) && !ownedSocks.includes(id)) ownedSocks.push(id);
+    }
+  }
+  if (socks && !ownedSocks.includes(socks)) ownedSocks.push(socks);
+
+  const hat = isKnownHat(source.hat) ? source.hat : null;
+  const ownedHats = [];
+  if (Array.isArray(source.ownedHats)) {
+    for (const id of source.ownedHats) {
+      if (isKnownHat(id) && !ownedHats.includes(id)) ownedHats.push(id);
+    }
+  }
+  if (hat && !ownedHats.includes(hat)) ownedHats.push(hat);
+
+  return { equipped, owned, miles, carry, ownedCarry, socks, ownedSocks, hat, ownedHats };
 }
 
 export function signedPercent(fraction) {
@@ -573,4 +761,15 @@ export function carryTradeText(item) {
   if (item.kind === "belt") return `${item.name} · Belt · +${bonus} max nutrition · no speed penalty`;
   const pace = signedPercent(item.shortRoad || 0);
   return `${item.name} · Vest · +${bonus} max nutrition · ${pace} short road races`;
+}
+
+export function sockTradeText(sock) {
+  if (!sock) return "No socks. Long ultras feel the full fatigue.";
+  const shield = sock.blisterShield ? " · worn shoes blister less" : "";
+  return `${sock.name} · −${sock.ultraFatigueCut} fatigue on long ultras${shield}`;
+}
+
+export function hatTradeText(hat) {
+  if (!hat) return "No hat. Hot runs feel the full fatigue.";
+  return `${hat.name} · −${hat.heatCut} fatigue on a tiring run`;
 }

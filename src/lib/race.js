@@ -25,10 +25,14 @@ import { attributeLevel, levelFromXp } from "@/lib/xp";
 import {
   carryById,
   carryTradeText,
+  hatById,
+  hatTradeText,
   maxNutritionFromGear,
   shoeById,
   shoeTradeText,
   shoeWear,
+  sockById,
+  sockTradeText,
   styleLabel,
 } from "@/lib/catalog";
 import { nutritionTuning, sponsorPace, sponsorSummaryLines } from "@/lib/sponsors";
@@ -155,6 +159,8 @@ export function describeLoadout(state, style = "road", options = {}) {
   const lines = [
     `${shoe.name} · ${styleLabel(shoe.style)} · ${wear.label} · ${shoeTradeText(shoe)}`,
     carryTradeText(info.carry),
+    sockTradeText(sockById(state.gear?.socks)),
+    hatTradeText(hatById(state.gear?.hat)),
     `Nutrition ${state.condition?.nutrition ?? 0} / ${max}`,
     ...sponsorSummaryLines(state),
   ];

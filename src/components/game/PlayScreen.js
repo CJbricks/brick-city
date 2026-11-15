@@ -46,14 +46,18 @@ import {
   carryShopItems,
   chatLines,
   closetItems,
+  gelShopItems,
+  hatShopItems,
   jobScript,
   menuFor,
+  sockShopItems,
   perform,
   shoeCategoryItems,
   shoeStyleItems,
   sponsorMenuItems,
 } from "@/lib/activities";
 import { describeNeeds, isMountainOpen, mountainStatus } from "@/lib/unlocks";
+import { applyForage, forageArea } from "@/lib/forage";
 import { writeSave } from "@/lib/save";
 import { CONFETTI_MS } from "@/game/confetti";
 
@@ -62,7 +66,7 @@ function systemItems(soundOn) {
     { label: "Runner status", detail: "Meters, attributes, gear, sponsors", action: { type: "open-status" } },
     { label: "Sponsors", detail: "Shoe, nutrition, and gear deals", action: { type: "open-sponsors" } },
     { label: "This week", detail: "Miles, races, old summaries", action: { type: "open-week" } },
-    { label: "Closet", detail: "Shoes, belts, vests", action: { type: "open-gear" } },
+    { label: "Closet", detail: "Shoes, socks, hats, fuel", action: { type: "open-gear" } },
     { label: "How to play", detail: "Buttons", action: { type: "open-help" } },
     {
       label: soundOn ? "Sound: On" : "Sound: Off",
@@ -100,6 +104,17 @@ export function PlayScreen({ game, setGame, onTitle }) {
         // again until you step off and back on. A still reopens it.
         if (panelRef.current || gameRef.current.pendingSummary) return;
         openLocation(id);
+      },
+      onGrass(tile) {
+        // One roll per new tall-grass tile. The panel freezes walking,
+        // which is the GBC "You found" stop. A day at the cap rolls nothing.
+        if (panelRef.current || gameRef.current.pendingSummary) return;
+        const area = forageArea(tile.tx, tile.ty);
+        if (!area) return;
+        const result = applyForage(gameRef.current, area, Math.random);
+        if (!result.found) return;
+        setGame(result.state);
+        setPanel({ type: "dialogue", speaker: "Tall grass", pages: [result.line], index: 0 });
       },
     });
   });
@@ -239,6 +254,18 @@ export function PlayScreen({ game, setGame, onTitle }) {
     }
     if (action.type === "open-carry-shop") {
       setPanel({ type: "list", title: "Belts & vests", items: carryShopItems(currentState()), index: 0 });
+      return;
+    }
+    if (action.type === "open-socks") {
+      setPanel({ type: "list", title: "Socks", items: sockShopItems(currentState()), index: 0, testId: "sock-shop" });
+      return;
+    }
+    if (action.type === "open-hats") {
+      setPanel({ type: "list", title: "Hats", items: hatShopItems(currentState()), index: 0, testId: "hat-shop" });
+      return;
+    }
+    if (action.type === "open-gels") {
+      setPanel({ type: "list", title: "Gels", items: gelShopItems(currentState()), index: 0, testId: "gel-shop" });
       return;
     }
     if (action.type === "open-shift") {

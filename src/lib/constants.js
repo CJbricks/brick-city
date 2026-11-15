@@ -24,20 +24,81 @@ export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export const MAX_ENERGY = 10;
 export const GEL_ENERGY = 1;
 export const GEL_NUTRITION = 12;
+/** BPN gel on the grocery and Run Store lineup. Same pocket as other gels. */
+export const BPN_GEL_COST = 14;
+/** Protein shake. 0 energy. Eases fatigue and clears the sore flag. */
+export const SHAKE_COST = 16;
+export const PROTEIN_FATIGUE_RELIEF = 16;
+/** Soft-tissue visit at the PT clinic. Clears soreness and eases fatigue. */
+export const TISSUE_FATIGUE_RELIEF = 12;
+/** How many nights of an injury one treatment session removes. */
+export const CLINIC_TREATMENT_NIGHTS = 2;
+/** Tall-grass finds per morning. Sleep puts this back to zero. */
+export const FINDS_PER_DAY = 3;
+/** A soft flask arms this much nutrition for the next race, then it is gone. */
+export const FLASK_RACE_BONUS = 2;
 
 /**
- * One city record. Later towns (Ridgeview, Lakeport, and the rest)
- * are named in the design and are not maps yet. See UNBUILT_CITIES
- * in src/game/town.js. The welcome sign reads these fields.
+ * One record per town. Brick City is the only map you can walk.
+ * The others are the design for later maps: same kinds of buildings,
+ * including a PT clinic. Summit Hollow's clinic costs the most, the
+ * same idea as its store (higher prices than every other city).
+ * The welcome sign reads name and motto. Prices are coins.
  */
 export const CITIES = {
   "brick-city": {
     id: "brick-city",
     name: "Brick City",
     motto: "Every Mile Lays a Brick",
+    built: true,
+    clinic: { name: "Brick City PT", treatment: 22, tissue: 10 },
+  },
+  ridgeview: {
+    id: "ridgeview",
+    name: "Ridgeview",
+    motto: "The Ridge Keeps the Receipt",
+    built: false,
+    clinic: { name: "Ridgeview PT", treatment: 26, tissue: 12 },
+  },
+  lakeport: {
+    id: "lakeport",
+    name: "Lakeport",
+    motto: "Hold the Pace Through the Streets",
+    built: false,
+    clinic: { name: "Lakeport PT", treatment: 24, tissue: 11 },
+  },
+  "mesa-verde-flats": {
+    id: "mesa-verde-flats",
+    name: "Mesa Verde Flats",
+    motto: "Long Miles, Short Shade",
+    built: false,
+    clinic: { name: "Mesa Verde PT", treatment: 20, tissue: 9 },
+  },
+  flatland: {
+    id: "flatland",
+    name: "Flatland",
+    motto: "Last One Standing",
+    built: false,
+    clinic: { name: "Flatland PT", treatment: 18, tissue: 8 },
+  },
+  "summit-hollow": {
+    id: "summit-hollow",
+    name: "Summit Hollow",
+    motto: "Nothing Left but the Work",
+    built: false,
+    clinic: { name: "Summit Hollow PT", treatment: 40, tissue: 20 },
   },
 };
 export const CITY_INFO = CITIES["brick-city"];
+
+export function cityById(id) {
+  return CITIES[id] || CITIES["brick-city"];
+}
+
+/** Coins for a PT visit in that town. Unknown ids use Brick City. */
+export function clinicRates(cityId) {
+  return cityById(cityId).clinic;
+}
 
 export const START_COINS = 48;
 export const START_ENDURANCE = 24;
