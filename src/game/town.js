@@ -39,9 +39,9 @@
  * cityMaps() is the list of overworlds that actually exist. Brick City
  * is the only one. Ridgeview, Lakeport, Mesa Verde Flats, Flatland, and
  * Summit Hollow are names in the design. They are in UNBUILT_CITIES and
- * have no tiles. Each of those records still names a PT clinic, so a
- * later map has a place to put the door. Summit Hollow's clinic is the
- * expensive one.
+ * have no tiles. Each of those records still names a PT clinic and a
+ * coffee shop, so a later map has a place to put both doors. Summit
+ * Hollow's clinic and its coffee shop are the expensive ones.
  *
  * The park trail keeps the pond loop and then winds south through tall
  * grass. The mountain trail keeps the gate at x=30 and then winds east
@@ -78,6 +78,11 @@ export const BUILDINGS = [
   // sidewalk at y=10, the same idea as Home's mat between the door and
   // the street. The sign says PT. It is not a red cross.
   { id: "clinic", x: 38, y: 11, w: 6, h: 4, door: { x: 40, y: 11 } },
+  // South of the clinic. The door faces north onto the sidewalk at y=15.
+  // The path to that sidewalk runs down tile x=35, which is clear of the
+  // track fence (tile 34) and of the clinic (x=38). Tangentline Roasters.
+  // id stays "cafe". The painted name is not written into the save.
+  { id: "cafe", x: 36, y: 16, w: 8, h: 4, door: { x: 39, y: 16 } },
 ];
 
 /**
@@ -173,6 +178,7 @@ export const PLACES = [
   { id: "mountain", name: "Mountain Gate", tx: 30, ty: 8, facing: "up", lock: "mountain" },
   { id: "depot", name: "World Depot", tx: 19, ty: 17, facing: "up" },
   { id: "clinic", name: "PT Clinic", tx: 40, ty: 10, facing: "down" },
+  { id: "cafe", name: "Tangentline Roasters", tx: 39, ty: 15, facing: "down" },
 ];
 
 const NPCS = [
@@ -468,12 +474,17 @@ export function createGround() {
   // Sidewalk from the upper street down to the clinic door. The road
   // is y=8 and y=9. This row is the mat, the same gap Home uses.
   for (let x = 34; x <= 44; x += 1) pave(x, 10);
+  // Around the clinic's west side, then along the coffee shop's door.
+  // y=15 is south of the clinic and north of the shop. x=35 connects
+  // that row back to the clinic sidewalk, so the mat is not an island.
+  for (let y = 11; y <= 15; y += 1) pave(35, y);
+  for (let x = 35; x <= 44; x += 1) pave(x, 15);
   for (let y = 17; y <= 19; y += 1) pave(19, y);
 
   return grid;
 }
 
-const BUILDING_DOORS = new Set(["home", "grocery", "gym", "store", "clinic"]);
+const BUILDING_DOORS = new Set(["home", "grocery", "gym", "store", "clinic", "cafe"]);
 
 /**
  * The walkable mat in front of a building door. Park, the track, the
@@ -599,7 +610,7 @@ export function buildWorld(state) {
  */
 export const UNBUILT_CITIES = Object.values(CITIES)
   .filter((city) => !city.built)
-  .map((city) => ({ id: city.id, name: city.name, clinic: city.clinic }));
+  .map((city) => ({ id: city.id, name: city.name, clinic: city.clinic, cafe: city.cafe }));
 
 /**
  * Every overworld the game can build. The sign test loops this list,

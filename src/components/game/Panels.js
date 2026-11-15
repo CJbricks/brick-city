@@ -20,6 +20,7 @@ import { Icon } from "@/components/game/Hud";
 import { COLS, PLACES, ROWS, placeIsLocked, spawnFor } from "@/game/town";
 import { ATTRIBUTES, CITY_INFO, TRACKS } from "@/lib/constants";
 import { RACES, describeLoadout, readiness } from "@/lib/race";
+import { readRaceIq } from "@/lib/cafe";
 import { attributeLevel, levelProgress, trackRank } from "@/lib/xp";
 import { runnerLevel, mountainStatus, describeNeeds } from "@/lib/unlocks";
 import { calendarView } from "@/lib/activities";
@@ -115,6 +116,7 @@ export function RaceView({ game, raceId, onRun, onBack }) {
         <p key={line}>{line}</p>
       ))}
       <p className={card.warning.severe ? "warn" : undefined}>{card.warning.text}</p>
+      {card.hint ? <p data-testid="course-hint">{card.hint}</p> : null}
       {game.gels > 0 ? <p>{`Gels in pocket: ${game.gels}. One is used if a bonk is only a chance.`}</p> : null}
       <Stack gap="2" mt="2">
         <Button className="gbc-btn" data-testid="race-go" onClick={onRun}>
@@ -203,6 +205,11 @@ export function StatusView({ game, onClose, onSponsors }) {
           <span key={attr.id}>{`${attr.name}  Lv ${attributeLevel(game.attributes[attr.id])}`}</span>
         ))}
       </div>
+      <p data-testid="race-iq">{`Race IQ ${readRaceIq(game)}`}</p>
+      {game.condition?.coffeeNext === "boost" ? <p>Coffee: a small pace bump on the next run.</p> : null}
+      {game.condition?.coffeeNext === "jitter" ? (
+        <p className="warn">Jittery. The next run pays a small pace penalty.</p>
+      ) : null}
       <p>{`Overall level progress ${level.into} / ${level.need}`}</p>
       {TRACKS.filter((track) => track.id !== "overall").map((track) => (
         <p key={track.id}>{`${track.name}: rank ${trackRank(game.xp[track.id])} · ${game.xp[track.id]} XP`}</p>
@@ -270,6 +277,7 @@ export function HelpView({ onClose }) {
       <p>Low nutrition and poor sleep together will bonk you out of a race.</p>
       <p>Shoes change one style and cost you in the others. A belt is +5 max nutrition. A vest is +10, with a small penalty in short road races. Socks and a hat trim a little fatigue.</p>
       <p>Tall grass in the park and on the mountain trail can hide a find. The PT clinic treats a real injury. A protein shake only eases soreness.</p>
+      <p>The coffee shop sells a cup, a pastry, and an hour of Wi-Fi. Two cups help the next run. A third makes you jittery. Wi-Fi raises Race IQ. That number is on this status sheet, not the corner card.</p>
       <p>Brands offer deals after a result. Accept or decline in Sponsors. An offer lasts 3 days. You can hold one shoe sponsor, one nutrition sponsor, and one gear sponsor. A gear deal covers the belt and vest from that brand.</p>
       <Button className="gbc-btn" onClick={onClose}>Close</Button>
     </Window>

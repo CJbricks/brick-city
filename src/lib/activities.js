@@ -34,6 +34,10 @@
  * in this file too. The numbers live in catalog.js and constants.js.
  * Tall-grass finds live in forage.js. Sleep is what zeroes the find
  * counter and the one-treatment-a-day flag.
+ *
+ * The coffee shop is three buttons: a cup, a pastry, and Wi-Fi. The cup
+ * count, the Wi-Fi flag, and any leftover pace note reset on sleep.
+ * Race IQ does not. It is the point of studying, and it stays.
  */
 
 import { formatWhen, isSunday, sleepPlan, slotFromEnergy, slotLabel, summarizeWeek } from "@/lib/calendar";
@@ -42,9 +46,12 @@ import {
   FREE_HOME_SNACKS,
   BPN_GEL_COST,
   CLINIC_TREATMENT_NIGHTS,
+  COFFEE_CUPS_BEFORE_JITTER,
+  COFFEE_ENERGY,
   FLASK_RACE_BONUS,
   GEL_ENERGY,
   GEL_NUTRITION,
+  PASTRY_NUTRITION,
   PROTEIN_FATIGUE_RELIEF,
   SHAKE_COST,
   TISSUE_FATIGUE_RELIEF,
@@ -96,8 +103,8 @@ import {
 import {
   RACES,
   RIVAL,
-  combinedMod,
   finishQuality,
+  finishScore,
   flavorTime,
   gearModForStyle,
   judgeBonk,
@@ -150,6 +157,19 @@ import { levelFromXp } from "@/lib/xp";
 import { JOBS, currentShift, noteShiftWorked, resolveShift, rollShiftOnSleep } from "@/lib/shifts";
 import { TILE, homeSpawn } from "@/game/town";
 import { injuryScreenLines, ratesFor } from "@/lib/clinic";
+import {
+  bonkThreshold,
+  cafeFor,
+  cafeIntro,
+  clearCoffee,
+  coffeeCount,
+  coffeeEffectLine,
+  coffeeFatigueDelta,
+  nextCupJitters,
+  pastryDetail,
+  readRaceIq,
+  wifiGain,
+} from "@/lib/cafe";
 
 export { JOBS, SHIFT_POOL, currentShift } from "@/lib/shifts";
 
@@ -460,6 +480,8 @@ export function createNewGame({ name, gender }) {
     sleepQuality: START_SLEEP_QUALITY,
     sore: false,
     injury: null,
+    // "boost", "jitter", or null. Sleep clears it. A run or a race clears it.
+    coffeeNext: null,
   };
   const state = {
     version: 1,
@@ -498,6 +520,10 @@ export function createNewGame({ name, gender }) {
       findsToday: 0,
       // The PT table books one treatment a day. Sleep clears it.
       clinicTreated: false,
+      // Cups since wake-up. Two help. The next one jitters. Sleep zeroes it.
+      coffeesToday: 0,
+      // One Wi-Fi hour a day. Sleep is what opens another. Race IQ stays.
+      wifiToday: false,
     },
     coins: START_COINS,
     gear: {
@@ -520,6 +546,8 @@ export function createNewGame({ name, gender }) {
     flasks: 0,
     // Nutrition armed for the next race by drinking a soft flask. 0 means none.
     flaskReady: 0,
+    // Study points from the shop Wi-Fi. 0 on a new game and on an old save.
+    raceIq: 0,
     energy: MAX_ENERGY,
     nappedToday: false,
     // 0, 1, or 2. The boolean above is the old save flag. Both reset on sleep.
@@ -818,6 +846,13 @@ export function applyRun(state, runId, rng = Math.random) {
   if (gear.wear === "worn out" && activity.miles > 0) {
     lines.push(`${gear.name} are worn out. Replace them at the Run Store.`);
   }
+  // The cup is spent by this run even if the line is empty. A race uses
+  // the pace percent instead of this fatigue swing. See cafe.js.
+  const coffeeDelta = coffeeFatigueDelta(next);
+  if (coffeeDelta) next.condition.fatigue = clampMeter(next.condition.fatigue + coffeeDelta);
+  const coffeeLine = coffeeEffectLine(next);
+  if (coffeeLine) lines.push(coffeeLine);
+  clearCoffee(next);
   spendEnergy(next, energyCost, true);
   sample(next);
   if (activity.miles > 0) {
@@ -955,6 +990,12 @@ export function applySleep(state) {
   // a shake does not. Only sleep does, same as meals and naps.
   next.calendar.findsToday = 0;
   next.calendar.clinicTreated = false;
+  // Cups and the Wi-Fi hour start over. Race IQ stays. The pace note
+  // does not keep overnight: you slept it off, and the count is zero
+  // so the morning is not already jittery.
+  next.calendar.coffeesToday = 0;
+  next.calendar.wifiToday = false;
+  next.condition.coffeeNext = null;
   next.calendar.slot = slotFromEnergy(MAX_ENERGY);
   next.calendar.trainedToday = false;
   lines.push("Energy is back to 10/10.");
@@ -1351,6 +1392,7 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
     fatigue: state.condition.fatigue,
     roll,
     km: race.km,
+    chance: bonkThreshold(readRaceIq(state)),
   });
   if (gelChoicePending(state, threat, choice)) {
     return { ok: true, needsChoice: true, state, lines: [BONK_PROMPT], ticker: "", summary: null };
@@ -1389,7 +1431,7 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
     // Jogging it in is a finish, not a win. No confetti.
     quality = "finish";
   } else {
-    const form = raceFormScore(next, race);
+    const form = finishScore(next, race);
     quality = finishQuality(form);
     const time = flavorTime(race, form, false);
     lines.push(rescued
@@ -1421,6 +1463,10 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
   const sore = nextSoreness(next, { hard: true });
   next.condition.sore = sore.sore;
   next.condition.injury = sore.injury;
+  // The cup was for this start, bonk or not. Read the line before clearing.
+  const coffeeLine = coffeeEffectLine(next);
+  if (coffeeLine) lines.push(coffeeLine);
+  clearCoffee(next);
   spendEnergy(next, energyCost, true);
   if (rescued) applyRescueGel(next);
   sample(next);
@@ -1452,18 +1498,6 @@ function scaleAttributes(attributes, factor) {
   return scaled;
 }
 
-function raceFormScore(state, race) {
-  const pace = combinedMod(state, race.style, {
-    shortRoad: race.style === "road" && (race.km || 0) <= 5.5,
-  }).mod;
-  return (
-    (state.condition.endurance * race.ideal.endurance +
-      state.condition.peak * race.ideal.peak -
-      state.condition.fatigue * 0.3) *
-    (1 + pace)
-  );
-}
-
 export function applyRival(state, roll = 0.5, choice, rng = Math.random) {
   const energyCost = RIVAL.energy || 1;
   if (readEnergy(state) < energyCost) {
@@ -1475,6 +1509,7 @@ export function applyRival(state, roll = 0.5, choice, rng = Math.random) {
     fatigue: state.condition.fatigue,
     roll,
     km: 5,
+    chance: bonkThreshold(readRaceIq(state)),
   });
   if (gelChoicePending(state, threat, choice)) {
     return { ok: true, needsChoice: true, state, lines: [BONK_PROMPT], ticker: "", summary: null };
@@ -1525,6 +1560,9 @@ export function applyRival(state, roll = 0.5, choice, rng = Math.random) {
   next.condition.peak = clampMeter(next.condition.peak + (win ? RIVAL.peak : 1));
   addMiles(next, RIVAL.miles);
   next.calendar.trainedToday = true;
+  const coffeeLine = coffeeEffectLine(next);
+  if (coffeeLine) lines.push(coffeeLine);
+  clearCoffee(next);
   spendEnergy(next, energyCost, true);
   if (rescued) applyRescueGel(next);
   sample(next);
@@ -1921,6 +1959,77 @@ export function applyClinicScreen(state) {
   return finish(state, clone(state), injuryScreenLines(state));
 }
 
+export function applyCafeCoffee(state) {
+  const shop = cafeFor(state);
+  if (state.coins < shop.coffee) return refuse(state, [`A cup is ${shop.coffee} coins.`]);
+  const before = state;
+  const next = clone(state);
+  const jitter = nextCupJitters(next);
+  next.coins -= shop.coffee;
+  next.calendar.coffeesToday = coffeeCount(next) + 1;
+  // The third cup replaces a bump that was already waiting. One note
+  // at a time. A fourth cup does not stack a worse penalty.
+  next.condition.coffeeNext = jitter ? "jitter" : "boost";
+  const had = readEnergy(next);
+  next.energy = Math.min(MAX_ENERGY, had + COFFEE_ENERGY);
+  const gained = next.energy - had;
+  // A cup is not a time slot. Do not call shiftSlot. Gaining a block
+  // would otherwise walk the sky backward, the way a gel can.
+  const energyLine = gained > 0 ? `+${gained} energy.` : `Energy stays ${MAX_ENERGY}/${MAX_ENERGY}.`;
+  const cupsLeft = COFFEE_CUPS_BEFORE_JITTER - next.calendar.coffeesToday;
+  const paceLine = jitter
+    ? "That cup sits wrong. You're jittery. The next run pays a small pace penalty instead of a bump."
+    : cupsLeft <= 0
+      ? "The next run gets a small pace bump. Another cup today would jitter."
+      : "The next run gets a small pace bump.";
+  sample(next);
+  return finish(before, next, [`${shop.name}. ${energyLine} ${paceLine}`]);
+}
+
+export function applyCafePastry(state) {
+  const shop = cafeFor(state);
+  if (state.coins < shop.pastryCost) {
+    return refuse(state, [`${shop.pastry} is ${shop.pastryCost} coins.`]);
+  }
+  const before = state;
+  const next = clone(state);
+  next.coins -= shop.pastryCost;
+  next.condition.nutrition = clampFood(next, next.condition.nutrition + PASTRY_NUTRITION);
+  next.condition.mealName = shop.pastry;
+  next.condition.mealQuality = "ok";
+  // Bakery food, not the pantry snack. A meal clears junk the same way.
+  next.condition.junk = false;
+  sample(next);
+  return finish(before, next, [`${shop.pastry}. +${PASTRY_NUTRITION} FOOD. 0 energy.`]);
+}
+
+export function applyCafeWifi(state) {
+  if (state?.calendar?.wifiToday) {
+    return refuse(state, ["You've already used the Wi-Fi today. Sleep opens another hour."]);
+  }
+  const before = state;
+  const next = clone(state);
+  const gain = wifiGain(readRaceIq(next));
+  next.raceIq = readRaceIq(next) + gain;
+  next.calendar.wifiToday = true;
+  const had = readEnergy(next);
+  const fromSlot = typeof next.calendar.slot === "number" ? next.calendar.slot : slotFromEnergy(had);
+  // One step of the day, like a nap, but energy does not move. The
+  // passive hunger still runs once, because the clock moved a slot.
+  next.calendar.slot = Math.min(5, fromSlot + 1);
+  next.condition.nutrition = clampFood(next, next.condition.nutrition - hungerDrain(next));
+  const fromLabel = slotLabel(fromSlot);
+  const toLabel = slotLabel(next.calendar.slot);
+  const clock = fromLabel === toLabel
+    ? "The day is already at night."
+    : `The day moves from ${fromLabel} to ${toLabel}.`;
+  const familiar = gain < wifiGain(0) ? "The notes are getting familiar. " : "";
+  sample(next);
+  return finish(before, next, [
+    `${familiar}You study the reports for an hour. Race IQ +${gain}. ${clock} 0 energy.`,
+  ]);
+}
+
 export function perform(state, action, roll = 0.5, rng = Math.random) {
   switch (action.type) {
     case "run":
@@ -1981,6 +2090,12 @@ export function perform(state, action, roll = 0.5, rng = Math.random) {
       return applyClinicTissue(state);
     case "clinic-screen":
       return applyClinicScreen(state);
+    case "cafe-coffee":
+      return applyCafeCoffee(state);
+    case "cafe-pastry":
+      return applyCafePastry(state);
+    case "cafe-wifi":
+      return applyCafeWifi(state);
     default:
       return refuse(state, ["Nothing happens."]);
   }
@@ -2245,6 +2360,43 @@ export function menuFor(locationId, state) {
             `Need ${rates.tissue} coins.`,
           ),
           item("Injury screen", "Free · what the chart says", { type: "clinic-screen" }),
+        ],
+      };
+    }
+    case "cafe": {
+      const shop = cafeFor(state);
+      const cups = coffeeCount(state);
+      const studied = Boolean(state.calendar?.wifiToday);
+      const cupNote = cups >= COFFEE_CUPS_BEFORE_JITTER
+        ? `Cups ${cups} · next cup is jittery`
+        : `Cups ${cups}/${COFFEE_CUPS_BEFORE_JITTER} · +1 energy · pace on the next run`;
+      return {
+        title: shop.name,
+        speaker: shop.name,
+        testId: "cafe-menu",
+        intro: cafeIntro(shop),
+        items: [
+          item(
+            "Coffee",
+            `${shop.coffee} coins · ${cupNote}`,
+            { type: "cafe-coffee" },
+            state.coins < shop.coffee,
+            `Need ${shop.coffee} coins.`,
+          ),
+          item(
+            shop.pastry,
+            pastryDetail(shop),
+            { type: "cafe-pastry" },
+            state.coins < shop.pastryCost,
+            `Need ${shop.pastryCost} coins.`,
+          ),
+          item(
+            "Use the Wi-Fi",
+            studied ? "Already studied today. Sleep opens another hour." : "1 time slot · 0 energy · Race IQ",
+            { type: "cafe-wifi" },
+            studied,
+            "You've already used the Wi-Fi today. Sleep opens another hour.",
+          ),
         ],
       };
     }

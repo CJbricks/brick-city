@@ -19,9 +19,17 @@
  * for the race in front of you, then adds the sponsor and the vest.
  * finishQuality uses the same score bands as the clock, so a fast time
  * and a win are the same result.
+ *
+ * A coffee note and Race IQ join that same percent. The coffee note is
+ * one run or race, then it is gone. Race IQ's help is capped in cafe.js
+ * so a high number cannot rewrite a bad race into a win. judgeBonk takes
+ * an optional chance so Race IQ can lower the maybe-bonk line without
+ * changing the sure bonk.
  */
 
 import { attributeLevel, levelFromXp } from "@/lib/xp";
+import { BONK_CHANCE } from "@/lib/constants";
+import { coffeePaceMod, courseHint, raceIqLift, readRaceIq } from "@/lib/cafe";
 import {
   carryById,
   carryTradeText,
@@ -210,12 +218,16 @@ export function fuelWarning(condition) {
  * gel. Eating one is a choice the player makes after this returns bonk,
  * in applyRace / applyRival, so a pocket gel can still save a sure DNF.
  */
-export function judgeBonk({ nutrition, sleepQuality, fatigue, roll, km }) {
+export function judgeBonk({ nutrition, sleepQuality, fatigue, roll, km, chance }) {
   const { lowFuel, poorSleep } = fuelState({ nutrition, sleepQuality, fatigue });
   if (lowFuel && poorSleep) {
     return { bonk: true, dnf: true, slowFinish: false, reason: "low-fuel-poor-sleep" };
   }
-  if ((lowFuel || poorSleep) && roll < 0.45) {
+  // `chance` is the maybe-bonk line. Race IQ lowers it, down to a cap.
+  // Callers that omit it keep the original BONK_CHANCE, so an old test
+  // roll still means the same thing. The sure bonk above is not a roll.
+  const line = typeof chance === "number" ? chance : BONK_CHANCE;
+  if ((lowFuel || poorSleep) && roll < line) {
     const dnf = km >= 8;
     return {
       bonk: true,
@@ -252,7 +264,28 @@ export function readiness(state, race) {
     loadout: loadout.lines,
     warning: fuelWarning(state.condition),
     idealLabel: race.idealLabel,
+    // Empty until Race IQ crosses a threshold. The race screen prints it
+    // before the start. It is one line, the best note unlocked so far.
+    hint: courseHint(readRaceIq(state)),
   };
+}
+
+/**
+ * The clock uses this. Gear pace, the coffee note if one is still
+ * sitting, then a Race IQ lift that cannot exceed its cap. Coffee is
+ * read here and cleared by the caller after the race is resolved, so
+ * opening this function from a test does not spend the cup.
+ */
+export function finishScore(state, race) {
+  const pace = combinedMod(state, race.style, {
+    shortRoad: race.style === "road" && (race.km || 0) <= 5.5,
+  }).mod + coffeePaceMod(state);
+  const raw =
+    (state.condition.endurance * race.ideal.endurance +
+      state.condition.peak * race.ideal.peak -
+      state.condition.fatigue * 0.3) *
+    (1 + pace);
+  return raw + raceIqLift(raw, readRaceIq(state));
 }
 
 /**
@@ -266,8 +299,8 @@ export function rivalScores(state, roll) {
   // The mile is a short road race, so a vest or a backyard shoe shows up
   // here. Starter shoes and an empty sponsor slot add zero, which keeps
   // a fresh runner's result the same as before the gear rack existed.
-  const pace = combinedMod(state, "road", { shortRoad: true }).mod;
-  const player =
+  const pace = combinedMod(state, "road", { shortRoad: true }).mod + coffeePaceMod(state);
+  const playerBase =
     speed * 8 +
     mental * 2 +
     state.condition.peak * 0.35 +
@@ -276,6 +309,9 @@ export function rivalScores(state, roll) {
     blister +
     pace * 20 +
     (roll - 0.5) * 8;
+  // Race IQ adds a capped lift on top of the mile. Coffee is already in
+  // `pace`. At 0 IQ the lift is 0, so a fresh rival score is unchanged.
+  const player = playerBase + raceIqLift(playerBase, readRaceIq(state));
   const rival = RIVAL.base + Math.max(0, levelFromXp(state.xp.overall) - 1) * 1.5;
   return { player, rival, win: player >= rival };
 }
