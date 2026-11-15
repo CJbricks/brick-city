@@ -41,7 +41,8 @@
 
 import { BUILDINGS, CITY_SIGNS, COLS, ROWS, TILE, activationTiles, buildWorld } from "@/game/town";
 import { townLights } from "@/lib/lighting";
-import { applyBrandOutfit, gearTint } from "@/game/brandColors";
+import { applyBrandOutfit, gearTint, hatColors } from "@/game/brandColors";
+import { hatById } from "@/lib/catalog";
 import { sponsoredCarry } from "@/lib/sponsors";
 
 export const RUNNER_W = 32;
@@ -579,9 +580,15 @@ function resolvePalette(palette, gender) {
  * change clothes. A gear tint is a separate field: carry and carryKind.
  * It does not replace the shirt color. The v pixels read it.
  */
-export function runnerPalette(gender, sponsorId, carry) {
+export function runnerPalette(gender, sponsorId, carry, hat) {
   const base = PALETTES[gender === "female" ? "female" : "male"] || PALETTES.male;
-  const painted = applyBrandOutfit(base, sponsorId);
+  // Copy before a hat recolor. applyBrandOutfit returns the original
+  // object when there is no shoe deal, and that object is the shared
+  // male or female palette. Editing it would recolor every runner.
+  let painted = { ...applyBrandOutfit(base, sponsorId) };
+  if (hat?.color) {
+    painted = { ...painted, cap: hat.color, panel: hat.panel || hat.color };
+  }
   if (!carry?.carry) return painted;
   return { ...painted, carry: carry.carry, carryKind: carry.carryKind || "belt" };
 }
@@ -595,7 +602,11 @@ export function runnerLook(state) {
   const worn = sponsoredCarry(state);
   const tint = worn ? gearTint(worn.id) : null;
   const carry = tint ? { carry: tint, carryKind: worn.kind } : null;
-  return runnerPalette(state?.runner?.gender, state?.sponsors?.shoe || null, carry);
+  // The cap pixels are the running hat when one is equipped. The shoe
+  // sponsor still owns the shirt. No logo is drawn, only the brand color.
+  const hatItem = hatById(state?.gear?.hat);
+  const hat = hatItem ? hatColors(hatItem.colorKey) : null;
+  return runnerPalette(state?.runner?.gender, state?.sponsors?.shoe || null, carry, hat);
 }
 
 function blitRows(ctx, ox, oy, rows, palette, gender) {
@@ -766,6 +777,24 @@ function drawFlower(ctx, x, y, salt) {
   ink(ctx, x, y + 1, 1, 1, "#fff4c2");
 }
 
+function drawDeepGrass(ctx, px, py, x, y) {
+  // Darker and taller than the town lawn, so a step reads as wild grass
+  // the way a handheld RPG's tall grass does. These pixels are original.
+  // They are not a copy of any other game's grass tile.
+  const n = hash(x, y);
+  const base = (x + y) % 2 === 0 ? "#1b5c24" : "#14491c";
+  ink(ctx, px, py, TILE, TILE, base);
+  const blades = [[3, 4], [9, 12], [16, 6], [24, 14], [7, 20], [20, 22], [13, 8]];
+  blades.forEach(([bx, by], index) => {
+    const height = 9 + (index % 3) * 2;
+    ink(ctx, px + bx, py + by, 2, height, "#0c3014");
+    ink(ctx, px + bx, py + by, 1, height - 3, "#3d8f3a");
+    if (index % 2 === 0) ink(ctx, px + bx + 2, py + by + 3, 1, height - 4, "#163e18");
+  });
+  if (n % 3 === 0) ink(ctx, px + 8, py + 5, 2, 2, "#d7e27a");
+  if (n % 4 === 0) ink(ctx, px + 22, py + 16, 2, 2, "#e6d27a");
+}
+
 function drawGrass(ctx, px, py, x, y) {
   const n = hash(x, y);
   const base = (x + y) % 2 === 0 ? "#4ea33b" : "#59b246";
@@ -897,7 +926,10 @@ function drawStep(ctx, px, py) {
 
 function dirtStyle(x, y) {
   if (x >= 12 && x <= 23 && y >= 10 && y <= 19) return "cobble";
-  if ((y >= 22 && x >= 14) || (x === 30 && y >= 3 && y <= 8)) return "pebble";
+  // Park loop, the south trail, and the mountain path are the same pebble
+  // dirt. The old check only knew the three gate tiles at x=30.
+  if (y >= 22 && x >= 14) return "pebble";
+  if (y <= 7 && x >= 27) return "pebble";
   if (x === 26 && y >= 11 && y <= 18) return "pebble";
   return "step";
 }
@@ -1002,6 +1034,9 @@ function drawTile(ctx, code, x, y, ground, waterFrame) {
       break;
     case "d":
       drawDirt(ctx, px, py, x, y);
+      break;
+    case "h":
+      drawDeepGrass(ctx, px, py, x, y);
       break;
     case "s":
       drawSidewalk(ctx, px, py, x, y);
@@ -1205,6 +1240,7 @@ export function sceneryLayout() {
     boardRect("grocery", "GROCERY", grocery.x + 78, grocery.y + 24),
     boardRect("gym", "GYM", gym.x + 78, gym.y + 8),
     boardRect("store", "RUN STORE", store.x + 48, store.y + 78),
+    boardRect("clinic", "PT", buildingOrigin("clinic").x + 108, buildingOrigin("clinic").y + 4),
     boardRect("mountain", "MOUNTAIN", 30 * TILE - 36, 6 * TILE - 30),
     // Road row above the park fence. The old y crossed into the rail's tile.
     boardRect("park", "PARK", 18 * TILE - 22, 21 * TILE + 4),
@@ -1248,7 +1284,10 @@ export function sceneryLayout() {
     hFence("store-fence", store.x + 16, store.y + 5 * TILE - 20, 7 * TILE - 40),
     hFence("park-north-west", parkX0, 22 * TILE + 18, 2 * TILE),
     hFence("park-north-east", 21 * TILE, 22 * TILE + 18, parkX1 - 21 * TILE),
-    hFence("park-south", parkX0, 28 * TILE + 4, parkX1 - parkX0),
+    // Gap at the south rail where the trail leaves the pond loop (tile x=22).
+    // One solid rail used to read as a fence across the path.
+    hFence("park-south-west", parkX0, 28 * TILE + 4, 22 * TILE - 8 - parkX0),
+    hFence("park-south-east", 23 * TILE + 8, 28 * TILE + 4, parkX1 - (23 * TILE + 8)),
     vFence("park-west", parkX0, 23 * TILE, 5 * TILE),
     vFence("park-east", 31 * TILE - 4, 23 * TILE, 5 * TILE),
     hFence("track-north", 27 * TILE + 2, 10 * TILE + 7, 7 * TILE - 8),
@@ -1290,6 +1329,36 @@ function chimney(ctx, x, y) {
 
 function panes(id) {
   return townLights().windows.filter((pane) => pane.id === id);
+}
+
+function drawStretchFigure(ctx, x, y) {
+  // A runner folded forward, hands toward the feet. A clinic mark, not a
+  // cross. The body is original pixels in the same outline style as the
+  // townspeople.
+  ink(ctx, x + 10, y, 8, 8, OUTLINE);
+  ink(ctx, x + 11, y + 1, 6, 6, "#f3c7a4");
+  ink(ctx, x + 12, y + 2, 2, 2, "#1c1c1c");
+  ink(ctx, x + 6, y + 8, 16, 6, OUTLINE);
+  ink(ctx, x + 7, y + 9, 14, 4, "#1f6f78");
+  ink(ctx, x + 4, y + 12, 6, 10, OUTLINE);
+  ink(ctx, x + 5, y + 13, 4, 8, "#1f6f78");
+  ink(ctx, x + 16, y + 12, 6, 12, OUTLINE);
+  ink(ctx, x + 17, y + 13, 4, 10, "#24366b");
+  ink(ctx, x + 8, y + 18, 8, 4, OUTLINE);
+  ink(ctx, x + 9, y + 19, 6, 2, "#f3c7a4");
+}
+
+function drawClinic(ctx, ox, oy, scene) {
+  // Pale walls, a teal roof, a PT board, and the stretch figure. The door
+  // sits on the north edge so it meets the sidewalk. No red cross.
+  shingles(ctx, ox + 20, oy + 36, 152, 40, "#2f6f78", "#1a454c", "#7eb8c4");
+  box(ctx, ox + 28, oy + 68, 136, 56, "#f4f1e8", "#fffaf2", "#8a8174");
+  doorPanel(ctx, ox + 72, oy + 2, 28, 32, "#1f6f78");
+  ink(ctx, ox + 76, oy + 8, 20, 16, "#d8f4ff");
+  ink(ctx, ox + 84, oy + 10, 4, 8, "#1f6f78");
+  drawStretchFigure(ctx, ox + 36, oy + 78);
+  windowPane(ctx, ox + 108, oy + 78, 28, 22);
+  paintBoard(ctx, scenePart(scene, "clinic"));
 }
 
 function drawHome(ctx, ox, oy, scene) {
@@ -1525,6 +1594,7 @@ export function renderWorld(state, waterFrame = 0) {
     if (building.id === "grocery") drawGrocery(ctx, px, py, scene);
     if (building.id === "gym") drawGym(ctx, px, py, scene);
     if (building.id === "store") drawStore(ctx, px, py, scene);
+    if (building.id === "clinic") drawClinic(ctx, px, py, scene);
   }
   drawFountain(ctx, waterFrame);
   drawGate(ctx, world.mountainOpen, scene);

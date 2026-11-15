@@ -262,7 +262,9 @@ describe("gear sponsors", () => {
       "naked",
       "satisfy-gear",
     ]);
-    const brands = new Set(Object.values(CARRY).map((item) => item.brand));
+    // Wild finds are unbranded. They are not a sponsor, so they are not
+    // part of this list. A store belt or vest still has to match a deal.
+    const brands = new Set(Object.values(CARRY).filter((item) => !item.wild).map((item) => item.brand));
     expect(GEAR_SPONSOR_IDS.map((id) => sponsorById("gear", id).name).sort()).toEqual([...brands].sort());
     for (const id of GEAR_SPONSOR_IDS) {
       const deal = sponsorById("gear", id);

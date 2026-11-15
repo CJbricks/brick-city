@@ -39,17 +39,26 @@
  * cityMaps() is the list of overworlds that actually exist. Brick City
  * is the only one. Ridgeview, Lakeport, Mesa Verde Flats, Flatland, and
  * Summit Hollow are names in the design. They are in UNBUILT_CITIES and
- * have no tiles.
+ * have no tiles. Each of those records still names a PT clinic, so a
+ * later map has a place to put the door. Summit Hollow's clinic is the
+ * expensive one.
+ *
+ * The park trail keeps the pond loop and then winds south through tall
+ * grass. The mountain trail keeps the gate at x=30 and then winds east
+ * through the rocks. Both are one connected walk. Deep grass is the
+ * letter h. It is walkable. Stepping on it can find an item (forage.js).
  */
 
-import { CITY_INFO } from "@/lib/constants";
+import { CITIES, CITY_INFO } from "@/lib/constants";
 import { isMountainOpen } from "@/lib/unlocks";
 
 export { CITY_INFO };
 
 export const TILE = 32;
-export const COLS = 36;
-export const ROWS = 30;
+// Wider and taller than the old 36×30 town so the two trails have room
+// to branch. The buildings, roads, and doors stay on their old tiles.
+export const COLS = 48;
+export const ROWS = 46;
 
 export const DIR = {
   down: [0, 1],
@@ -58,13 +67,17 @@ export const DIR = {
   right: [1, 0],
 };
 
-const WALK = new Set(["r", "d", "k", "i", "x", "s"]);
+const WALK = new Set(["r", "d", "k", "i", "x", "s", "h"]);
 
 export const BUILDINGS = [
   { id: "home", x: 2, y: 2, w: 7, h: 5, door: { x: 5, y: 6 } },
   { id: "grocery", x: 14, y: 2, w: 8, h: 5, door: { x: 17, y: 6 } },
   { id: "gym", x: 2, y: 11, w: 7, h: 7, door: { x: 8, y: 14 } },
   { id: "store", x: 2, y: 23, w: 7, h: 5, door: { x: 5, y: 23 } },
+  // East of the upper road, past the track. Door faces north onto the
+  // sidewalk at y=10, the same idea as Home's mat between the door and
+  // the street. The sign says PT. It is not a red cross.
+  { id: "clinic", x: 38, y: 11, w: 6, h: 4, door: { x: 40, y: 11 } },
 ];
 
 /**
@@ -159,15 +172,19 @@ export const PLACES = [
   { id: "track", name: "Local Track", tx: 26, ty: 12, facing: "right" },
   { id: "mountain", name: "Mountain Gate", tx: 30, ty: 8, facing: "up", lock: "mountain" },
   { id: "depot", name: "World Depot", tx: 19, ty: 17, facing: "up" },
+  { id: "clinic", name: "PT Clinic", tx: 40, ty: 10, facing: "down" },
 ];
 
 const NPCS = [
   {
     id: "ranger",
     name: "Ranger Inez Quill",
-    tx: 30,
+    // One tile east of the gate path. Standing on (30, 7) used to block
+    // the only step onto the trail. (29, 7) used to be a city-sign post,
+    // so the ranger is not put back on that tile either.
+    tx: 31,
     ty: 7,
-    facing: "down",
+    facing: "left",
     palette: "ranger",
     gender: "female",
     location: "mountain",
@@ -237,6 +254,143 @@ function stamp(grid, x, y, rows, codes) {
   });
 }
 
+/**
+ * Mountain trail, origin (27, 1). Each string is one row, x=27 through
+ * x=46. d is the pebble path, h is deep grass, o is rock, and "." means
+ * "do not paint over this tile".
+ *
+ * The path enters only through (30, 6), the old gate corridor, and then
+ * bends east. (33, 1), (44, 1), (40, 3), and (42, 6) are dead ends: each
+ * has a single walkable neighbor. The h tiles are side pockets off that
+ * path. Row y=7 is a rock wall except the gate gap (left alone, it is
+ * already the sidewalk). The ranger stands on the rock at (31, 7), so
+ * the road east of the gate cannot walk into the trail from the side.
+ */
+export const MOUNTAIN_ORIGIN = { tx: 27, ty: 1 };
+
+export const MOUNTAIN_PLAN = [
+  "oooooodoooooooooodoo",
+  "oohddddddddhoohhhdho",
+  "oohdhdhhhhddddoohdoo",
+  "oohdddhhohdhhooohdoo",
+  "oohdohhohhddddddddho",
+  "ooodooohhhhhhoodoooo",
+  "ooo.oooooooooooooooo",
+];
+
+export function mountainTrailCells() {
+  const cells = [];
+  MOUNTAIN_PLAN.forEach((row, yy) => {
+    [...row].forEach((ch, xx) => {
+      if (ch !== "d" && ch !== "h") return;
+      cells.push({
+        tx: MOUNTAIN_ORIGIN.tx + xx,
+        ty: MOUNTAIN_ORIGIN.ty + yy,
+        code: ch,
+      });
+    });
+  });
+  return cells;
+}
+
+function stampMountain(grid) {
+  MOUNTAIN_PLAN.forEach((row, yy) => {
+    [...row].forEach((ch, xx) => {
+      if (ch === ".") return;
+      const tx = MOUNTAIN_ORIGIN.tx + xx;
+      const ty = MOUNTAIN_ORIGIN.ty + yy;
+      if (ty >= 0 && ty < ROWS && tx >= 0 && tx < COLS) grid[ty][tx] = ch;
+    });
+  });
+}
+
+/**
+ * Draw an orthogonal path. x changes first, then y, so a call that
+ * names two corners becomes an L of tiles that share full edges.
+ * A diagonal of single tiles would look connected and still stop the feet.
+ */
+function orthoLine(x0, y0, x1, y1) {
+  const points = [];
+  let x = x0;
+  let y = y0;
+  points.push([x, y]);
+  while (x !== x1) {
+    x += Math.sign(x1 - x);
+    points.push([x, y]);
+  }
+  while (y !== y1) {
+    y += Math.sign(y1 - y);
+    points.push([x, y]);
+  }
+  return points;
+}
+
+function paintCodes(grid, points, code) {
+  for (const [x, y] of points) {
+    if (y >= 0 && y < ROWS && x >= 0 && x < COLS) grid[y][x] = code;
+  }
+}
+
+function paintGrassWhereEmpty(grid, points) {
+  for (const [x, y] of points) {
+    if (y < 0 || y >= ROWS || x < 0 || x >= COLS) continue;
+    if (grid[y][x] === "g") grid[y][x] = "h";
+  }
+}
+
+/**
+ * The pond loop stays where it was. This adds the south trail: one main
+ * path from (22, 27) down to a dead end at (22, 42), plus side branches
+ * that stop, plus deep grass beside the path but not beside a tip (a
+ * grass tile next to a tip would stop it being a dead end).
+ */
+function layParkTrail(grid) {
+  const segments = [
+    [22, 28, 22, 30],
+    [22, 30, 27, 30],
+    [27, 30, 27, 33],
+    [27, 33, 19, 33],
+    [19, 33, 19, 36],
+    [19, 36, 26, 36],
+    [26, 36, 26, 39],
+    [26, 39, 17, 39],
+    [17, 39, 17, 42],
+    [17, 42, 22, 42],
+    // Branches. The last tile of each is a dead end.
+    [25, 30, 25, 29],
+    [25, 29, 28, 29],
+    [19, 33, 14, 33],
+    [24, 36, 24, 38],
+    [20, 39, 20, 41],
+    [27, 32, 32, 32],
+    [32, 32, 32, 34],
+    // East of the pond loop. (33, 25) is the tip.
+    [30, 25, 33, 25],
+  ];
+  for (const [x0, y0, x1, y1] of segments) {
+    paintCodes(grid, orthoLine(x0, y0, x1, y1), "d");
+  }
+  // Side pockets of tall grass. None of these touch a dead-end tip.
+  const grass = [
+    [21, 28], [21, 29], [23, 28], [23, 29], [24, 29],
+    [21, 30], [21, 31], [20, 31], [20, 30],
+    [20, 34], [21, 34], [22, 34], [23, 34], [24, 34], [25, 34],
+    [27, 34], [27, 35], [27, 36], [28, 35], [28, 36],
+    [18, 40], [19, 40], [21, 40], [22, 40], [23, 40],
+    [16, 40], [16, 41], [15, 40],
+    [31, 24], [31, 26], [32, 26],
+  ];
+  paintGrassWhereEmpty(grid, grass);
+  // Inside the old pond loop, the lawn between the path and the water
+  // becomes tall grass you can step into. Trees and the water stay.
+  for (let y = 24; y <= 26; y += 1) {
+    for (let x = 17; x <= 23; x += 1) {
+      if (grid[y][x] === "g") grid[y][x] = "h";
+    }
+    if (grid[y][29] === "g") grid[y][29] = "h";
+  }
+}
+
 export function createGround() {
   const grid = blank();
   fillRect(grid, 0, 0, COLS, 1, "t");
@@ -246,7 +400,8 @@ export function createGround() {
 
   // Two east-west streets and two north-south streets. The blocks between
   // them are the buildings. Doors sit on the grass strip just off the road.
-  hRoad(grid, 8, 2, 33);
+  // The upper street runs east to the PT clinic. The old end was x=33.
+  hRoad(grid, 8, 2, 44);
   hRoad(grid, 20, 2, 33);
   vRoad(grid, 10, 2, 27);
   vRoad(grid, 24, 2, 27);
@@ -282,12 +437,12 @@ export function createGround() {
     [28, 6], [29, 6], [31, 6], [32, 6],
   ];
   for (const [x, y] of rocks) grid[y][x] = "o";
-  // The trail corridor behind the gate. The gate tile itself is x30,y6.
-  grid[4][30] = "d";
-  grid[5][30] = "d";
-  grid[6][30] = "d";
-  grid[3][30] = "o";
+  // The gate approach. stampMountain leaves this tile alone (the "."
+  // in the plan) and paints the trail north and east of it. pave()
+  // below turns this dirt into the sidewalk you stand on to enter.
   grid[7][30] = "d";
+  stampMountain(grid);
+  layParkTrail(grid);
 
   // Continuous oval. See TRACK_ROWS. The sidewalk column x = 26 is
   // paved just below, and TRACK_GATE is the walk from that sidewalk
@@ -310,12 +465,15 @@ export function createGround() {
   for (let x = 12; x <= 23; x += 1) pave(x, 22);
   for (let y = 10; y <= 19; y += 1) pave(26, y);
   pave(30, 7);
+  // Sidewalk from the upper street down to the clinic door. The road
+  // is y=8 and y=9. This row is the mat, the same gap Home uses.
+  for (let x = 34; x <= 44; x += 1) pave(x, 10);
   for (let y = 17; y <= 19; y += 1) pave(19, y);
 
   return grid;
 }
 
-const BUILDING_DOORS = new Set(["home", "grocery", "gym", "store"]);
+const BUILDING_DOORS = new Set(["home", "grocery", "gym", "store", "clinic"]);
 
 /**
  * The walkable mat in front of a building door. Park, the track, the
@@ -381,12 +539,14 @@ export function buildWorld(state) {
     }
   }
 
-  // Fountain tiles use "n" which is already not in WALK. Gate:
-  // closed, the gate and the ridge path stay blocked. Open, you can
-  // step through and look up the trail. The run itself is still a menu.
-  blocked[6][30] = !mountainOpen;
-  blocked[5][30] = !mountainOpen;
-  blocked[4][30] = !mountainOpen;
+  // Fountain tiles use "n" which is already not in WALK. The whole
+  // mountain trail, not just the three old corridor tiles, stays a wall
+  // until the gate opens. The sidewalk at (30, 7) is not in this list,
+  // so you can still walk up to the ranger and read the closed gate.
+  const mountainTrail = mountainTrailCells();
+  if (!mountainOpen) {
+    for (const cell of mountainTrail) blocked[cell.ty][cell.tx] = true;
+  }
 
   const interact = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
   for (const place of PLACES) {
@@ -427,6 +587,7 @@ export function buildWorld(state) {
     places: PLACES,
     signs: CITY_SIGNS,
     mountainOpen,
+    mountainTrail,
   };
 }
 
@@ -436,13 +597,9 @@ export function buildWorld(state) {
  * collide with. When one of these gets a map, add it to cityMaps()
  * with exactly one welcome sign and take it off this list.
  */
-export const UNBUILT_CITIES = [
-  { id: "ridgeview", name: "Ridgeview" },
-  { id: "lakeport", name: "Lakeport" },
-  { id: "mesa-verde-flats", name: "Mesa Verde Flats" },
-  { id: "flatland", name: "Flatland" },
-  { id: "summit-hollow", name: "Summit Hollow" },
-];
+export const UNBUILT_CITIES = Object.values(CITIES)
+  .filter((city) => !city.built)
+  .map((city) => ({ id: city.id, name: city.name, clinic: city.clinic }));
 
 /**
  * Every overworld the game can build. The sign test loops this list,
@@ -543,6 +700,35 @@ export function placeIsLocked(place, state) {
  * Breadth-first search used by the "can I walk there?" test and, later,
  * if we want the game to refuse a broken quick-travel point.
  */
+/**
+ * Every walkable tile the home mat cannot reach. The trail test uses
+ * this so a branch that only touches a path on a diagonal (the feet
+ * cannot take that step) fails instead of looking connected on the map.
+ */
+export function unreachableTiles(world, from) {
+  const seen = new Set([`${from.tx},${from.ty}`]);
+  const queue = [from];
+  while (queue.length) {
+    const current = queue.shift();
+    for (const [dx, dy] of Object.values(DIR)) {
+      const tx = current.tx + dx;
+      const ty = current.ty + dy;
+      const key = `${tx},${ty}`;
+      if (seen.has(key) || isBlocked(world, tx, ty)) continue;
+      seen.add(key);
+      queue.push({ tx, ty });
+    }
+  }
+  const missing = [];
+  for (let ty = 0; ty < ROWS; ty += 1) {
+    for (let tx = 0; tx < COLS; tx += 1) {
+      if (isBlocked(world, tx, ty)) continue;
+      if (!seen.has(`${tx},${ty}`)) missing.push({ tx, ty, code: world.ground[ty][tx] });
+    }
+  }
+  return missing;
+}
+
 export function canReach(world, from, to) {
   if (from.tx === to.tx && from.ty === to.ty) return true;
   const seen = new Set([`${from.tx},${from.ty}`]);

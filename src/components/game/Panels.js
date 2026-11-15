@@ -268,7 +268,8 @@ export function HelpView({ onClose }) {
       <p>Walk up to a door or a person and press A.</p>
       <p>Sleep at home ends the day. Sunday night writes the weekly summary.</p>
       <p>Low nutrition and poor sleep together will bonk you out of a race.</p>
-      <p>Shoes change one style and cost you in the others. A belt is +5 max nutrition. A vest is +10, with a small penalty in short road races.</p>
+      <p>Shoes change one style and cost you in the others. A belt is +5 max nutrition. A vest is +10, with a small penalty in short road races. Socks and a hat trim a little fatigue.</p>
+      <p>Tall grass in the park and on the mountain trail can hide a find. The PT clinic treats a real injury. A protein shake only eases soreness.</p>
       <p>Brands offer deals after a result. Accept or decline in Sponsors. An offer lasts 3 days. You can hold one shoe sponsor, one nutrition sponsor, and one gear sponsor. A gear deal covers the belt and vest from that brand.</p>
       <Button className="gbc-btn" onClick={onClose}>Close</Button>
     </Window>

@@ -637,6 +637,66 @@ The favicon is separate. It still comes from `src/app/icon.png` and `src/app/fav
 
 After a deploy, check the card before sharing the link. Open [opengraph.xyz](https://www.opengraph.xyz/), paste `https://brick-city-five.vercel.app`, and look at the picture, the headline, and the sentence. The site fetches the live page the way a chat app does. If the picture is missing, view the page source and find `og:image`. It should be that absolute URL, and `public/og-image.png` should be in the deploy. A local check is `npm run build`, then `npm start`, then open the page source on the URL the server prints. The tags already name the production host, because `metadataBase` is that host, so the picture URL is absolute even when the page is served from your own machine.
 
+## Trails, tall grass, and the things you can wear
+
+The town is bigger than the first map. The buildings did not move. South of the park pond, the dirt path keeps going: one main line, a few branches that stop, and patches of tall grass beside it. East of the mountain gate, the old three-tile corridor opens into the same kind of path. The gate is still shut until level 8, five park trail runs, and trail shoes. The ranger stands one tile west of the path so you can actually walk through.
+
+Tall grass is the dark green tile. Stepping onto a new one rolls once. Most steps find nothing. The park is about 1 in 22. The mountain is about 1 in 14, and when it does find something it is a bit more likely to be a protein shake or a plain belt or vest. You can find three things a day. Sleep puts that count back to zero. The words on screen are `You found ...!`
+
+| Find | How often | What it does |
+|---|---|---|
+| A gel | Common | Joins the gel pocket. Eat it for +1 energy, same as a store gel. |
+| Running socks | Common | Goes to the closet. The plain pair. |
+| A soft flask | Uncommon | Drink it from Inventory. The next race starts with +2 nutrition, then the bonus is gone. |
+| A protein shake | Rare | Drink it for −16 fatigue and it clears the sore flag. 0 energy. It does not heal a blister. |
+| Generic belt or vest | Very rare | Weaker than the store. Belt is +3 max food (a store belt is +5). Vest is +7 (a store vest is +10) and a little slower in a short road race. |
+
+A second copy of socks or a plain belt you already own becomes a gel instead, so the step is not wasted.
+
+### Socks and hats
+
+The Run Store sock wall is the same wall the shift question talks about. You wear one pair.
+
+| Pair | Price | Bonus |
+|---|---|---|
+| Running socks | 8 | −2 fatigue on a long ultra |
+| Balega | 16 | −3 |
+| Feetures | 18 | −3 |
+| Injinji | 20 | −3, and worn-out shoes are less likely to blister |
+| Darn Tough | 22 | −4, and the same blister help |
+
+A long ultra here is the long run and ridge repeats. Those are the sessions already marked `longUltra`, the same ones a marathon shoe taxes. A short park loop does not get the sock bonus.
+
+Hats are on the same counter. There is no weather, so a hat cannot check the sun. It takes a little fatigue off any run that adds fatigue. A recovery jog is left alone. The cap on the runner sprite is recolored to the brand. There is no logo.
+
+| Hat | Price | Bonus |
+|---|---|---|
+| rnnr | 24 | −1 fatigue |
+| Bandit | 26 | −1 |
+| Ciele | 28 | −2 |
+| BPN | 30 | −2 |
+| Nike ACG | 32 | −2 |
+
+### Protein shake and BPN gels
+
+The shake is 16 coins at the Run Store, 0 energy, and it is also a rare grass find. It lowers fatigue by 16 and turns the sore warning off. A blister (`condition.injury`, with nights left) is a different problem. The clinic handles that.
+
+BPN gels sit next to Stride Fuel at the grocery and on the Run Store gel row. They cost 14 coins before a deal. They go in the same pocket, so eating one is still +1 energy and +12 food. A nutrition sponsor's gel discount applies to them the same way it applies to Stride Fuel. A BPN deal is 25% off, so the gel is 11 coins.
+
+### The PT clinic
+
+Brick City has a clinic east of the upper street, past the track. The sign says PT. The picture on the wall is a person stretching. It is not a red cross.
+
+| Visit | Cost in Brick City | What it does |
+|---|---|---|
+| Treatment | 22 coins and 1 energy | Only if you are injured. Cuts 2 nights off the injury. At 0 nights the injury and the sore flag clear. Refuses, and does not take the coins, if the chart is clear. Once a day. |
+| Soft tissue | 10 coins, 0 energy | Clears soreness and takes 12 fatigue off. |
+| Injury screen | Free | Tells you the injury, whether you are sore, and if hard weeks are stacking up. |
+
+Sleep is what lets you book treatment again. The other cities are not maps yet. Their clinic prices are already written down so the future maps have them. Summit Hollow is the expensive one: treatment is 40 coins, more than Ridgeview, Lakeport, Mesa Verde Flats, or Flatland. That matches the Summit Store, which already sells gear for more than any other city.
+
+An old `brick-city-save-v1` file has no sock slot, no hat, no shakes, and no find counter. Resume fills those with empty and zero. The version stays 1.
+
 ## What this build does not do yet
 
 The half marathon itself, backyard race events, the other cities, and real-life run logging are in the design and not in this build. The menus mention the locked ones so the path is visible. Shoe sponsors and nutrition sponsors are in this private prototype. The fictional brand ladder in the README is the public-release plan.

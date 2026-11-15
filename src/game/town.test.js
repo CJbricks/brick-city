@@ -13,7 +13,9 @@
 import { describe, expect, it } from "vitest";
 import { createNewGame } from "@/lib/activities";
 import { paintActivationPads, sceneryLayout, tilesTouchedBy } from "@/game/art";
-import { COLS, DIR, ROWS, TRACK_GATE, TRACK_SIGN_TILES, UNBUILT_CITIES, activationTiles, buildWorld, canReach, cityMaps, entranceAt, footBlocked, homeSpawn, isBlocked, lookupInteract, noteArrival, PLACES, TILE, signCopy, trackLaneTiles, worldPixelSize } from "@/game/town";
+import { COLS, DIR, ROWS, TRACK_GATE, TRACK_SIGN_TILES, UNBUILT_CITIES, activationTiles, buildWorld, canReach, cityMaps, entranceAt, footBlocked, homeSpawn, isBlocked, lookupInteract, noteArrival, PLACES, TILE, signCopy, trackLaneTiles, unreachableTiles, worldPixelSize } from "@/game/town";
+import { clinicRates } from "@/lib/constants";
+import { xpToReachLevel } from "@/lib/xp";
 import { deserialize } from "@/lib/save";
 
 function citySignsOnMap(world) {
@@ -181,6 +183,66 @@ describe("town paths", () => {
     expect(park.entered).toBeNull();
     const gate = noteArrival({ tx: 30, ty: 9 }, { tx: 30, ty: 8 }, true);
     expect(gate.entered).toBeNull();
+    expect(entranceAt(40, 10)).toBe("clinic");
+  });
+
+  it("keeps every walkable tile reachable, including the trails and the clinic", () => {
+    const closed = buildWorld(createNewGame({ name: "Ada", gender: "female" }));
+    const home = homeSpawn();
+    const origin = { tx: Math.floor(home.x / TILE), ty: Math.floor(home.y / TILE) };
+    // A tile that only touches the path on a corner is not reachable.
+    // The search steps up, down, left, and right, the same way the feet do.
+    expect(unreachableTiles(closed, origin)).toEqual([]);
+    expect(closed.ground.some((row) => row.includes("h"))).toBe(true);
+    expect(canReach(closed, origin, { tx: 40, ty: 10 })).toBe(true);
+    expect(lookupInteract(closed, 40, 10, "down")).toBe("clinic");
+
+    const openState = createNewGame({ name: "Ada", gender: "female" });
+    openState.xp.overall = xpToReachLevel(8);
+    openState.progress.parkTrailRuns = 5;
+    openState.gear.equipped = "trail";
+    const open = buildWorld(openState);
+    expect(open.mountainOpen).toBe(true);
+    expect(unreachableTiles(open, origin)).toEqual([]);
+    const parkGrass = [];
+    const mountainGrass = [];
+    for (let ty = 0; ty < ROWS; ty += 1) {
+      for (let tx = 0; tx < COLS; tx += 1) {
+        if (open.ground[ty][tx] !== "h") continue;
+        if (ty >= 22) parkGrass.push({ tx, ty });
+        if (ty <= 6) mountainGrass.push({ tx, ty });
+      }
+    }
+    expect(parkGrass.length).toBeGreaterThan(8);
+    expect(mountainGrass.length).toBeGreaterThan(8);
+    // A dead end is a walkable tile with exactly one walkable neighbor.
+    const deadEnds = (tiles) => tiles.filter((tile) => {
+      if (isBlocked(open, tile.tx, tile.ty)) return false;
+      const neighbors = Object.values(DIR).filter(([dx, dy]) => !isBlocked(open, tile.tx + dx, tile.ty + dy));
+      return neighbors.length === 1;
+    });
+    const parkWalkable = [];
+    for (let ty = 28; ty < ROWS; ty += 1) {
+      for (let tx = 0; tx < COLS; tx += 1) {
+        if (!isBlocked(open, tx, ty)) parkWalkable.push({ tx, ty });
+      }
+    }
+    expect(deadEnds(parkWalkable).length).toBeGreaterThan(0);
+    expect(deadEnds(open.mountainTrail).length).toBeGreaterThan(0);
+    for (const cell of closed.mountainTrail) {
+      expect(isBlocked(closed, cell.tx, cell.ty), `${cell.tx},${cell.ty}`).toBe(true);
+      expect(isBlocked(open, cell.tx, cell.ty), `${cell.tx},${cell.ty} open`).toBe(false);
+    }
+  });
+
+  it("plans a PT clinic for every unbuilt city, with Summit Hollow the priciest", () => {
+    expect(UNBUILT_CITIES.length).toBeGreaterThan(0);
+    const prices = UNBUILT_CITIES.map((city) => city.clinic.treatment);
+    expect(prices.every((price) => price > 0)).toBe(true);
+    const summit = UNBUILT_CITIES.find((city) => city.id === "summit-hollow");
+    expect(summit.clinic.treatment).toBe(clinicRates("summit-hollow").treatment);
+    expect(summit.clinic.treatment).toBeGreaterThan(clinicRates("brick-city").treatment);
+    expect(summit.clinic.treatment).toBe(Math.max(...prices, clinicRates("brick-city").treatment));
   });
 });
 

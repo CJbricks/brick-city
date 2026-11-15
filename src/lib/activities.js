@@ -29,14 +29,25 @@
  * Run Store work is one board row, "Work a shift", and it still costs
  * 1 energy. The questions are a deck in shifts.js. This file asks which
  * card is up, checks that the answer belongs to that card, then pays it.
+ *
+ * Socks, hats, protein shakes, BPN gels, and the PT clinic are buttons
+ * in this file too. The numbers live in catalog.js and constants.js.
+ * Tall-grass finds live in forage.js. Sleep is what zeroes the find
+ * counter and the one-treatment-a-day flag.
  */
 
 import { formatWhen, isSunday, sleepPlan, slotFromEnergy, slotLabel, summarizeWeek } from "@/lib/calendar";
 import {
   FREE_HOME_MEALS,
   FREE_HOME_SNACKS,
+  BPN_GEL_COST,
+  CLINIC_TREATMENT_NIGHTS,
+  FLASK_RACE_BONUS,
   GEL_ENERGY,
   GEL_NUTRITION,
+  PROTEIN_FATIGUE_RELIEF,
+  SHAKE_COST,
+  TISSUE_FATIGUE_RELIEF,
   HARD_WEEK_AVG_FATIGUE,
   HOME_SNACK_NUTRITION,
   MAX_ENERGY,
@@ -63,14 +74,22 @@ import {
 import { clampMeter, formatTicker, meterDelta, readMeters, slotDrain } from "@/lib/condition";
 import { detrainingDelta, detrainingNote } from "@/lib/detrain";
 import {
+  HATS,
+  SOCKS,
   carryById,
   carryNutrition,
   carryTradeText,
   CARRY,
+  hatById,
+  hatTradeText,
+  isKnownHat,
   isKnownShoe,
+  isKnownSock,
   maxNutritionFromGear,
   shoeTradeText,
   shoesOfStyle,
+  sockById,
+  sockTradeText,
   styleLabel,
   wearPercent,
 } from "@/lib/catalog";
@@ -130,6 +149,7 @@ import {
 import { levelFromXp } from "@/lib/xp";
 import { JOBS, currentShift, noteShiftWorked, resolveShift, rollShiftOnSleep } from "@/lib/shifts";
 import { TILE, homeSpawn } from "@/game/town";
+import { injuryScreenLines, ratesFor } from "@/lib/clinic";
 
 export { JOBS, SHIFT_POOL, currentShift } from "@/lib/shifts";
 
@@ -163,8 +183,27 @@ export const SHOP = {
     label: "Stride Fuel gel",
     detail: "12 coins · 0 energy",
     cost: 12,
+    kind: "gel",
     energy: 0,
     lines: ["You tuck a gel in the pocket. It costs no energy. Eat it from Inventory for +1 block, or save it for a bonk."],
+  },
+  "bpn-gel": {
+    id: "bpn-gel",
+    label: "BPN gel",
+    detail: `${BPN_GEL_COST} coins · 0 energy`,
+    cost: BPN_GEL_COST,
+    kind: "gel",
+    energy: 0,
+    lines: ["You tuck a BPN gel in the pocket. It costs no energy. It eats like any other gel, and a nutrition sponsor discounts it the same way."],
+  },
+  shake: {
+    id: "shake",
+    label: "Protein shake",
+    detail: `${SHAKE_COST} coins · 0 energy · eases fatigue and soreness`,
+    cost: SHAKE_COST,
+    kind: "shake",
+    energy: 0,
+    lines: ["A protein shake. 0 energy. Drink it from Inventory to ease fatigue and clear soreness. It does not heal a blister. That is the clinic."],
   },
 };
 
@@ -455,6 +494,10 @@ export function createNewGame({ name, gender }) {
       // Finished shifts since wake-up. Looking at a card does not count.
       // Sleep is what sets this back to 0.
       shiftsToday: 0,
+      // Tall-grass finds since wake-up. Sleep sets this back to 0.
+      findsToday: 0,
+      // The PT table books one treatment a day. Sleep clears it.
+      clinicTreated: false,
     },
     coins: START_COINS,
     gear: {
@@ -464,10 +507,19 @@ export function createNewGame({ name, gender }) {
       // One fuel slot. null means pockets only, max nutrition 100.
       carry: null,
       ownedCarry: [],
+      // Empty until you buy a pair or find one in the grass.
+      socks: null,
+      ownedSocks: [],
+      hat: null,
+      ownedHats: [],
     },
     // No deal on day one. The Sponsors menu explains what is still locked.
     sponsors: emptySponsors(),
     gels: 0,
+    shakes: 0,
+    flasks: 0,
+    // Nutrition armed for the next race by drinking a soft flask. 0 means none.
+    flaskReady: 0,
     energy: MAX_ENERGY,
     nappedToday: false,
     // 0, 1, or 2. The boolean above is the old save flag. Both reset on sleep.
@@ -625,6 +677,24 @@ function applyShoeSideEffects(state, activity) {
   if (Object.keys(extra).length) addAttributes(state, extra);
 }
 
+/**
+ * Hats and socks. A hat trims fatigue on any session that adds fatigue.
+ * That is the sun/heat bonus: there is no weather meter, so the hat
+ * cannot check the sky. Socks only help a long ultra, and only after
+ * the shoe's own ultra tax has been added, so the pair can offset it.
+ * A recovery jog (negative fatigue) is left alone.
+ */
+function applyWornExtras(state, activity) {
+  const hat = hatById(state.gear?.hat);
+  if (hat?.heatCut && activity.fatigue > 0) {
+    state.condition.fatigue = clampMeter(state.condition.fatigue - hat.heatCut);
+  }
+  const sock = sockById(state.gear?.socks);
+  if (sock?.ultraFatigueCut && activity.longUltra && activity.fatigue > 0) {
+    state.condition.fatigue = clampMeter(state.condition.fatigue - sock.ultraFatigueCut);
+  }
+}
+
 function addXp(state, xp) {
   for (const key of XP_KEYS) {
     const amount = xp[key] || 0;
@@ -661,7 +731,10 @@ function markTraining(state, activity) {
  * Training again while sore, with another strike still true, becomes a blister.
  */
 export function nextSoreness(state, activity) {
-  const worn = shoeWear(state.gear).label === "worn out";
+  // Good socks ignore the worn-out-shoe strike. The other strikes
+  // (tired, hungry, a hard session, a hard week) still count.
+  const shielded = Boolean(sockById(state.gear?.socks)?.blisterShield);
+  const worn = shoeWear(state.gear).label === "worn out" && !shielded;
   const strikes = [
     state.condition.fatigue >= 70,
     state.condition.nutrition < 30,
@@ -731,6 +804,7 @@ export function applyRun(state, runId, rng = Math.random) {
   grantXp(next, activity.xp, activity.style);
   addAttributes(next, activity.attributes);
   applyShoeSideEffects(next, activity);
+  applyWornExtras(next, activity);
   markTraining(next, activity);
   const sore = nextSoreness(next, activity);
   next.condition.sore = sore.sore;
@@ -877,6 +951,10 @@ export function applySleep(state) {
   next.calendar.homeSnacks = 0;
   next.calendar.homeMealUsed = false;
   next.calendar.homeSnackUsed = false;
+  // Tall grass and the PT table both start the morning fresh. Buying
+  // a shake does not. Only sleep does, same as meals and naps.
+  next.calendar.findsToday = 0;
+  next.calendar.clinicTreated = false;
   next.calendar.slot = slotFromEnergy(MAX_ENERGY);
   next.calendar.trainedToday = false;
   lines.push("Energy is back to 10/10.");
@@ -953,7 +1031,10 @@ export function applyPurchase(state, itemId) {
   // Food, gels, and gear are fueling. They cost coins, never an energy block,
   // so eating cannot make you too tired to eat. A nutrition sponsor can
   // discount the gel. The meal prices stay put.
-  const price = itemId === "gel" ? pricedGel(state, item.cost) : { cost: item.cost, name: null };
+  // Stride Fuel and BPN gels share pricedGel, so a BPN deal (or any
+  // nutrition deal with a gel discount) covers both. The shake does not.
+  const gel = item.kind === "gel";
+  const price = gel ? pricedGel(state, item.cost) : { cost: item.cost, name: null };
   if (state.coins < price.cost) {
     return refuse(state, [`You need ${price.cost} coins. A shift at the Run Store would cover it.`]);
   }
@@ -961,9 +1042,11 @@ export function applyPurchase(state, itemId) {
   const next = clone(state);
   next.coins -= price.cost;
   const lines = [...item.lines];
-  if (itemId === "gel") {
+  if (gel) {
     next.gels += 1;
     if (price.name) lines.push(`${price.name} covers part of the gel. You pay ${price.cost} coins.`);
+  } else if (item.kind === "shake") {
+    next.shakes = (next.shakes || 0) + 1;
   } else {
     next.condition.nutrition = clampFood(next, next.condition.nutrition + item.nutrition);
     next.condition.mealName = item.mealName;
@@ -1230,15 +1313,24 @@ function applyRescueGel(state) {
   shiftSlot(state, had);
 }
 
+function flaskBonus(state) {
+  const value = state?.flaskReady;
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return Math.max(0, value);
+}
+
 function addRaceFuel(state) {
-  const bonus = nutritionTuning(state).raceFuel;
+  // The flask is drunk at the gun, then cleared, even if the race goes
+  // badly. It was already in the bottle. A sponsor's race fuel stacks.
+  const bonus = (nutritionTuning(state).raceFuel || 0) + flaskBonus(state);
+  if (flaskBonus(state)) state.flaskReady = 0;
   if (!bonus) return 0;
   state.condition.nutrition = clampFood(state, state.condition.nutrition + bonus);
   return bonus;
 }
 
 function raceStartNutrition(state) {
-  const bonus = nutritionTuning(state).raceFuel;
+  const bonus = (nutritionTuning(state).raceFuel || 0) + flaskBonus(state);
   if (!bonus) return state.condition.nutrition;
   return Math.min(maxNutritionFromGear(state.gear), state.condition.nutrition + bonus);
 }
@@ -1680,6 +1772,155 @@ export function acknowledgeWeek(state) {
   return next;
 }
 
+export function applyProtein(state) {
+  // 0 energy. The sore flag is the ache. A blister (condition.injury)
+  // is a real injury and stays until sleep or the PT clinic. The shake
+  // does not pretend to be a treatment.
+  if ((state.shakes || 0) <= 0) return refuse(state, ["No protein shake in the pocket."]);
+  const before = state;
+  const next = clone(state);
+  next.shakes -= 1;
+  next.condition.fatigue = clampMeter(next.condition.fatigue - PROTEIN_FATIGUE_RELIEF);
+  const lines = [`You drink a protein shake. Fatigue eases by ${PROTEIN_FATIGUE_RELIEF}. It costs no energy.`];
+  if (next.condition.sore) {
+    next.condition.sore = false;
+    lines.push("The soreness fades. A blister, if you have one, is still there.");
+  }
+  sample(next);
+  return finish(before, next, lines);
+}
+
+export function applyFlask(state) {
+  if ((state.flasks || 0) <= 0) return refuse(state, ["No soft flask in the pocket."]);
+  const before = state;
+  const next = clone(state);
+  next.flasks -= 1;
+  next.flaskReady = flaskBonus(next) + FLASK_RACE_BONUS;
+  return finish(before, next, [
+    `You fill the soft flask for the next race. +${FLASK_RACE_BONUS} nutrition at the gun. It costs no energy.`,
+  ]);
+}
+
+function buyWearable(state, table, id, slot, ownedKey) {
+  const item = table[id];
+  if (!item) return refuse(state, ["The shelf doesn't have that."]);
+  const owned = (state.gear[ownedKey] || []).includes(id);
+  if (owned) return refuse(state, ["You already own that. Equip it from the closet."]);
+  if (state.coins < item.price) return refuse(state, [`${item.name} costs ${item.price} coins.`]);
+  const before = state;
+  const next = clone(state);
+  next.coins -= item.price;
+  next.gear[ownedKey] = [...(next.gear[ownedKey] || []), id];
+  next.gear[slot] = id;
+  const line = slot === "socks" ? sockTradeText(item) : hatTradeText(item);
+  return finish(before, next, [`You buy the ${item.name} and put it on. ${line}.`]);
+}
+
+export function applyBuySock(state, sockId) {
+  return buyWearable(state, SOCKS, sockId, "socks", "ownedSocks");
+}
+
+export function applyBuyHat(state, hatId) {
+  return buyWearable(state, HATS, hatId, "hat", "ownedHats");
+}
+
+function equipWearable(state, id, known, lookup, slot, ownedKey, noun) {
+  if (!known(id) || !(state.gear[ownedKey] || []).includes(id)) {
+    return refuse(state, [`That ${noun} isn't in the closet.`]);
+  }
+  if (state.gear[slot] === id) return refuse(state, ["You're already wearing that."]);
+  const before = state;
+  const next = clone(state);
+  next.gear[slot] = id;
+  const item = lookup(id);
+  const line = slot === "socks" ? sockTradeText(item) : hatTradeText(item);
+  return finish(before, next, [`You put on the ${item.name}. ${line}.`]);
+}
+
+export function applyEquipSock(state, sockId) {
+  return equipWearable(state, sockId, isKnownSock, sockById, "socks", "ownedSocks", "pair");
+}
+
+export function applyEquipHat(state, hatId) {
+  return equipWearable(state, hatId, isKnownHat, hatById, "hat", "ownedHats", "hat");
+}
+
+export function applyUnequipSock(state) {
+  if (!state.gear?.socks) return refuse(state, ["You aren't wearing socks."]);
+  const item = sockById(state.gear.socks);
+  const before = state;
+  const next = clone(state);
+  next.gear.socks = null;
+  return finish(before, next, [`You take off the ${item ? item.name : "socks"}.`]);
+}
+
+export function applyUnequipHat(state) {
+  if (!state.gear?.hat) return refuse(state, ["You aren't wearing a hat."]);
+  const item = hatById(state.gear.hat);
+  const before = state;
+  const next = clone(state);
+  next.gear.hat = null;
+  return finish(before, next, [`You take off the ${item ? item.name : "hat"}.`]);
+}
+
+function clinicTreated(state) {
+  return Boolean(state?.calendar?.clinicTreated);
+}
+
+export function applyClinicTreat(state) {
+  const rates = ratesFor(state);
+  if (!state.condition?.injury) {
+    return refuse(state, ["Nothing to treat. The chart is clear, so you keep your coins."]);
+  }
+  if (clinicTreated(state)) {
+    return refuse(state, ["You've already had a treatment today. Sleep starts a new day."]);
+  }
+  if (state.coins < rates.treatment) {
+    return refuse(state, [`Treatment costs ${rates.treatment} coins.`]);
+  }
+  if (readEnergy(state) < 1) return refuse(state, [LOW_ENERGY]);
+  const before = state;
+  const next = clone(state);
+  next.coins -= rates.treatment;
+  if (!spendEnergy(next, 1, true)) return refuse(state, [LOW_ENERGY]);
+  const left = Math.max(0, (next.condition.injury.daysLeft || 0) - CLINIC_TREATMENT_NIGHTS);
+  const lines = [`Treatment session. ${rates.treatment} coins, 1 energy. The chart drops ${CLINIC_TREATMENT_NIGHTS} nights.`];
+  if (left <= 0) {
+    next.condition.injury = null;
+    next.condition.sore = false;
+    lines.push("The injury is cleared.");
+  } else {
+    next.condition.injury = { ...next.condition.injury, daysLeft: left };
+    lines.push(`${left} night(s) left.`);
+  }
+  next.calendar.clinicTreated = true;
+  sample(next);
+  return finish(before, next, lines);
+}
+
+export function applyClinicTissue(state) {
+  const rates = ratesFor(state);
+  if (state.coins < rates.tissue) {
+    return refuse(state, [`Soft tissue work costs ${rates.tissue} coins.`]);
+  }
+  const before = state;
+  const next = clone(state);
+  next.coins -= rates.tissue;
+  next.condition.fatigue = clampMeter(next.condition.fatigue - TISSUE_FATIGUE_RELIEF);
+  const wasSore = Boolean(next.condition.sore);
+  next.condition.sore = false;
+  const lines = [
+    `Soft tissue work. ${rates.tissue} coins, no energy. Fatigue eases by ${TISSUE_FATIGUE_RELIEF}.`,
+  ];
+  if (wasSore) lines.push("The soreness is gone.");
+  sample(next);
+  return finish(before, next, lines);
+}
+
+export function applyClinicScreen(state) {
+  return finish(state, clone(state), injuryScreenLines(state));
+}
+
 export function perform(state, action, roll = 0.5, rng = Math.random) {
   switch (action.type) {
     case "run":
@@ -1718,6 +1959,28 @@ export function perform(state, action, roll = 0.5, rng = Math.random) {
       return applyRival(state, roll, action.choice, rng);
     case "eat-gel":
       return applyEatGel(state);
+    case "use-shake":
+      return applyProtein(state);
+    case "drink-flask":
+      return applyFlask(state);
+    case "buy-sock":
+      return applyBuySock(state, action.id);
+    case "equip-sock":
+      return applyEquipSock(state, action.id);
+    case "unequip-sock":
+      return applyUnequipSock(state);
+    case "buy-hat":
+      return applyBuyHat(state, action.id);
+    case "equip-hat":
+      return applyEquipHat(state, action.id);
+    case "unequip-hat":
+      return applyUnequipHat(state);
+    case "clinic-treat":
+      return applyClinicTreat(state);
+    case "clinic-tissue":
+      return applyClinicTissue(state);
+    case "clinic-screen":
+      return applyClinicScreen(state);
     default:
       return refuse(state, ["Nothing happens."]);
   }
@@ -1824,7 +2087,7 @@ export function menuFor(locationId, state) {
           napMenuItem(state),
           mealMenuItem(state),
           snackMenuItem(state),
-          item("Closet", "Shoes, belts, vests", { type: "open-gear" }),
+          item("Closet", "Shoes, socks, hats, fuel", { type: "open-gear" }),
           item("Sponsors", "Offers, deals, obligations", { type: "open-sponsors" }),
           item("Save Game", "This browser only", { type: "save" }),
         ],
@@ -1851,6 +2114,16 @@ export function menuFor(locationId, state) {
           // One row, every day. The card behind it changes. The label
           // and the 1 energy cost do not, so the board stays put.
           item("Work a shift", "1 energy", { type: "open-shift" }, readEnergy(state) < 1, LOW_ENERGY),
+          item("Socks", "The sock wall", { type: "open-socks" }),
+          item("Hats", "Ciele, Bandit, Nike ACG, rnnr, BPN", { type: "open-hats" }),
+          item(
+            SHOP.shake.label,
+            shakeMenuDetail(state),
+            { type: "buy", id: "shake" },
+            state.coins < SHOP.shake.cost,
+            "Not enough coins.",
+          ),
+          item("Gels", "Stride Fuel and BPN", { type: "open-gels" }),
           item("Shop shoes", "Trail, Marathon, Backyard", { type: "open-shoe-categories" }),
           item("Belts & vests", "+5 or +10 max nutrition", { type: "open-carry-shop" }),
           item("Sponsors", "Offers, deals, obligations", { type: "open-sponsors" }),
@@ -1866,9 +2139,16 @@ export function menuFor(locationId, state) {
           item(SHOP.snack.label, SHOP.snack.detail, { type: "buy", id: "snack" }, state.coins < SHOP.snack.cost, "Not enough coins."),
           item(
             SHOP.gel.label,
-            gelMenuDetail(state),
+            gelMenuDetail(state, "gel"),
             { type: "buy", id: "gel" },
             state.coins < pricedGel(state, SHOP.gel.cost).cost,
+            "Not enough coins.",
+          ),
+          item(
+            SHOP["bpn-gel"].label,
+            gelMenuDetail(state, "bpn-gel"),
+            { type: "buy", id: "bpn-gel" },
+            state.coins < pricedGel(state, SHOP["bpn-gel"].cost).cost,
             "Not enough coins.",
           ),
         ],
@@ -1877,7 +2157,7 @@ export function menuFor(locationId, state) {
       return {
         title: "Park",
         speaker: "Park",
-        intro: "A dirt loop circles the pond. The grass is for picnics, the path is for you.",
+        intro: "A dirt loop circles the pond. South of it the trail keeps going. Tall grass off the path sometimes hides a find.",
         items: [
           runItem(state, "easy-run"),
           runItem(state, "zone-2"),
@@ -1922,13 +2202,50 @@ export function menuFor(locationId, state) {
         title: "Mountain Gate",
         speaker: "Ranger Inez Quill",
         intro: status.open
-          ? "The gate is swung back. The ridge starts steep and stays that way."
+          ? "The gate is swung back. The trail winds east through the rocks. Tall grass up here finds better things than the park."
           : "I'm Ranger Inez Quill. The high trail stays shut until you're ready.",
         items: status.open
           ? [runItem(state, "ridge-repeats")]
           : status.needs.map((need) =>
               item(need.label, need.have, { type: "noop" }, true, need.ok ? "Already done." : `Still need this. ${need.have}.`),
             ),
+      };
+    }
+    case "clinic": {
+      const rates = ratesFor(state);
+      const hurt = Boolean(state.condition?.injury);
+      const treated = clinicTreated(state);
+      const broke = state.coins < rates.treatment;
+      const tired = readEnergy(state) < 1;
+      let treatReason = "";
+      if (!hurt) treatReason = "Nothing to treat. The chart is clear.";
+      else if (treated) treatReason = "You've already had a treatment today. Sleep starts a new day.";
+      else if (broke) treatReason = `Need ${rates.treatment} coins.`;
+      else if (tired) treatReason = LOW_ENERGY;
+      return {
+        title: "PT Clinic",
+        speaker: "PT Clinic",
+        testId: "clinic-menu",
+        intro: `${rates.name}. Treatment ${rates.treatment} coins · Soft tissue ${rates.tissue} coins.\nOne treatment a day. Sleep opens the table again.`,
+        items: [
+          item(
+            "Treatment session",
+            hurt
+              ? `${rates.treatment} coins · 1 energy · −${CLINIC_TREATMENT_NIGHTS} nights`
+              : "Nothing to treat. The chart is clear.",
+            { type: "clinic-treat" },
+            !hurt || treated || broke || tired,
+            treatReason,
+          ),
+          item(
+            "Soft tissue work",
+            `${rates.tissue} coins · 0 energy · clears soreness · −${TISSUE_FATIGUE_RELIEF} fatigue`,
+            { type: "clinic-tissue" },
+            state.coins < rates.tissue,
+            `Need ${rates.tissue} coins.`,
+          ),
+          item("Injury screen", "Free · what the chart says", { type: "clinic-screen" }),
+        ],
       };
     }
     default:
@@ -1958,10 +2275,15 @@ function headerItem(label, detail, testId) {
   };
 }
 
-function gelMenuDetail(state) {
-  const price = pricedGel(state, SHOP.gel.cost);
+function gelMenuDetail(state, id = "gel") {
+  const base = SHOP[id]?.cost ?? SHOP.gel.cost;
+  const price = pricedGel(state, base);
   const discount = price.name ? ` · ${price.name} deal` : "";
   return `${price.cost} coins · 0 energy · held ${state.gels || 0}${discount}`;
+}
+
+function shakeMenuDetail(state) {
+  return `${SHOP.shake.cost} coins · 0 energy · held ${state.shakes || 0} · −${PROTEIN_FATIGUE_RELIEF} fatigue, clears soreness`;
 }
 
 function shoePriceDetail(state, shoe, owned) {
@@ -2047,12 +2369,55 @@ export function carryShopItems(state) {
   const rows = [
     headerItem("Running belts", "+5 max nutrition. No speed penalty. Any style."),
   ];
-  const belts = Object.values(CARRY).filter((entry) => entry.kind === "belt");
-  const vests = Object.values(CARRY).filter((entry) => entry.kind === "vest");
+  const belts = Object.values(CARRY).filter((entry) => entry.kind === "belt" && !entry.wild);
+  const vests = Object.values(CARRY).filter((entry) => entry.kind === "vest" && !entry.wild);
   for (const entry of belts) rows.push(carryRow(state, entry));
   rows.push(headerItem("Trail hydration vests", "+10 max nutrition. Small −speed in short road races."));
   for (const entry of vests) rows.push(carryRow(state, entry));
   return rows;
+}
+
+export function sockShopItems(state) {
+  const rows = [
+    headerItem("Sock wall", "Long ultras lose a little fatigue. Some pairs also ease blisters from worn shoes."),
+  ];
+  for (const id of Object.keys(SOCKS)) rows.push(wearableRow(state, SOCKS[id], "socks", "ownedSocks", "buy-sock", "equip-sock", "unequip-sock"));
+  return rows;
+}
+
+export function hatShopItems(state) {
+  const rows = [
+    headerItem("Running hats", "A small fatigue cut on a tiring run. The cap on your sprite takes the brand color. No logos."),
+  ];
+  for (const id of Object.keys(HATS)) rows.push(wearableRow(state, HATS[id], "hat", "ownedHats", "buy-hat", "equip-hat", "unequip-hat"));
+  return rows;
+}
+
+export function gelShopItems(state) {
+  return ["gel", "bpn-gel"].map((id) => item(
+    SHOP[id].label,
+    gelMenuDetail(state, id),
+    { type: "buy", id },
+    state.coins < pricedGel(state, SHOP[id].cost).cost,
+    "Not enough coins.",
+  ));
+}
+
+function wearableRow(state, entry, slot, ownedKey, buyType, equipType, unequipType) {
+  const owned = (state.gear[ownedKey] || []).includes(entry.id);
+  const on = state.gear[slot] === entry.id;
+  const text = slot === "socks" ? sockTradeText(entry) : hatTradeText(entry);
+  if (!owned) {
+    return item(
+      `Buy ${entry.name}`,
+      `${entry.price} coins · ${text}`,
+      { type: buyType, id: entry.id },
+      state.coins < entry.price,
+      `Need ${entry.price} coins.`,
+    );
+  }
+  if (on) return item(`Unequip ${entry.name}`, text, { type: unequipType });
+  return item(`Wear ${entry.name}`, text, { type: equipType, id: entry.id });
 }
 
 function carryRow(state, entry) {
@@ -2084,6 +2449,26 @@ export function closetItems(state) {
     { type: "eat-gel" },
     !eat.ok,
     eat.reason,
+  ));
+  const shakes = state.shakes || 0;
+  rows.push(item(
+    shakes > 0 ? `Drink protein shake (${shakes})` : "Drink a protein shake",
+    shakes > 0
+      ? `0 energy · −${PROTEIN_FATIGUE_RELIEF} fatigue · clears soreness`
+      : "No protein shake in the pocket.",
+    { type: "use-shake" },
+    shakes <= 0,
+    "No protein shake in the pocket.",
+  ));
+  const flasks = state.flasks || 0;
+  rows.push(item(
+    flasks > 0 ? `Use soft flask (${flasks})` : "Use a soft flask",
+    flasks > 0
+      ? `0 energy · +${FLASK_RACE_BONUS} nutrition at the next race`
+      : "No soft flask in the pocket.",
+    { type: "drink-flask" },
+    flasks <= 0,
+    "No soft flask in the pocket.",
   ));
   rows.push(headerItem("Shoes", "One pair at a time."));
   for (const id of state.gear.owned || []) {
@@ -2121,8 +2506,33 @@ export function closetItems(state) {
       { type: "equip-carry", id },
     ));
   }
+  rows.push(headerItem("Socks", "One pair. They ease long ultras."));
+  pushWearableCloset(rows, state, "socks", "ownedSocks", sockById, sockTradeText, "equip-sock", "unequip-sock", "No socks yet");
+  rows.push(headerItem("Hats", "One hat. The sprite's cap takes its color."));
+  pushWearableCloset(rows, state, "hat", "ownedHats", hatById, hatTradeText, "equip-hat", "unequip-hat", "No hat yet");
   rows.push(item("Sponsors", "Deals, standing, obligations", { type: "open-sponsors" }));
   return rows;
+}
+
+function pushWearableCloset(rows, state, slot, ownedKey, lookup, trade, equipType, unequipType, emptyLabel) {
+  const owned = state.gear[ownedKey] || [];
+  if (state.gear[slot]) {
+    const worn = lookup(state.gear[slot]);
+    rows.push(item(
+      `Unequip ${worn ? worn.name : slot}`,
+      worn ? trade(worn) : "",
+      { type: unequipType },
+    ));
+  }
+  if (owned.length === 0) {
+    rows.push(item(emptyLabel, "The Run Store sells them", { type: "noop" }, true, "Buy one at the Run Store."));
+  }
+  for (const id of owned) {
+    if (id === state.gear[slot]) continue;
+    const entry = lookup(id);
+    if (!entry) continue;
+    rows.push(item(`Equip ${entry.name}`, trade(entry), { type: equipType, id }));
+  }
 }
 
 function offerTermsDetail(kind, sponsor, offer) {
