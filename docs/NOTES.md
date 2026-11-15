@@ -117,6 +117,37 @@ Sunday night (you go to bed while the weekday is Sunday) writes a weekly summary
 
 Detraining does not happen because you took a rest day. One or two days without a run are free. On the third day off, Peak drops. Overall Endurance waits until day 6. A run, a gym session, or a race sets "trained today", and sleep then resets the counter. A shift at the Run Store does not. That is the week's puzzle: train, eat, work for coins, sleep.
 
+## Run Store shifts
+
+The Run Store board used to list three jobs: help a customer, stock the gel wall, and run a gait check. It is now **one row**, `Work a shift`, and it still costs **1 energy**. You can work as many as you have energy for. A shift still does not count as training.
+
+The questions are one deck, `SHIFT_POOL`, in `src/lib/shifts.js`. The first three cards are those original scenes, word for word, including the Peakline Luggers line. After them come more shoe, gel, and gait questions, plus six other jobs on the same floor: a first fitting, a 5K shoe rush, a muddy return, the shop run, a hot long run, and the sock wall. Each card has a speaker, one line of dialogue, and two or three answers. One answer pays the most, about **20 to 22 coins**. A weak answer pays about **11 to 16**. When there are three answers, the middle one sits between those bands, and there is still only one top payout.
+
+Which card you see is not a dice roll. The calendar keeps a bookmark, `shiftCursor`. It is the index of the card on the counter.
+
+- Opening the shift does not move the bookmark. Back out and open it again the same day and the same person is still talking.
+- Finishing a shift adds 1. The next shift that day is the next card, so two shifts in one morning are two different questions. `shiftsToday` counts how many you finished. Looking does not count.
+- Sleep is the new day. If you never clocked in, sleep adds 1 anyway. That is why a morning you skipped the store does not open on yesterday's customer. If you did work, the bookmark is already past those cards, and sleep leaves it where the last shift put it. `shiftsToday` goes back to 0 with the meal and nap counters.
+- Past the last card, the bookmark wraps to 0. Every question comes back around. That wrap is the `%` in the math below.
+
+A new game starts the bookmark at 0, which is the shoe question. An old `brick-city-save-v1` file has no `shiftCursor` and no `shiftsToday`. The version stays 1. The deck uses the day number instead, and a missing count is 0:
+
+```
+index = cursor % deck length
+```
+
+when the bookmark is there, and
+
+```
+index = (day - 1 + shiftsToday) % deck length
+```
+
+when it is not. Day 1 is card 0. Day 2, if nobody has written a bookmark yet, is card 1. Once a shift or a sleep writes the bookmark, later mornings follow the bookmark and do not add the day on top. Adding both would skip a customer.
+
+The old button ids still work. `shoes`, `stock`, and `gait` always mean those three original scenes, so a half-finished shift from before the deck pays the coins it always paid. Any other id has to be the card on the counter right now. The answer is looked up only on that card. A choice from a different question is refused, and the bookmark does not move.
+
+The board row stays `Work a shift` / `1 energy` no matter which card is up. The dialogue is what changes. House gear in the lines (Peakline Luggers, Stride Fuel) is invented for Brick City. Real shoe and sock brands are not named there.
+
 ## Meals, snacks, and naps
 
 This is the kitchen and the couch. All of it happens at Home. The grocery is a different counter: it always takes coins, and it does not use these daily limits.
