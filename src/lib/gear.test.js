@@ -60,7 +60,10 @@ describe("brand shoes", () => {
   });
 
   it("gives every trail shoe a climb bonus and a road penalty", () => {
-    expect(TRAIL_SHOE_IDS).toHaveLength(8);
+    expect(TRAIL_SHOE_IDS).toEqual(expect.arrayContaining([
+      "nike-acg", "norda-001", "speedland-gstam", "hoka-tecton", "mtc-t1", "adidas-agravic", "salomon-ultra", "satisfy-rocker",
+    ]));
+    expect(TRAIL_SHOE_IDS.length).toBeGreaterThan(8);
     for (const id of TRAIL_SHOE_IDS) {
       const shoe = shoeById(id);
       expect(shoe.style).toBe("trail");
@@ -74,7 +77,10 @@ describe("brand shoes", () => {
   });
 
   it("gives every marathon shoe road speed and an ultra fatigue tax", () => {
-    expect(ROAD_SHOE_IDS).toHaveLength(4);
+    expect(ROAD_SHOE_IDS).toEqual(expect.arrayContaining([
+      "hoka-cielo", "adidas-adios", "nike-alphafly", "brooks-hyperion",
+    ]));
+    expect(ROAD_SHOE_IDS.length).toBeGreaterThan(4);
     for (const id of ROAD_SHOE_IDS) {
       const shoe = shoeById(id);
       expect(shoe.style).toBe("road");
@@ -86,7 +92,10 @@ describe("brand shoes", () => {
   });
 
   it("gives every backyard shoe versatile pace and short-road and steep penalties", () => {
-    expect(VERSATILE_SHOE_IDS).toHaveLength(6);
+    expect(VERSATILE_SHOE_IDS).toEqual(expect.arrayContaining([
+      "norda-005", "speedland-glpdx", "mtc-r1", "adidas-hybrid", "hoka-challenger", "salomon-genesis",
+    ]));
+    expect(VERSATILE_SHOE_IDS.length).toBeGreaterThan(6);
     for (const id of VERSATILE_SHOE_IDS) {
       const shoe = shoeById(id);
       expect(shoe.style).toBe("versatile");
@@ -142,8 +151,13 @@ describe("brand shoes", () => {
 
 describe("belts and vests", () => {
   it("lists five belts at +5 and six vests at +10", () => {
-    expect(BELT_IDS).toHaveLength(5);
-    expect(Object.values(CARRY).filter((item) => item.kind === "vest" && !item.wild)).toHaveLength(6);
+    expect(BELT_IDS).toEqual(expect.arrayContaining([
+      "nathan-belt", "osprey-belt", "rei-belt", "salomon-belt", "dera-b01",
+    ]));
+    expect(BELT_IDS.length).toBeGreaterThan(5);
+    expect(Object.values(CARRY).filter((item) => item.kind === "vest" && !item.wild).length).toBeGreaterThan(6);
+    expect(Object.values(CARRY).filter((item) => item.kind === "vest" && !item.wild).map((item) => item.id))
+      .toEqual(expect.arrayContaining(["camelbak-vest", "nathan-vest", "salomon-vest", "naked-vest", "rei-vest", "satisfy-vest"]));
     expect(carryNutrition(CARRY["generic-belt"])).toBe(3);
     expect(carryNutrition(CARRY["generic-vest"])).toBe(7);
     expect(CARRY["generic-vest"].shortRoad).toBeLessThan(CARRY["camelbak-vest"].shortRoad);
@@ -199,7 +213,7 @@ describe("belts and vests", () => {
 describe("socks, hats, shakes, and BPN gels", () => {
   it("sells socks and hats, and equips and unequips them", () => {
     const store = menuFor("store", fresh());
-    expect(store.items.map((row) => row.label)).toEqual(expect.arrayContaining(["Socks", "Hats", "Protein shake"]));
+    expect(store.items.map((row) => row.label)).toEqual(expect.arrayContaining(["Socks", "Hats", "Nutrition"]));
     const buyer = fresh();
     buyer.coins = 80;
     const socks = applyBuySock(buyer, "darn-tough");

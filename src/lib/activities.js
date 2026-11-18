@@ -84,7 +84,6 @@ import {
   HATS,
   SOCKS,
   carryById,
-  carryNutrition,
   carryTradeText,
   CARRY,
   hatById,
@@ -93,6 +92,9 @@ import {
   isKnownShoe,
   isKnownSock,
   maxNutritionFromGear,
+  itemMinLevel,
+  NUTRITION,
+  nutritionById,
   shoeTradeText,
   shoesOfStyle,
   sockById,
@@ -100,6 +102,7 @@ import {
   styleLabel,
   wearPercent,
 } from "@/lib/catalog";
+import { scaleQuote, storeCityId, storeFor, storeSells } from "@/lib/stores";
 import {
   RACES,
   RIVAL,
@@ -1216,12 +1219,50 @@ export function applyEatGel(state) {
   return finish(before, next, [`You eat a Stride Fuel gel. +${GEL_ENERGY} energy, +${gain} nutrition.${extra}`]);
 }
 
+function quotedShoe(state, shoeId, owned, wornOut) {
+  return scaleQuote(storeCityId(state), pricedShoe(state, shoeId, owned, wornOut));
+}
+
+function quotedCarry(state, carryId) {
+  return scaleQuote(storeCityId(state), pricedCarry(state, carryId));
+}
+
+function quotedTag(state, price) {
+  return scaleQuote(storeCityId(state), { cost: price, base: price, deal: false, free: false });
+}
+
+function fuelQuote(state, item) {
+  if (item.kind === "gel") {
+    const gelDeal = pricedGel(state, item.price);
+    return scaleQuote(storeCityId(state), {
+      cost: gelDeal.cost,
+      base: item.price,
+      deal: Boolean(gelDeal.name),
+      free: false,
+      name: gelDeal.name,
+    });
+  }
+  return { ...quotedTag(state, item.price), name: null };
+}
+
+function levelLocked(state, item) {
+  return runnerLevel(state) < itemMinLevel(item);
+}
+
 export function applyShoe(state, shoeId) {
   if (!isKnownShoe(shoeId)) return refuse(state, ["The shelf doesn't have that pair."]);
   const shoe = shoeById(shoeId);
   const owned = state.gear.owned.includes(shoeId);
   const wornOut = shoeWear(state.gear, shoeId).ratio >= 1;
-  const price = pricedShoe(state, shoeId, owned, wornOut);
+  // A town that does not hang the pair cannot sell it. Replacing a pair
+  // you already own is allowed, or a trip would brick the closet.
+  if (!owned && !storeSells(state, "shoes", shoeId)) {
+    return refuse(state, ["This shop doesn't carry that pair."]);
+  }
+  if (!owned && levelLocked(state, shoe)) {
+    return refuse(state, [`${shoe.name} unlocks at level ${itemMinLevel(shoe)}.`]);
+  }
+  const price = quotedShoe(state, shoeId, owned, wornOut);
   if (!owned && shoe.price <= 0) {
     return refuse(state, ["You already own the trainers you arrived in."]);
   }
@@ -1247,9 +1288,16 @@ export function applyShoe(state, shoeId) {
 
 export function applyBuyCarry(state, carryId) {
   const item = carryById(carryId);
-  if (!item) return refuse(state, ["The rack doesn't have that."]);
+  if (!item || item.wild) return refuse(state, ["The rack doesn't have that."]);
   const owned = (state.gear.ownedCarry || []).includes(carryId);
-  const price = pricedCarry(state, carryId);
+  const category = item.kind === "vest" ? "vests" : "belts";
+  if (!owned && !storeSells(state, category, carryId)) {
+    return refuse(state, ["This shop doesn't carry that."]);
+  }
+  if (!owned && levelLocked(state, item)) {
+    return refuse(state, [`${item.name} unlocks at level ${itemMinLevel(item)}.`]);
+  }
+  const price = quotedCarry(state, carryId);
   if (owned) return refuse(state, ["You already own that. Equip it from the closet."]);
   if (state.coins < price.cost) {
     return refuse(state, [`${item.name} costs ${price.cost} coins.`]);
@@ -1842,12 +1890,18 @@ export function applyFlask(state) {
 function buyWearable(state, table, id, slot, ownedKey) {
   const item = table[id];
   if (!item) return refuse(state, ["The shelf doesn't have that."]);
+  const category = slot === "socks" ? "socks" : "hats";
+  if (!storeSells(state, category, id)) return refuse(state, ["This shop doesn't carry that."]);
+  if (levelLocked(state, item)) {
+    return refuse(state, [`${item.name} unlocks at level ${itemMinLevel(item)}.`]);
+  }
   const owned = (state.gear[ownedKey] || []).includes(id);
   if (owned) return refuse(state, ["You already own that. Equip it from the closet."]);
-  if (state.coins < item.price) return refuse(state, [`${item.name} costs ${item.price} coins.`]);
+  const price = quotedTag(state, item.price);
+  if (state.coins < price.cost) return refuse(state, [`${item.name} costs ${price.cost} coins.`]);
   const before = state;
   const next = clone(state);
-  next.coins -= item.price;
+  next.coins -= price.cost;
   next.gear[ownedKey] = [...(next.gear[ownedKey] || []), id];
   next.gear[slot] = id;
   const line = slot === "socks" ? sockTradeText(item) : hatTradeText(item);
@@ -2030,6 +2084,43 @@ export function applyCafeWifi(state) {
   ]);
 }
 
+/**
+ * Run Store fuel. Grocery gels stay on applyPurchase so the counter
+ * price does not inherit a town's gear markup. This path is the shelf
+ * in stores.js: the town has to stock it, the level has to be met, and
+ * a gel discount still applies before the town scale.
+ */
+export function applyBuyFuel(state, fuelId) {
+  const item = nutritionById(fuelId);
+  if (!item || (item.kind !== "gel" && item.kind !== "shake" && item.kind !== "flask")) {
+    return refuse(state, ["The shelf doesn't have that."]);
+  }
+  if (!storeSells(state, "nutrition", fuelId)) {
+    return refuse(state, ["This shop doesn't carry that."]);
+  }
+  if (levelLocked(state, item)) {
+    return refuse(state, [`${item.name} unlocks at level ${itemMinLevel(item)}.`]);
+  }
+  const quote = fuelQuote(state, item);
+  if (state.coins < quote.cost) {
+    return refuse(state, [`${item.name} costs ${quote.cost} coins.`]);
+  }
+  const before = state;
+  const next = clone(state);
+  next.coins -= quote.cost;
+  const lines = [`You buy ${item.name}. ${item.blurb}`];
+  if (item.kind === "gel") {
+    next.gels = (next.gels || 0) + 1;
+    if (quote.name) lines.push(`${quote.name} covers part of the gel. You pay ${quote.cost} coins.`);
+  } else if (item.kind === "shake") {
+    next.shakes = (next.shakes || 0) + 1;
+  } else {
+    next.flasks = (next.flasks || 0) + 1;
+  }
+  sample(next);
+  return finish(before, next, lines);
+}
+
 export function perform(state, action, roll = 0.5, rng = Math.random) {
   switch (action.type) {
     case "run":
@@ -2040,6 +2131,8 @@ export function perform(state, action, roll = 0.5, rng = Math.random) {
       return applyNap(state);
     case "buy":
       return applyPurchase(state, action.id);
+    case "buy-fuel":
+      return applyBuyFuel(state, action.id);
     case "home-food":
       return applyHomeFood(state, action.id);
     case "shoe":
@@ -2220,30 +2313,29 @@ export function menuFor(locationId, state) {
           runItem(state, "strength"),
         ],
       };
-    case "store":
+    case "store": {
+      // The shelf is the town's record in stores.js. Brick City is the
+      // walkable one. Pages (shoes by style, belts, vests, fuel by kind)
+      // keep a phone from getting one endless list. Each product opens
+      // a detail instead of buying on the first tap.
+      const shop = storeFor(storeCityId(state));
       return {
-        title: "Run Store",
-        speaker: "Run Store",
-        intro: "Manager Nia is lacing a demo shoe on the stool.",
+        title: shop.menuTitle,
+        speaker: shop.menuTitle,
+        testId: "store-menu",
+        intro: shop.intro,
         items: [
-          // One row, every day. The card behind it changes. The label
-          // and the 1 energy cost do not, so the board stays put.
           item("Work a shift", "1 energy", { type: "open-shift" }, readEnergy(state) < 1, LOW_ENERGY),
-          item("Socks", "The sock wall", { type: "open-socks" }),
-          item("Hats", "Ciele, Bandit, Nike ACG, rnnr, BPN", { type: "open-hats" }),
-          item(
-            SHOP.shake.label,
-            shakeMenuDetail(state),
-            { type: "buy", id: "shake" },
-            state.coins < SHOP.shake.cost,
-            "Not enough coins.",
-          ),
-          item("Gels", "Stride Fuel and BPN", { type: "open-gels" }),
-          item("Shop shoes", "Trail, Marathon, Backyard", { type: "open-shoe-categories" }),
-          item("Belts & vests", "+5 or +10 max nutrition", { type: "open-carry-shop" }),
+          { ...item("Shoes", "Trail, Marathon, Backyard", { type: "open-shoe-categories" }), testId: "shop-shoes" },
+          { ...item("Belts", "+5 max nutrition · no speed penalty", { type: "open-carry-kind", kind: "belt" }), testId: "shop-belts" },
+          { ...item("Vests", "+10 max nutrition · short-road penalty", { type: "open-carry-kind", kind: "vest" }), testId: "shop-vests" },
+          { ...item("Socks", "The sock wall", { type: "open-socks" }), testId: "shop-socks" },
+          { ...item("Hats", "Ciele, Bandit, Nike ACG, rnnr, BPN", { type: "open-hats" }), testId: "shop-hats" },
+          { ...item("Nutrition", "Gels, shakes, soft flasks", { type: "open-nutrition" }), testId: "shop-nutrition" },
           item("Sponsors", "Offers, deals, obligations", { type: "open-sponsors" }),
         ],
       };
+    }
     case "grocery":
       return {
         title: "Grocery",
@@ -2434,13 +2526,9 @@ function gelMenuDetail(state, id = "gel") {
   return `${price.cost} coins · 0 energy · held ${state.gels || 0}${discount}`;
 }
 
-function shakeMenuDetail(state) {
-  return `${SHOP.shake.cost} coins · 0 energy · held ${state.shakes || 0} · −${PROTEIN_FATIGUE_RELIEF} fatigue, clears soreness`;
-}
-
 function shoePriceDetail(state, shoe, owned) {
   const worn = shoeWear(state.gear, shoe.id);
-  const price = pricedShoe(state, shoe.id, owned, worn.ratio >= 1);
+  const price = quotedShoe(state, shoe.id, owned, worn.ratio >= 1);
   const tag = `[${styleLabel(shoe.style)}]`;
   const wear = `${wearPercent(state.gear, shoe.id)}% wear`;
   if (!owned) {
@@ -2461,44 +2549,35 @@ function shoePriceDetail(state, shoe, owned) {
 
 export function shoeCategoryItems() {
   return [
-    item("Trail shoes", "Dirt and climbing. −Marathon and track pace", { type: "open-shop-style", style: "trail" }),
-    item("Marathon shoes", "Road pace and speed. −Trail, more long-ultra fatigue", { type: "open-shop-style", style: "road" }),
-    item("Backyard Ultra shoes", "Versatile. −Speed in short road races, −Trail on steep ridges", { type: "open-shop-style", style: "versatile" }),
+    { ...item("Trail shoes", "Dirt and climbing. −Marathon and track pace", { type: "open-shop-style", style: "trail" }), testId: "shop-style-trail" },
+    { ...item("Marathon shoes", "Road pace and speed. −Trail, more long-ultra fatigue", { type: "open-shop-style", style: "road" }), testId: "shop-style-road" },
+    { ...item("Backyard Ultra shoes", "Versatile. −Speed in short road races, −Trail on steep ridges", { type: "open-shop-style", style: "versatile" }), testId: "shop-style-versatile" },
   ];
 }
 
+function stockedShoes(state, style) {
+  return shoesOfStyle(style)
+    .filter((shoe) => {
+      const owned = state.gear.owned.includes(shoe.id);
+      if (!owned && shoe.price <= 0) return false;
+      if (!owned && !storeSells(state, "shoes", shoe.id)) return false;
+      return true;
+    })
+    .sort((a, b) => a.brand.localeCompare(b.brand) || a.price - b.price || a.name.localeCompare(b.name));
+}
+
 export function shoeStyleItems(state, style) {
-  const rows = [headerItem(styleLabel(style), "Boosts this style. The other lines are the cost.")];
-  for (const shoe of shoesOfStyle(style)) {
+  const rows = [headerItem(styleLabel(style), "Tap a pair for the full trade. The list scrolls.")];
+  let brand = "";
+  for (const shoe of stockedShoes(state, style)) {
+    if (shoe.brand !== brand) {
+      rows.push(headerItem(shoe.brand, ""));
+      brand = shoe.brand;
+    }
     const owned = state.gear.owned.includes(shoe.id);
-    if (!owned && shoe.price <= 0) continue;
-    const worn = shoeWear(state.gear, shoe.id);
     const priced = shoePriceDetail(state, shoe, owned);
-    if (!owned) {
-      rows.push(item(
-        priced.label,
-        priced.detail,
-        { type: "shoe", id: shoe.id },
-        state.coins < priced.cost,
-        `Need ${priced.cost} coins.`,
-      ));
-      continue;
-    }
-    const on = state.gear.equipped === shoe.id;
-    if (!on) {
-      rows.push(item(
-        `Wear [${styleLabel(shoe.style)}] ${shoe.name}`,
-        `${worn.label} · ${wearPercent(state.gear, shoe.id)}% wear · free to swap`,
-        { type: "equip", id: shoe.id },
-      ));
-    }
-    rows.push(item(
-      priced.label,
-      priced.detail,
-      { type: "shoe", id: shoe.id },
-      state.coins < priced.cost,
-      `Need ${priced.cost} coins.`,
-    ));
+    const lock = !owned && itemMinLevel(shoe) > 1 ? `Lv ${itemMinLevel(shoe)} · ` : "";
+    rows.push(item(shoe.name, `${lock}${priced.detail}`, { type: "inspect", kind: "shoe", id: shoe.id }));
   }
   return rows;
 }
@@ -2517,79 +2596,272 @@ export function shoeShopItems(state) {
   return rows;
 }
 
-export function carryShopItems(state) {
+export function carryKindItems(state, kind) {
+  const category = kind === "vest" ? "vests" : "belts";
   const rows = [
-    headerItem("Running belts", "+5 max nutrition. No speed penalty. Any style."),
+    kind === "vest"
+      ? headerItem("Vests", "+10 max nutrition. A lighter vest costs more or unlocks later. Tap a row for the detail.")
+      : headerItem("Belts", "+5 max nutrition. No speed penalty. Models differ by price and level."),
   ];
-  const belts = Object.values(CARRY).filter((entry) => entry.kind === "belt" && !entry.wild);
-  const vests = Object.values(CARRY).filter((entry) => entry.kind === "vest" && !entry.wild);
-  for (const entry of belts) rows.push(carryRow(state, entry));
-  rows.push(headerItem("Trail hydration vests", "+10 max nutrition. Small −speed in short road races."));
-  for (const entry of vests) rows.push(carryRow(state, entry));
+  const entries = Object.values(CARRY)
+    .filter((entry) => entry.kind === kind && !entry.wild)
+    .filter((entry) => storeSells(state, category, entry.id) || (state.gear.ownedCarry || []).includes(entry.id));
+  let brand = "";
+  for (const entry of entries) {
+    if (entry.brand !== brand) {
+      rows.push(headerItem(entry.brand, ""));
+      brand = entry.brand;
+    }
+    const price = quotedCarry(state, entry.id);
+    const costText = price.deal ? `${price.cost} coins (was ${price.base})` : `${price.cost} coins`;
+    const lock = itemMinLevel(entry) > 1 ? `Lv ${itemMinLevel(entry)} · ` : "";
+    const pace = entry.kind === "belt" ? "no speed penalty" : `${Math.round((entry.shortRoad || 0) * 100)}% short road`;
+    rows.push(item(entry.name, `${lock}${costText} · ${pace}`, { type: "inspect", kind: "carry", id: entry.id }));
+  }
   return rows;
+}
+
+export function carryShopItems(state) {
+  return [
+    ...carryKindItems(state, "belt"),
+    ...carryKindItems(state, "vest"),
+  ];
+}
+
+function shelfEntries(state, table, category, ownedKey) {
+  return Object.values(table).filter((entry) => (
+    storeSells(state, category, entry.id) || (state.gear[ownedKey] || []).includes(entry.id)
+  ));
 }
 
 export function sockShopItems(state) {
   const rows = [
-    headerItem("Sock wall", "Long ultras lose a little fatigue. Some pairs also ease blisters from worn shoes."),
+    headerItem("Sock wall", "Long ultras lose a little fatigue. Tap a pair. The list scrolls."),
   ];
-  for (const id of Object.keys(SOCKS)) rows.push(wearableRow(state, SOCKS[id], "socks", "ownedSocks", "buy-sock", "equip-sock", "unequip-sock"));
+  let brand = "";
+  for (const entry of shelfEntries(state, SOCKS, "socks", "ownedSocks")) {
+    if (entry.brand !== brand) {
+      rows.push(headerItem(entry.brand, ""));
+      brand = entry.brand;
+    }
+    const price = quotedTag(state, entry.price);
+    const lock = itemMinLevel(entry) > 1 ? `Lv ${itemMinLevel(entry)} · ` : "";
+    rows.push(item(entry.name, `${lock}${price.cost} coins · ${sockTradeText(entry)}`, { type: "inspect", kind: "sock", id: entry.id }));
+  }
   return rows;
 }
 
 export function hatShopItems(state) {
   const rows = [
-    headerItem("Running hats", "A small fatigue cut on a tiring run. The cap on your sprite takes the brand color. No logos."),
+    headerItem("Running hats", "A small fatigue cut. The cap takes the brand color. No logos."),
   ];
-  for (const id of Object.keys(HATS)) rows.push(wearableRow(state, HATS[id], "hat", "ownedHats", "buy-hat", "equip-hat", "unequip-hat"));
+  let brand = "";
+  for (const entry of shelfEntries(state, HATS, "hats", "ownedHats")) {
+    if (entry.brand !== brand) {
+      rows.push(headerItem(entry.brand, ""));
+      brand = entry.brand;
+    }
+    const price = quotedTag(state, entry.price);
+    const lock = itemMinLevel(entry) > 1 ? `Lv ${itemMinLevel(entry)} · ` : "";
+    rows.push(item(entry.name, `${lock}${price.cost} coins · ${hatTradeText(entry)}`, { type: "inspect", kind: "hat", id: entry.id }));
+  }
+  return rows;
+}
+
+export function nutritionCategoryItems() {
+  return [
+    { ...item("Gels", "Flavors share one pocket. +1 energy, +12 food.", { type: "open-fuel", kind: "gel" }), testId: "shop-fuel-gel" },
+    { ...item("Shakes", "0 energy. Eases fatigue and clears soreness.", { type: "open-fuel", kind: "shake" }), testId: "shop-fuel-shake" },
+    { ...item("Soft flasks", "+2 nutrition at the next start.", { type: "open-fuel", kind: "flask" }), testId: "shop-fuel-flask" },
+  ];
+}
+
+export function fuelShopItems(state, kind) {
+  const titles = {
+    gel: ["Gels", "Every flavor eats the same. Price and level are the difference."],
+    shake: ["Shakes", "Every tub drinks the same. The BPN one costs more."],
+    flask: ["Soft flasks", "Every flask is +2 at the gun, then empty."],
+  };
+  const [title, detail] = titles[kind] || ["Fuel", ""];
+  const rows = [headerItem(title, detail)];
+  const list = Object.values(NUTRITION).filter((entry) => entry.kind === kind && storeSells(state, "nutrition", entry.id));
+  let brand = "";
+  for (const entry of list) {
+    if (entry.brand !== brand) {
+      rows.push(headerItem(entry.brand, ""));
+      brand = entry.brand;
+    }
+    const quote = fuelQuote(state, entry);
+    const costText = quote.deal ? `${quote.cost} coins (was ${quote.base})` : `${quote.cost} coins`;
+    const lock = itemMinLevel(entry) > 1 ? `Lv ${itemMinLevel(entry)} · ` : "";
+    const deal = quote.name ? ` · ${quote.name} deal` : "";
+    rows.push(item(entry.name, `${lock}${costText}${deal}`, { type: "inspect", kind: "fuel", id: entry.id }));
+  }
   return rows;
 }
 
 export function gelShopItems(state) {
-  return ["gel", "bpn-gel"].map((id) => item(
-    SHOP[id].label,
-    gelMenuDetail(state, id),
-    { type: "buy", id },
-    state.coins < pricedGel(state, SHOP[id].cost).cost,
-    "Not enough coins.",
-  ));
+  return fuelShopItems(state, "gel");
 }
 
-function wearableRow(state, entry, slot, ownedKey, buyType, equipType, unequipType) {
-  const owned = (state.gear[ownedKey] || []).includes(entry.id);
-  const on = state.gear[slot] === entry.id;
-  const text = slot === "socks" ? sockTradeText(entry) : hatTradeText(entry);
+function backRow() {
+  return item("Back", "Return to the list", { type: "back" });
+}
+
+function missingDetail() {
+  return { title: "Shelf", intro: "That item is not on the wall.", items: [backRow()] };
+}
+
+/**
+ * The second page of a shop row. The list stays short (name, price,
+ * trade). This page is the blurb, the miles or the pocket, and the
+ * button that actually spends coins. A phone can read it without the
+ * list row growing into a paragraph.
+ */
+export function productDetail(state, kind, id) {
+  if (kind === "shoe") return shoeDetail(state, id);
+  if (kind === "carry") return carryDetail(state, id);
+  if (kind === "sock") return wearableDetail(state, SOCKS[id], "socks", "ownedSocks", "socks", "buy-sock", "equip-sock", "unequip-sock", sockTradeText);
+  if (kind === "hat") return wearableDetail(state, HATS[id], "hats", "ownedHats", "hat", "buy-hat", "equip-hat", "unequip-hat", hatTradeText);
+  if (kind === "fuel") return fuelDetail(state, id);
+  return missingDetail();
+}
+
+function shoeDetail(state, shoeId) {
+  const shoe = isKnownShoe(shoeId) ? shoeById(shoeId) : null;
+  if (!shoe) return missingDetail();
+  const owned = state.gear.owned.includes(shoe.id);
+  const priced = shoePriceDetail(state, shoe, owned);
+  const locked = !owned && levelLocked(state, shoe);
+  const lines = [
+    `${shoe.brand} · ${styleLabel(shoe.style)}`,
+    shoe.blurb,
+    shoeTradeText(shoe),
+    owned
+      ? `${wearPercent(state.gear, shoe.id)}% wear · ${Math.round(state.gear.miles[shoe.id] || 0)}/${shoe.maxMiles} mi`
+      : `Up to ${shoe.maxMiles} mi before they wear out.`,
+    locked ? `Unlocks at level ${itemMinLevel(shoe)}.` : "",
+  ].filter(Boolean);
+  const items = [];
   if (!owned) {
-    return item(
-      `Buy ${entry.name}`,
-      `${entry.price} coins · ${text}`,
-      { type: buyType, id: entry.id },
-      state.coins < entry.price,
-      `Need ${entry.price} coins.`,
-    );
+    const broke = state.coins < priced.cost;
+    items.push(item(
+      priced.label,
+      priced.detail,
+      { type: "shoe", id: shoe.id },
+      locked || broke,
+      locked ? `Unlocks at level ${itemMinLevel(shoe)}.` : `Need ${priced.cost} coins.`,
+    ));
+  } else {
+    if (state.gear.equipped !== shoe.id) {
+      items.push(item(`Wear ${shoe.name}`, "Free to swap", { type: "equip", id: shoe.id }));
+    }
+    const broke = state.coins < priced.cost;
+    items.push(item(priced.label, priced.detail, { type: "shoe", id: shoe.id }, broke && !priced.free, `Need ${priced.cost} coins.`));
   }
-  if (on) return item(`Unequip ${entry.name}`, text, { type: unequipType });
-  return item(`Wear ${entry.name}`, text, { type: equipType, id: entry.id });
+  items.push(backRow());
+  return { title: shoe.name, intro: lines.join("\n"), items };
 }
 
-function carryRow(state, entry) {
+function carryDetail(state, carryId) {
+  const entry = carryById(carryId);
+  if (!entry || entry.wild) return missingDetail();
   const owned = (state.gear.ownedCarry || []).includes(entry.id);
-  const on = state.gear.carry === entry.id;
-  const price = pricedCarry(state, entry.id);
+  const price = quotedCarry(state, entry.id);
+  const locked = !owned && levelLocked(state, entry);
+  const costText = price.deal ? `${price.cost} coins (was ${price.base})` : `${price.cost} coins`;
+  const lines = [
+    `${entry.brand} · ${entry.kind === "belt" ? "Belt" : "Vest"}`,
+    entry.blurb,
+    carryTradeText(entry),
+    locked ? `Unlocks at level ${itemMinLevel(entry)}.` : "",
+  ].filter(Boolean);
+  const items = [];
   if (!owned) {
-    const costText = price.deal ? `${price.cost} coins (was ${price.base})` : `${price.cost} coins`;
-    return item(
+    const broke = state.coins < price.cost;
+    items.push(item(
       `Buy ${entry.name}`,
-      `${costText} · +${carryNutrition(entry)} max nutrition · ${entry.kind === "belt" ? "no speed penalty" : "−speed in short road races"}`,
+      costText,
       { type: "buy-carry", id: entry.id },
-      state.coins < price.cost,
-      `Need ${price.cost} coins.`,
-    );
+      locked || broke,
+      locked ? `Unlocks at level ${itemMinLevel(entry)}.` : `Need ${price.cost} coins.`,
+    ));
+  } else if (state.gear.carry === entry.id) {
+    items.push(item(`Unequip ${entry.name}`, carryTradeText(entry), { type: "unequip-carry" }));
+  } else {
+    items.push(item(`Wear ${entry.name}`, carryTradeText(entry), { type: "equip-carry", id: entry.id }));
   }
-  if (on) {
-    return item(`Unequip ${entry.name}`, carryTradeText(entry), { type: "unequip-carry" });
+  items.push(backRow());
+  return { title: entry.name, intro: lines.join("\n"), items };
+}
+
+function wearableDetail(state, entry, category, ownedKey, slot, buyType, equipType, unequipType, trade) {
+  if (!entry) return missingDetail();
+  const owned = (state.gear[ownedKey] || []).includes(entry.id);
+  const price = quotedTag(state, entry.price);
+  const locked = !owned && levelLocked(state, entry);
+  const text = trade(entry);
+  const lines = [
+    entry.brand,
+    entry.blurb,
+    text,
+    locked ? `Unlocks at level ${itemMinLevel(entry)}.` : "",
+  ].filter(Boolean);
+  const items = [];
+  if (!owned) {
+    if (!storeSells(state, category, entry.id)) {
+      items.push(item("Not on this wall", "Another town stocks it.", { type: "noop" }, true, "Another town stocks it."));
+    } else {
+      const broke = state.coins < price.cost;
+      items.push(item(
+        `Buy ${entry.name}`,
+        `${price.cost} coins`,
+        { type: buyType, id: entry.id },
+        locked || broke,
+        locked ? `Unlocks at level ${itemMinLevel(entry)}.` : `Need ${price.cost} coins.`,
+      ));
+    }
+  } else if (state.gear[slot] === entry.id) {
+    items.push(item(`Unequip ${entry.name}`, text, { type: unequipType }));
+  } else {
+    items.push(item(`Wear ${entry.name}`, text, { type: equipType, id: entry.id }));
   }
-  return item(`Wear ${entry.name}`, carryTradeText(entry), { type: "equip-carry", id: entry.id });
+  items.push(backRow());
+  return { title: entry.name, intro: lines.join("\n"), items };
+}
+
+function fuelDetail(state, fuelId) {
+  const entry = nutritionById(fuelId);
+  if (!entry) return missingDetail();
+  const quote = fuelQuote(state, entry);
+  const locked = levelLocked(state, entry);
+  const costText = quote.deal ? `${quote.cost} coins (was ${quote.base})` : `${quote.cost} coins`;
+  const pocket = entry.kind === "gel"
+    ? `Gels in pocket: ${state.gels || 0}`
+    : entry.kind === "shake"
+      ? `Shakes in pocket: ${state.shakes || 0}`
+      : `Flasks in pocket: ${state.flasks || 0}`;
+  const lines = [
+    `${entry.brand} · ${entry.kind}`,
+    entry.blurb,
+    pocket,
+    locked ? `Unlocks at level ${itemMinLevel(entry)}.` : "",
+  ].filter(Boolean);
+  const broke = state.coins < quote.cost;
+  return {
+    title: entry.name,
+    intro: lines.join("\n"),
+    items: [
+      item(
+        `Buy ${entry.name}`,
+        `${costText} · 0 energy`,
+        { type: "buy-fuel", id: entry.id },
+        locked || broke,
+        locked ? `Unlocks at level ${itemMinLevel(entry)}.` : `Need ${quote.cost} coins.`,
+      ),
+      backRow(),
+    ],
+  };
 }
 
 export function closetItems(state) {

@@ -52,7 +52,9 @@ export function MenuList({ title, intro, introTestId, items, index, onPick, test
     <Window title={title} testId={testId || "menu"}>
       <CityPlaque />
       {intro ? <p data-testid={introTestId || undefined}>{intro}</p> : null}
-      <div ref={listRef}>
+      {/* The list scrolls inside the window so the A/B line stays put
+          on a phone. A trail wall is longer than the screen. */}
+      <div className="menu-scroll" ref={listRef}>
         {items.map((item, itemIndex) => (
           <button
             key={`${item.label}-${itemIndex}`}

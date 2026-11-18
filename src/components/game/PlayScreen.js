@@ -43,17 +43,19 @@ import { TouchControls } from "@/components/game/TouchControls";
 import { CITY_SIGNS, PLACES, placeIsLocked, signCopy } from "@/game/town";
 import {
   acknowledgeWeek,
-  carryShopItems,
+  carryKindItems,
   chatLines,
   closetItems,
-  gelShopItems,
+  fuelShopItems,
   hatShopItems,
   jobScript,
   menuFor,
-  sockShopItems,
+  nutritionCategoryItems,
   perform,
+  productDetail,
   shoeCategoryItems,
   shoeStyleItems,
+  sockShopItems,
   sponsorMenuItems,
 } from "@/lib/activities";
 import { describeNeeds, isMountainOpen, mountainStatus } from "@/lib/unlocks";
@@ -238,8 +240,25 @@ export function PlayScreen({ game, setGame, onTitle }) {
       setPanel({ type: "list", title: "Sponsors", items: sponsorMenuItems(currentState()), index: 0, testId: "sponsors" });
       return;
     }
+    if (action.type === "back") {
+      setPanel(panelRef.current?.back || null);
+      return;
+    }
+    if (action.type === "inspect") {
+      const detail = productDetail(currentState(), action.kind, action.id);
+      setPanel({
+        type: "list",
+        title: detail.title,
+        intro: detail.intro,
+        items: detail.items,
+        index: 0,
+        testId: "item-detail",
+        back: panelRef.current,
+      });
+      return;
+    }
     if (action.type === "open-shoe-categories" || action.type === "open-shop") {
-      setPanel({ type: "list", title: "Shoes", items: shoeCategoryItems(), index: 0 });
+      setPanel({ type: "list", title: "Shoes", items: shoeCategoryItems(), index: 0, testId: "shoe-categories", back: panelRef.current });
       return;
     }
     if (action.type === "open-shop-style") {
@@ -249,23 +268,61 @@ export function PlayScreen({ game, setGame, onTitle }) {
         title: titles[action.style] || "Shoes",
         items: shoeStyleItems(currentState(), action.style),
         index: 0,
+        testId: "shoe-style",
+        back: panelRef.current,
       });
       return;
     }
-    if (action.type === "open-carry-shop") {
-      setPanel({ type: "list", title: "Belts & vests", items: carryShopItems(currentState()), index: 0 });
+    if (action.type === "open-carry-kind" || action.type === "open-carry-shop") {
+      const kind = action.kind === "vest" ? "vest" : action.type === "open-carry-shop" ? null : "belt";
+      if (!kind) {
+        setPanel({
+          type: "list",
+          title: "Belts & vests",
+          items: [
+            { label: "Belts", detail: "+5 max nutrition", action: { type: "open-carry-kind", kind: "belt" } },
+            { label: "Vests", detail: "+10 max nutrition", action: { type: "open-carry-kind", kind: "vest" } },
+          ],
+          index: 0,
+          back: panelRef.current,
+        });
+        return;
+      }
+      setPanel({
+        type: "list",
+        title: kind === "vest" ? "Vests" : "Belts",
+        items: carryKindItems(currentState(), kind),
+        index: 0,
+        testId: kind === "vest" ? "vest-shop" : "belt-shop",
+        back: panelRef.current,
+      });
       return;
     }
     if (action.type === "open-socks") {
-      setPanel({ type: "list", title: "Socks", items: sockShopItems(currentState()), index: 0, testId: "sock-shop" });
+      setPanel({ type: "list", title: "Socks", items: sockShopItems(currentState()), index: 0, testId: "sock-shop", back: panelRef.current });
       return;
     }
     if (action.type === "open-hats") {
-      setPanel({ type: "list", title: "Hats", items: hatShopItems(currentState()), index: 0, testId: "hat-shop" });
+      setPanel({ type: "list", title: "Hats", items: hatShopItems(currentState()), index: 0, testId: "hat-shop", back: panelRef.current });
       return;
     }
-    if (action.type === "open-gels") {
-      setPanel({ type: "list", title: "Gels", items: gelShopItems(currentState()), index: 0, testId: "gel-shop" });
+    if (action.type === "open-nutrition" || action.type === "open-gels") {
+      const page = action.type === "open-gels"
+        ? { title: "Gels", items: fuelShopItems(currentState(), "gel"), testId: "gel-shop" }
+        : { title: "Nutrition", items: nutritionCategoryItems(), testId: "nutrition-shop" };
+      setPanel({ type: "list", title: page.title, items: page.items, index: 0, testId: page.testId, back: panelRef.current });
+      return;
+    }
+    if (action.type === "open-fuel") {
+      const titles = { gel: "Gels", shake: "Shakes", flask: "Soft flasks" };
+      setPanel({
+        type: "list",
+        title: titles[action.kind] || "Fuel",
+        items: fuelShopItems(currentState(), action.kind),
+        index: 0,
+        testId: "fuel-shop",
+        back: panelRef.current,
+      });
       return;
     }
     if (action.type === "open-shift") {
@@ -426,6 +483,12 @@ export function PlayScreen({ game, setGame, onTitle }) {
   }
 
   function pressB() {
+    if (panelRef.current?.back) {
+      // Shop pages stack. B returns one page, so a wrong shoe does not
+      // dump you on the sidewalk and make you walk back into the store.
+      setPanel(panelRef.current.back);
+      return;
+    }
     if (panelRef.current) {
       setPanel(null);
       return;
