@@ -1,6 +1,7 @@
 /**
  * catalog.js
- * The shoe closet, the fuel-carry rack, socks, and running hats.
+ * The shoe closet, the fuel-carry rack, socks, running hats, and the
+ * gels, shakes, and soft flasks the Run Store sells.
  *
  * Shoes decide which style of running you are good at. A belt or a vest
  * decides how much food you can carry. Socks trim a little fatigue on a
@@ -8,21 +9,45 @@
  * for sun, because the game has no weather meter). You wear one pair of
  * shoes, optionally one fuel item, one pair of socks, and one hat.
  * Sponsors (src/lib/sponsors.js) discount shoes, belts, vests, and gels.
- * They do not replace this list.
+ * They do not replace this list. A sponsor can still hand you an item
+ * the shelf has not unlocked yet. The gift is the deal, not a purchase.
  *
  * The house pairs `road`, `trail`, and `hybrid` stay in the catalog so a
  * save from before the brand shoes existed still names a real pair.
  * `resolveShoeId` is the alias table. New games can still buy those
  * house pairs. The starter trainers are not for sale.
+ *
+ * Cities and the shelf: every sold product has an `unlock` city, or no
+ * field, which means Brick City. The original products have no field on
+ * purpose, so the day-one shelf is the list that was already in the game.
+ * Later models live in catalogModels.js and name a later city. Reaching
+ * a city adds that city's models on top of every earlier city. It does
+ * not replace them. A store in any town shows the whole unlocked set.
+ * The latest city is the one whose new models wear a NEW tag.
+ *
+ * The list is `state.citiesReached`, not `state.city`. The other towns
+ * are not maps yet (Sam at the depot says the bus is not running), so
+ * standing in a town is not how the shelf opens. `state.city` is only
+ * the price table for the cafe and the clinic. A future bus writes
+ * citiesReached. Until then a new game, and an old save, are
+ * ['brick-city']. See citiesReached() and docs/NOTES.md.
  */
 
 import {
   BELT_NUTRITION,
+  CITIES,
   MAX_NUTRITION,
   SHOE_REPLACE_RATIO,
   STARTER_REPLACE_COST,
   VEST_NUTRITION,
 } from "@/lib/constants";
+import {
+  EXTRA_CARRY,
+  EXTRA_FUEL,
+  EXTRA_HATS,
+  EXTRA_SHOES,
+  EXTRA_SOCKS,
+} from "@/lib/catalogModels";
 
 /**
  * Old saves wrote these ids. They still point at the house pairs below.
@@ -268,34 +293,23 @@ const BRAND_SHOES = {
   },
 };
 
-export const SHOES = { ...HOUSE, ...BRAND_SHOES };
+export const SHOES = { ...HOUSE, ...BRAND_SHOES, ...EXTRA_SHOES };
 
-export const TRAIL_SHOE_IDS = [
-  "nike-acg",
-  "norda-001",
-  "speedland-gstam",
-  "hoka-tecton",
-  "mtc-t1",
-  "adidas-agravic",
-  "salomon-ultra",
-  "satisfy-rocker",
-];
+/**
+ * House brands are the pairs from before the real brands. They stay in
+ * the closet, and they are not part of the "2 to 4 models per brand" rack.
+ */
+const HOUSE_BRANDS = new Set(["Brickside", "Tempo", "Peakline", "Switchback"]);
 
-export const ROAD_SHOE_IDS = [
-  "hoka-cielo",
-  "adidas-adios",
-  "nike-alphafly",
-  "brooks-hyperion",
-];
+function brandShoeIds(style) {
+  return Object.values(SHOES)
+    .filter((shoe) => shoe.style === style && !HOUSE_BRANDS.has(shoe.brand))
+    .map((shoe) => shoe.id);
+}
 
-export const VERSATILE_SHOE_IDS = [
-  "norda-005",
-  "speedland-glpdx",
-  "mtc-r1",
-  "adidas-hybrid",
-  "hoka-challenger",
-  "salomon-genesis",
-];
+export const TRAIL_SHOE_IDS = brandShoeIds("trail");
+export const ROAD_SHOE_IDS = brandShoeIds("road");
+export const VERSATILE_SHOE_IDS = brandShoeIds("versatile");
 
 /**
  * Belts are light: +5 max nutrition, no pace penalty, any style.
@@ -403,6 +417,11 @@ export const CARRY = {
     shortRoad: -0.05,
     blurb: "Silk vest. +10 max nutrition. The 5K notices the bottles.",
   },
+  // Extra models are spread after the originals. starterCarryId walks
+  // this object in order and keeps the first belt (or the first vest if
+  // there is no belt). Putting the new ones here means a Nathan deal
+  // still gives nathan-belt, not a later belt.
+  ...EXTRA_CARRY,
   // Wild finds only. Weaker than the store rack on purpose: a belt the
   // shop sells is +5, this one is +3. A store vest is +10, this one is +7
   // and a little slower in a short road race. `wild` keeps them off the shelf.
@@ -488,9 +507,10 @@ export const SOCKS = {
     color: "#1d4ed8",
     blurb: "Toe pair. −3 fatigue on a long ultra, and worn shoes blister less.",
   },
+  ...EXTRA_SOCKS,
 };
 
-export const SOCK_IDS = ["socks-generic", "balega", "darn-tough", "feetures", "injinji"];
+export const SOCK_IDS = Object.keys(SOCKS);
 
 /**
  * Hats. heatCut is points taken off fatigue after a run that adds fatigue.
@@ -543,26 +563,57 @@ export const HATS = {
     colorKey: "bpn",
     blurb: "Green cap. −2 fatigue on a tiring run.",
   },
+  ...EXTRA_HATS,
 };
 
-export const HAT_IDS = ["ciele", "bandit", "nike-acg-hat", "rnnr", "bpn-hat"];
+export const HAT_IDS = Object.keys(HATS);
 
-export const BELT_IDS = [
-  "nathan-belt",
-  "osprey-belt",
-  "rei-belt",
-  "salomon-belt",
-  "dera-b01",
-];
+export const BELT_IDS = Object.values(CARRY)
+  .filter((item) => item.kind === "belt" && !item.wild)
+  .map((item) => item.id);
 
-export const VEST_IDS = [
-  "camelbak-vest",
-  "nathan-vest",
-  "salomon-vest",
-  "naked-vest",
-  "rei-vest",
-  "satisfy-vest",
-];
+export const VEST_IDS = Object.values(CARRY)
+  .filter((item) => item.kind === "vest" && !item.wild)
+  .map((item) => item.id);
+
+/**
+ * Gels, shakes, and soft flasks. The three originals (Stride Fuel gel,
+ * BPN gel, the plain protein shake) have no unlock field, so they are
+ * Brick City stock. A nutrition sponsor discounts every gel the same way.
+ * A shake is not a gel. A flask is not a gel. They do not get that discount.
+ */
+export const FUEL = {
+  gel: {
+    id: "gel",
+    name: "Stride Fuel gel",
+    brand: "Stride Fuel",
+    kind: "gel",
+    price: 12,
+    blurb: "The house gel. One pocket, +1 energy when you eat it.",
+    lines: ["You tuck a gel in the pocket. It costs no energy. Eat it from Inventory for +1 block, or save it for a bonk."],
+  },
+  "bpn-gel": {
+    id: "bpn-gel",
+    name: "BPN gel",
+    brand: "BPN",
+    kind: "gel",
+    price: 14,
+    blurb: "A BPN gel. Same pocket as the house gel.",
+    lines: ["You tuck a BPN gel in the pocket. It costs no energy. It eats like any other gel, and a nutrition sponsor discounts it the same way."],
+  },
+  shake: {
+    id: "shake",
+    name: "Protein shake",
+    brand: "Stride Fuel",
+    kind: "shake",
+    price: 16,
+    blurb: "Eases fatigue and clears soreness. It does not heal a blister.",
+    lines: ["A protein shake. 0 energy. Drink it from Inventory to ease fatigue and clear soreness. It does not heal a blister. That is the clinic."],
+  },
+  ...EXTRA_FUEL,
+};
+
+export const FUEL_IDS = Object.keys(FUEL);
 
 export const STYLE_LABELS = {
   basic: "Trainer",
@@ -623,6 +674,91 @@ export function hatById(id) {
 
 export function isKnownHat(id) {
   return Boolean(hatById(id));
+}
+
+export function fuelById(id) {
+  if (!id || !FUEL[id]) return null;
+  return FUEL[id];
+}
+
+/**
+ * City order is the order of CITIES in constants.js: Brick City first,
+ * Summit Hollow last. A product with no unlock field is Brick City.
+ * That is how the original shelf stays available on an old save without
+ * editing every old object.
+ */
+export const CITY_UNLOCK_ORDER = Object.keys(CITIES);
+
+export function unlockCityOf(item) {
+  if (!item || item.wild) return null;
+  return item.unlock || "brick-city";
+}
+
+/**
+ * citiesReached is the only switch for the shelf. It does not read
+ * state.city. Naming a later town includes every town before it, because
+ * the road does not skip and the shelf only grows. A missing list, or a
+ * junk list, is Brick City alone. That is what an old save loads.
+ */
+export function normalizeCitiesReached(list) {
+  const order = CITY_UNLOCK_ORDER;
+  const named = Array.isArray(list) ? list.filter((id) => order.includes(id)) : [];
+  let furthest = 0;
+  for (const id of named) furthest = Math.max(furthest, order.indexOf(id));
+  return order.slice(0, furthest + 1);
+}
+
+export function citiesReached(state) {
+  return normalizeCitiesReached(state?.citiesReached);
+}
+
+export function isUnlocked(item, state) {
+  const city = unlockCityOf(item);
+  if (!city) return false;
+  return citiesReached(state).includes(city);
+}
+
+/**
+ * NEW means "this model's city is the furthest town you have reached",
+ * and that town is not Brick City. The starter shelf is not news.
+ * Reaching the next town moves the tag forward. The old models stay.
+ */
+export function isNewUnlock(item, state) {
+  const city = unlockCityOf(item);
+  if (!city || city === "brick-city") return false;
+  const reached = citiesReached(state);
+  return reached[reached.length - 1] === city;
+}
+
+export function newTag(item, state) {
+  return isNewUnlock(item, state) ? "NEW " : "";
+}
+
+/**
+ * Why the counter says it out loud: the other towns are not maps yet,
+ * so there is no bus cutscene. The Run Store intro is where you hear
+ * that a city put new models on the wall.
+ */
+export function catalogArrivalMessage(state) {
+  const reached = citiesReached(state);
+  const latest = reached[reached.length - 1];
+  if (!latest || latest === "brick-city") return "";
+  const name = CITIES[latest]?.name || "A new city";
+  return `${name} put new models on the shelf. They are tagged NEW. Earlier cities stay up too.`;
+}
+
+/**
+ * Empty string means the shelf will sell it. A wild find is never for
+ * sale. A locked model names the city that adds it. Buying checks this.
+ * A sponsor gift does not, so a deal can still hand you a locked item.
+ */
+export function shelfBlock(item, state) {
+  if (!item) return "The shelf doesn't have that.";
+  if (item.wild) return "That one is not for sale.";
+  const cityId = unlockCityOf(item);
+  if (!cityId || citiesReached(state).includes(cityId)) return "";
+  const name = CITIES[cityId]?.name || "a later city";
+  return `${item.name} is not on the shelf yet. Reach ${name} and it stays unlocked.`;
 }
 
 /**

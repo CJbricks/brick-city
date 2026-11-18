@@ -15,6 +15,12 @@
  * also unlocks the audio clock in that same turn, which is what phones
  * require before any note can play.
  *
+ * The Run Store racks are the same menu, with a back stack. B closes
+ * the top menu only, so a model detail returns to the brand, and the
+ * brand returns to the style. Left and right switch the category tabs
+ * (Trail, Marathon, Backyard, and the same idea for belts and gels).
+ * That is how a long shelf stays usable on a phone.
+ *
  * The only city-plaque interaction is the welcome post beside Home.
  * Pressing A on it opens the city name and motto. The HOME / GROCERY
  * boards are paint. The 5K board and the TRACK name are not: town.js
@@ -45,17 +51,12 @@ import { TouchControls } from "@/components/game/TouchControls";
 import { CITY_SIGNS, PLACES, placeIsLocked, signCopy } from "@/game/town";
 import {
   acknowledgeWeek,
-  carryShopItems,
   chatLines,
   closetItems,
-  gelShopItems,
-  hatShopItems,
   jobScript,
   menuFor,
-  sockShopItems,
   perform,
-  shoeCategoryItems,
-  shoeStyleItems,
+  presentShop,
   sponsorMenuItems,
 } from "@/lib/activities";
 import { describeNeeds, isMountainOpen, mountainStatus } from "@/lib/unlocks";
@@ -240,34 +241,22 @@ export function PlayScreen({ game, setGame, onTitle }) {
       setPanel({ type: "list", title: "Sponsors", items: sponsorMenuItems(currentState()), index: 0, testId: "sponsors" });
       return;
     }
-    if (action.type === "open-shoe-categories" || action.type === "open-shop") {
-      setPanel({ type: "list", title: "Shoes", items: shoeCategoryItems(), index: 0 });
-      return;
-    }
-    if (action.type === "open-shop-style") {
-      const titles = { trail: "Trail shoes", road: "Marathon shoes", versatile: "Backyard Ultra" };
+    // Shop racks, brand pages, pages, and item detail all come from
+    // presentShop. replace keeps the menu under this one as Back, which
+    // is what a category tab and a page button should do.
+    const shop = presentShop(action, currentState());
+    if (shop) {
+      const current = panelRef.current;
       setPanel({
         type: "list",
-        title: titles[action.style] || "Shoes",
-        items: shoeStyleItems(currentState(), action.style),
+        title: shop.title,
+        intro: shop.intro,
+        items: shop.items,
+        tabs: shop.tabs || null,
         index: 0,
+        testId: shop.testId,
+        back: action.replace ? (current?.back || null) : current,
       });
-      return;
-    }
-    if (action.type === "open-carry-shop") {
-      setPanel({ type: "list", title: "Belts & vests", items: carryShopItems(currentState()), index: 0 });
-      return;
-    }
-    if (action.type === "open-socks") {
-      setPanel({ type: "list", title: "Socks", items: sockShopItems(currentState()), index: 0, testId: "sock-shop" });
-      return;
-    }
-    if (action.type === "open-hats") {
-      setPanel({ type: "list", title: "Hats", items: hatShopItems(currentState()), index: 0, testId: "hat-shop" });
-      return;
-    }
-    if (action.type === "open-gels") {
-      setPanel({ type: "list", title: "Gels", items: gelShopItems(currentState()), index: 0, testId: "gel-shop" });
       return;
     }
     if (action.type === "open-shift") {
@@ -428,6 +417,10 @@ export function PlayScreen({ game, setGame, onTitle }) {
   }
 
   function pressB() {
+    if (panelRef.current?.back) {
+      setPanel(panelRef.current.back);
+      return;
+    }
     if (panelRef.current) {
       setPanel(null);
       return;
@@ -438,6 +431,24 @@ export function PlayScreen({ game, setGame, onTitle }) {
   function moveSelection(dir) {
     const current = panelRef.current;
     if (!current) return;
+    if (current.type === "list" && current.tabs?.length && (dir === "left" || dir === "right")) {
+      const tabs = current.tabs;
+      const at = Math.max(0, tabs.findIndex((tab) => tab.active));
+      const next = tabs[(at + (dir === "right" ? 1 : -1) + tabs.length) % tabs.length];
+      const shop = presentShop(next.action, currentState());
+      if (!shop) return;
+      setPanel({
+        type: "list",
+        title: shop.title,
+        intro: shop.intro,
+        items: shop.items,
+        tabs: shop.tabs || null,
+        index: 0,
+        testId: shop.testId,
+        back: current.back || null,
+      });
+      return;
+    }
     const delta = dir === "up" ? -1 : dir === "down" ? 1 : 0;
     if (!delta) return;
     if (current.type === "list") {
@@ -570,8 +581,10 @@ export function PlayScreen({ game, setGame, onTitle }) {
               intro={panel.intro}
               introTestId={panel.introTestId}
               items={panel.title === "Menu" ? systemItems(soundOn) : panel.items}
+              tabs={panel.tabs}
               index={panel.index}
               testId={panel.testId}
+              onTab={(tabAction) => activate({ ...tabAction, replace: true })}
               onPick={(itemIndex) => {
                 const items = panel.title === "Menu" ? systemItems(soundOn) : panel.items;
                 activate(items[itemIndex]);
