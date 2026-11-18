@@ -7,7 +7,8 @@
  * Version stays 1. A closet from before belts and sponsors existed is
  * filled in here, and the old shoe ids still resolve. A save from before
  * daily meal, snack, and nap counts existed still loads too. The missing
- * numbers default to 0.
+ * numbers default to 0. A save from before the activity board has no 5K
+ * personal best, and a save from before the offer gap has no last day.
  */
 
 import { describe, expect, it } from "vitest";
@@ -147,6 +148,31 @@ describe("save serialization", () => {
     expect(migrated.calendar.homeMeals).toBe(1);
     expect(migrated.calendar.homeSnacks).toBe(1);
     expect(migrated.version).toBe(1);
+  });
+
+  it("loads an old save with no 5K best and no offer gap", () => {
+    const legacy = createNewGame({ name: "Ada", gender: "female" });
+    delete legacy.records;
+    delete legacy.sponsors.lastOfferDay;
+    const loaded = deserialize(serialize(legacy));
+    expect(loaded).not.toBeNull();
+    expect(loaded.version).toBe(1);
+    expect(loaded.records.fiveK).toBeNull();
+    expect(loaded.sponsors.lastOfferDay).toBeNull();
+
+    const kept = createNewGame({ name: "Ada", gender: "male" });
+    kept.records.fiveK = "23:55";
+    kept.sponsors.lastOfferDay = 4;
+    const round = deserialize(serialize(kept));
+    expect(round.records.fiveK).toBe("23:55");
+    expect(round.sponsors.lastOfferDay).toBe(4);
+
+    const junk = createNewGame({ name: "Ada", gender: "female" });
+    junk.records.fiveK = "not a time";
+    junk.sponsors.lastOfferDay = -3;
+    const cleaned = deserialize(serialize(junk));
+    expect(cleaned.records.fiveK).toBeNull();
+    expect(cleaned.sponsors.lastOfferDay).toBeNull();
   });
 
   it("rejects junk instead of loading a half save", () => {

@@ -86,9 +86,11 @@ export const FLASK_RACE_BONUS = 2;
  * The others are the design for later maps: same kinds of buildings,
  * including a PT clinic and a coffee shop. Summit Hollow's clinic and
  * its coffee shop cost the most, the same idea as its store (higher
- * prices than every other city). The welcome sign reads name and motto.
- * Prices are coins. Shop names are original. They are not the real
- * cafes they are loosely inspired by, and they do not use those logos.
+ * prices than every other city). Blister care is the small dressing.
+ * It is priced under soft tissue in every town, and Summit Hollow is
+ * still the highest of those prices. The welcome sign reads name and
+ * motto. Prices are coins. Shop names are original. They are not the
+ * real cafes they are loosely inspired by, and they do not use those logos.
  */
 export const CITIES = {
   "brick-city": {
@@ -96,7 +98,7 @@ export const CITIES = {
     name: "Brick City",
     motto: "Every Mile Lays a Brick",
     built: true,
-    clinic: { name: "Brick City PT", treatment: 22, tissue: 10 },
+    clinic: { name: "Brick City PT", treatment: 22, tissue: 10, blister: 8 },
     cafe: {
       // Display name only. The door id on the map is "cafe", and
       // brick-city-save-v1 does not store this string, so a rename
@@ -114,7 +116,7 @@ export const CITIES = {
     name: "Ridgeview",
     motto: "The Ridge Keeps the Receipt",
     built: false,
-    clinic: { name: "Ridgeview PT", treatment: 26, tissue: 12 },
+    clinic: { name: "Ridgeview PT", treatment: 26, tissue: 12, blister: 10 },
     cafe: {
       name: "Good Neighbor Roasting",
       pastry: "Garden crumb cake",
@@ -129,7 +131,7 @@ export const CITIES = {
     name: "Lakeport",
     motto: "Hold the Pace Through the Streets",
     built: false,
-    clinic: { name: "Lakeport PT", treatment: 24, tissue: 11 },
+    clinic: { name: "Lakeport PT", treatment: 24, tissue: 11, blister: 9 },
     cafe: {
       name: "Inkline Coffee Bar",
       pastry: "Rosemary maple bar",
@@ -145,7 +147,7 @@ export const CITIES = {
     name: "Mesa Verde Flats",
     motto: "Long Miles, Short Shade",
     built: false,
-    clinic: { name: "Mesa Verde PT", treatment: 20, tissue: 9 },
+    clinic: { name: "Mesa Verde PT", treatment: 20, tissue: 9, blister: 7 },
     cafe: {
       name: "Teal & Butter Bakeshop",
       pastry: "Lemon meringue croissant",
@@ -161,7 +163,7 @@ export const CITIES = {
     name: "Flatland",
     motto: "Last One Standing",
     built: false,
-    clinic: { name: "Flatland PT", treatment: 18, tissue: 8 },
+    clinic: { name: "Flatland PT", treatment: 18, tissue: 8, blister: 6 },
     cafe: {
       name: "Captain's 43rd Bakery",
       pastry: "Cinnamon roll",
@@ -177,7 +179,7 @@ export const CITIES = {
     name: "Summit Hollow",
     motto: "Nothing Left but the Work",
     built: false,
-    clinic: { name: "Summit Hollow PT", treatment: 40, tissue: 20 },
+    clinic: { name: "Summit Hollow PT", treatment: 40, tissue: 20, blister: 16 },
     cafe: {
       name: "Old Post Books & Coffee",
       pastry: "Window nook bun",

@@ -36,6 +36,13 @@
  * art.js paints those squares as gold mats. It does not keep a second
  * list of coordinates, so the mat cannot drift off the button again.
  *
+ * The activity board is a kiosk in the town square, east of the fountain
+ * and clear of Coach Bram. The post is solid. The tile south of it is
+ * the gold mat. Pressing A there opens the neighborhood runs. The board
+ * is not a fast-travel pin, and it is not stored in the save. An old
+ * brick-city-save-v1 file rebuilds this map the same way it rebuilds
+ * the welcome sign.
+ *
  * cityMaps() is the list of overworlds that actually exist. Brick City
  * is the only one. Ridgeview, Lakeport, Mesa Verde Flats, Flatland, and
  * Summit Hollow are names in the design. They are in UNBUILT_CITIES and
@@ -157,6 +164,19 @@ export const TRACK_SIGN_TILES = [
   { id: "track", tx: 27, ty: 9 },
   { id: "track", tx: 28, ty: 9 },
 ];
+
+/**
+ * Neighborhood activity board in the plaza. The fountain occupies
+ * (17–18, 14–15). Coach Bram stands on (15, 13). This post is east of
+ * both, on open dirt, so the roads around the square stay open.
+ * The kiosk tile is solid (you do not walk through the post). The mat
+ * is the walkable gold square you stand on to press A.
+ */
+export const ACTIVITY_BOARD = {
+  id: "activity",
+  kiosk: { tx: 20, ty: 13 },
+  mat: { tx: 20, ty: 14 },
+};
 
 export function trackLaneTiles() {
   const tiles = [];
@@ -588,6 +608,12 @@ export function buildWorld(state) {
     blocked[sign.ty][sign.tx] = true;
     interact[sign.ty][sign.tx] = sign.id;
   }
+  // The post blocks feet. The mat does not, so activationTiles paints
+  // the gold square on the mat only. Both tiles answer A with the same
+  // menu: face the post, or stand on the mat and look anywhere.
+  blocked[ACTIVITY_BOARD.kiosk.ty][ACTIVITY_BOARD.kiosk.tx] = true;
+  interact[ACTIVITY_BOARD.kiosk.ty][ACTIVITY_BOARD.kiosk.tx] = ACTIVITY_BOARD.id;
+  interact[ACTIVITY_BOARD.mat.ty][ACTIVITY_BOARD.mat.tx] = ACTIVITY_BOARD.id;
 
   return {
     ground,

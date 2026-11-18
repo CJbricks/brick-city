@@ -18,7 +18,9 @@
  * The only city-plaque interaction is the welcome post beside Home.
  * Pressing A on it opens the city name and motto. The HOME / GROCERY
  * boards are paint. The 5K board and the TRACK name are not: town.js
- * marks those tiles as the track, so A opens the workout menu.
+ * marks those tiles as the track, so A opens the workout menu. The
+ * activity board in the square is the same kind of button. Its mat
+ * and its post both open the neighborhood runs.
  */
 
 "use client";

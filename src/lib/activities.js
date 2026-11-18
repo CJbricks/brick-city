@@ -16,8 +16,9 @@
  * sponsor is the third slot. Signing one puts that brand's belt (or
  * their vest, if they do not sell a belt) in the closet and on you.
  *
- * Workouts are the RUNS table. `slots` is the energy cost. 2 is a heavy
- * session. `peak` and `endurance` on a workout are the HUD meters (the
+ * Workouts are the RUNS table. `slots` is the energy cost. A normal run
+ * is 2. A heavy run is 3. The strength session stays at 1 because it is
+ * not a run. `peak` and `endurance` on a workout are the HUD meters (the
  * orange bolt and the blue heart), not the Speed or Endurance attribute
  * levels. `hard: true` is one strike toward soreness.
  *
@@ -38,6 +39,16 @@
  * The coffee shop is three buttons: a cup, a pastry, and Wi-Fi. The cup
  * count, the Wi-Fi flag, and any leftover pace note reset on sleep.
  * Race IQ does not. It is the point of studying, and it stays.
+ *
+ * The town-square activity board is four rows in RUNS. The easy loop
+ * and the 5K time trial cost 2 energy. The speed loop costs 3, the
+ * same heavy session as a threshold or an interval run. The long walk
+ * costs 1 and is not a run. The time trial borrows the 5K clock
+ * (fitness, fatigue, gear, coffee, Race IQ) and stores a personal best.
+ * An old save has no best.
+ *
+ * Blister care is a clinic button. The coin price lives on each city's
+ * clinic record. It is not a save field.
  */
 
 import { formatWhen, isSunday, sleepPlan, slotFromEnergy, slotLabel, summarizeWeek } from "@/lib/calendar";
@@ -231,7 +242,7 @@ const RUNS = {
   "easy-run": {
     id: "easy-run",
     name: "Easy Recovery Run",
-    slots: 1,
+    slots: 2,
     miles: 2,
     fatigue: -10,
     nutrition: -6,
@@ -250,7 +261,7 @@ const RUNS = {
   "long-run": {
     id: "long-run",
     name: "Long Run",
-    slots: 2,
+    slots: 3,
     miles: 8,
     fatigue: 18,
     nutrition: -16,
@@ -272,7 +283,7 @@ const RUNS = {
   "park-trail": {
     id: "park-trail",
     name: "Park Trail Loop",
-    slots: 1,
+    slots: 2,
     miles: 4,
     fatigue: 12,
     nutrition: -10,
@@ -292,7 +303,7 @@ const RUNS = {
   yards: {
     id: "yards",
     name: "Backyard Practice Yards",
-    slots: 1,
+    slots: 2,
     miles: 4.2,
     fatigue: 14,
     nutrition: -12,
@@ -312,7 +323,7 @@ const RUNS = {
   intervals: {
     id: "intervals",
     name: "Track Intervals",
-    slots: 1,
+    slots: 2,
     miles: 3,
     fatigue: 15,
     nutrition: -9,
@@ -335,7 +346,7 @@ const RUNS = {
   threshold: {
     id: "threshold",
     name: "Threshold Run",
-    slots: 2,
+    slots: 3,
     miles: 5,
     fatigue: 17,
     nutrition: -12,
@@ -356,7 +367,7 @@ const RUNS = {
   "interval-run": {
     id: "interval-run",
     name: "Interval Run",
-    slots: 2,
+    slots: 3,
     miles: 4,
     fatigue: 20,
     nutrition: -12,
@@ -377,7 +388,7 @@ const RUNS = {
   "zone-2": {
     id: "zone-2",
     name: "Zone 2 Run",
-    slots: 1,
+    slots: 2,
     miles: 5,
     fatigue: 4,
     nutrition: -8,
@@ -396,7 +407,7 @@ const RUNS = {
   treadmill: {
     id: "treadmill",
     name: "Treadmill Run",
-    slots: 1,
+    slots: 2,
     miles: 5,
     fatigue: 10,
     nutrition: -8,
@@ -435,7 +446,7 @@ const RUNS = {
   "ridge-repeats": {
     id: "ridge-repeats",
     name: "Ridge Repeats",
-    slots: 2,
+    slots: 3,
     miles: 6,
     fatigue: 18,
     nutrition: -14,
@@ -452,6 +463,97 @@ const RUNS = {
       "Climbing XP, and a view of Brick City the size of a postage stamp.",
     ],
     longUltra: true,
+  },
+  // Quieter than the park easy run. Fatigue goes down, and hard is
+  // false, so nextSoreness can clear a sore flag when the other strikes
+  // (tired, hungry, worn shoes, a hard week) are already quiet. There
+  // is no separate heal. Peak does not move. Endurance moves a little.
+  "neighborhood-easy": {
+    id: "neighborhood-easy",
+    name: "Neighborhood Easy Recovery",
+    slots: 2,
+    miles: 1.5,
+    fatigue: -6,
+    nutrition: -4,
+    peak: 0,
+    endurance: 1,
+    xp: { overall: 8, versatile: 2 },
+    attributes: { recovery: 6, endurance: 1 },
+    hard: false,
+    training: true,
+    style: "road",
+    lines: [
+      "You jog the block easy enough to say hello.",
+      "Legs loosen. It is a recovery day, not a workout you will brag about.",
+    ],
+  },
+  // Same energy cost as Threshold and Interval Run. Shorter, so the
+  // fatigue hit sits with those sessions but the miles do not. Peak is
+  // the gain. Endurance comes along, less than the peak.
+  "neighborhood-speed": {
+    id: "neighborhood-speed",
+    name: "Neighborhood Speed Run",
+    slots: 3,
+    miles: 3,
+    fatigue: 16,
+    nutrition: -10,
+    peak: 10,
+    endurance: 2,
+    xp: { overall: 22, marathon: 14 },
+    attributes: { speed: 8, endurance: 2 },
+    hard: true,
+    training: true,
+    style: "road",
+    lines: [
+      "A short faster loop. The turn at the fountain comes up quick.",
+      "Peak is the point. Endurance comes along, a little.",
+    ],
+  },
+  // clock: "5k" means applyRun reads the race clock before it adds this
+  // session's fatigue. The official Brick City 5K is still a race.
+  // This one does not pay coins, does not set fiveKFinished, and does
+  // not call a sponsor to the square.
+  "neighborhood-5k": {
+    id: "neighborhood-5k",
+    name: "Neighborhood 5K Time Trial",
+    slots: 2,
+    miles: 3.1,
+    fatigue: 12,
+    nutrition: -10,
+    peak: 2,
+    endurance: 2,
+    xp: { overall: 16, marathon: 8 },
+    attributes: { speed: 4, endurance: 2, mental: 2 },
+    hard: true,
+    training: true,
+    style: "road",
+    clock: "5k",
+    lines: [
+      "You toe a quiet line by the board. No one else is racing.",
+      "The fountain, Brick Street, and back. Just you and the clock.",
+    ],
+  },
+  // Not a run, so it stays at 1 block while the runs around it cost 2 or 3.
+  // gentle skips the soreness check: a walk is what you do so a hot spot
+  // does not become a blister. Miles stay 0 so the shoe log is not a walk.
+  "neighborhood-walk": {
+    id: "neighborhood-walk",
+    name: "Neighborhood Long Walk",
+    slots: 1,
+    miles: 0,
+    fatigue: -12,
+    nutrition: -3,
+    peak: 0,
+    endurance: 1,
+    xp: { overall: 6 },
+    hard: false,
+    gentle: true,
+    training: true,
+    style: "road",
+    lines: [
+      "You walk the blocks. No watch, no pace.",
+      "The legs come back a little. It is not a run, and it does not have to be.",
+    ],
   },
 };
 
@@ -548,6 +650,9 @@ export function createNewGame({ name, gender }) {
     flaskReady: 0,
     // Study points from the shop Wi-Fi. 0 on a new game and on an old save.
     raceIq: 0,
+    // Neighborhood 5K personal best, "m:ss", or null if you have not
+    // run the time trial. An old save is missing this and loads as null.
+    records: { fiveK: null },
     energy: MAX_ENERGY,
     nappedToday: false,
     // 0, 1, or 2. The boolean above is the old save flag. Both reset on sleep.
@@ -823,6 +928,10 @@ export function applyRun(state, runId, rng = Math.random) {
   const before = state;
   const next = clone(state);
   const lines = [...activity.lines];
+  // The clock reads the runner you started as, same as a race. Adding
+  // this session's fatigue first would make the time you just ran
+  // include the tiredness you finish with.
+  if (activity.clock) lines.unshift(recordTimeTrial(next, activity.clock));
   if (next.condition.nutrition <= 0) {
     next.condition.fatigue = clampMeter(next.condition.fatigue + 6);
     lines.push("You start on empty. The workout turns into a shuffle.");
@@ -834,22 +943,30 @@ export function applyRun(state, runId, rng = Math.random) {
   applyShoeSideEffects(next, activity);
   applyWornExtras(next, activity);
   markTraining(next, activity);
-  const sore = nextSoreness(next, activity);
-  next.condition.sore = sore.sore;
-  next.condition.injury = sore.injury;
-  if (sore.injury && !before.condition.injury) {
-    lines.push("A hot spot becomes a blister. Ease off speed work for a couple of days.");
-  } else if (sore.sore && !before.condition.sore) {
-    lines.push("Something feels sore. A rest day now beats a week off later.");
+  // A long walk is recovery. Running the soreness check here would let
+  // a tired, hungry day turn the walk into the session that causes the blister.
+  if (!activity.gentle) {
+    const sore = nextSoreness(next, activity);
+    next.condition.sore = sore.sore;
+    next.condition.injury = sore.injury;
+    if (sore.injury && !before.condition.injury) {
+      lines.push("A hot spot becomes a blister. Ease off speed work for a couple of days.");
+    } else if (sore.sore && !before.condition.sore) {
+      lines.push("Something feels sore. A rest day now beats a week off later.");
+    }
   }
   const gear = gearModForStyle(next.gear, activity.style || "road");
   if (gear.wear === "worn out" && activity.miles > 0) {
     lines.push(`${gear.name} are worn out. Replace them at the Run Store.`);
   }
-  // The cup is spent by this run even if the line is empty. A race uses
-  // the pace percent instead of this fatigue swing. See cafe.js.
-  const coffeeDelta = coffeeFatigueDelta(next);
-  if (coffeeDelta) next.condition.fatigue = clampMeter(next.condition.fatigue + coffeeDelta);
+  // The cup is spent by this run even if the line is empty. A normal
+  // workout has no finish clock, so the cup moves fatigue instead.
+  // A time trial already put that same cup into the clock (finishScore).
+  // Swinging fatigue too would count the coffee twice.
+  if (!activity.clock) {
+    const coffeeDelta = coffeeFatigueDelta(next);
+    if (coffeeDelta) next.condition.fatigue = clampMeter(next.condition.fatigue + coffeeDelta);
+  }
   const coffeeLine = coffeeEffectLine(next);
   if (coffeeLine) lines.push(coffeeLine);
   clearCoffee(next);
@@ -1936,6 +2053,37 @@ export function applyClinicTreat(state) {
   return finish(before, next, lines);
 }
 
+function hasBlister(state) {
+  return state?.condition?.injury?.id === "blister";
+}
+
+/**
+ * A dressing, not a treatment hour. 0 energy, and it does not use the
+ * once-a-day treatment flag, so a blister can be dressed on a day you
+ * already sat for the longer session. No blister means no charge.
+ * The sore flag clears with the blister. Treatment does the same when
+ * the nights hit zero, and leaving "sore" up would keep warning you
+ * about a blister that is already gone.
+ */
+export function applyClinicBlister(state) {
+  const rates = ratesFor(state);
+  if (!hasBlister(state)) {
+    return refuse(state, ["No blister to dress. You keep your coins."]);
+  }
+  if (state.coins < rates.blister) {
+    return refuse(state, [`Blister care costs ${rates.blister} coins.`]);
+  }
+  const before = state;
+  const next = clone(state);
+  next.coins -= rates.blister;
+  next.condition.injury = null;
+  next.condition.sore = false;
+  sample(next);
+  return finish(before, next, [
+    `Blister care. ${rates.blister} coins, no energy. The blister is gone.`,
+  ]);
+}
+
 export function applyClinicTissue(state) {
   const rates = ratesFor(state);
   if (state.coins < rates.tissue) {
@@ -2088,6 +2236,8 @@ export function perform(state, action, roll = 0.5, rng = Math.random) {
       return applyClinicTreat(state);
     case "clinic-tissue":
       return applyClinicTissue(state);
+    case "clinic-blister":
+      return applyClinicBlister(state);
     case "clinic-screen":
       return applyClinicScreen(state);
     case "cafe-coffee":
@@ -2105,10 +2255,57 @@ function item(label, detail, action, disabled, disabledReason) {
   return { label, detail, action, disabled: Boolean(disabled), disabledReason: disabledReason || "" };
 }
 
+/**
+ * "21:10" style. flavorTime prints a 5K that way. Anything else (a 10K
+ * clock, a blank, a sentence) is not a personal best we can compare.
+ */
+export function normalizeFiveKTime(value) {
+  if (typeof value !== "string") return null;
+  const match = /^(\d+):(\d{2})$/.exec(value);
+  if (!match) return null;
+  if (Number(match[2]) >= 60) return null;
+  return value;
+}
+
+function clockSeconds(time) {
+  const match = /^(\d+):(\d{2})$/.exec(time || "");
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+export function readFiveKPb(state) {
+  return normalizeFiveKTime(state?.records?.fiveK);
+}
+
+export function fiveKPbLine(state) {
+  const time = readFiveKPb(state);
+  return time ? `Neighborhood 5K PB ${time}` : "Neighborhood 5K: no PB yet";
+}
+
+/**
+ * Writes the personal best when this clock is faster, and returns the
+ * line the result screen shows first. A missing best, which is every
+ * old save and every new game, counts as a PB. A tie does not.
+ * finishScore is the race clock: shoes, vest, sponsor, coffee, Race IQ.
+ */
+function recordTimeTrial(state, raceId) {
+  const race = RACES[raceId];
+  const time = flavorTime(race, finishScore(state, race), false);
+  const previous = readFiveKPb(state);
+  const seconds = clockSeconds(time);
+  const previousSeconds = previous ? clockSeconds(previous) : null;
+  const beaten = previousSeconds == null || (seconds != null && seconds < previousSeconds);
+  if (beaten) {
+    state.records = { ...(state.records || {}), fiveK: time };
+  }
+  if (beaten) return `Neighborhood 5K: ${time}. New PB!`;
+  return `Neighborhood 5K: ${time}. Your best is still ${previous}.`;
+}
+
 function runEnergyCost(runId) {
-  // 1 block is a normal session. 2 is a heavy one (long run, ridge,
-  // threshold, interval run). The menu label and applyRun both call
-  // this, so the button and the charge cannot disagree.
+  // Runs are 2, heavy runs are 3. The long walk and the strength
+  // session stay at 1. The menu label and applyRun both call this,
+  // so the button and the charge cannot disagree.
   const slots = RUNS[runId]?.slots;
   return slots >= 2 ? slots : 1;
 }
@@ -2290,10 +2487,10 @@ export function menuFor(locationId, state) {
           runItem(state, "intervals"),
           runItem(state, "threshold"),
           runItem(state, "interval-run"),
-          item("Brick City 5K", "Open · race readiness", { type: "open-race", id: "5k" }),
+          item("Brick City 5K", `${RACES["5k"].energy} energy · race readiness`, { type: "open-race", id: "5k" }),
           item(
             "Community 10K",
-            isTenKOpen(state) ? "Open · race readiness" : describeNeeds(tenKStatus(state).needs),
+            isTenKOpen(state) ? `${RACES["10k"].energy} energy · race readiness` : describeNeeds(tenKStatus(state).needs),
             { type: "open-race", id: "10k" },
             !isTenKOpen(state),
             describeNeeds(tenKStatus(state).needs),
@@ -2341,7 +2538,7 @@ export function menuFor(locationId, state) {
         title: "PT Clinic",
         speaker: "PT Clinic",
         testId: "clinic-menu",
-        intro: `${rates.name}. Treatment ${rates.treatment} coins · Soft tissue ${rates.tissue} coins.\nOne treatment a day. Sleep opens the table again.`,
+        intro: `${rates.name}. Treatment ${rates.treatment} coins · Soft tissue ${rates.tissue} coins · Blister care ${rates.blister} coins.\nOne treatment a day. Sleep opens the table again.`,
         items: [
           item(
             "Treatment session",
@@ -2359,10 +2556,32 @@ export function menuFor(locationId, state) {
             state.coins < rates.tissue,
             `Need ${rates.tissue} coins.`,
           ),
+          item(
+            "Blister care",
+            hasBlister(state)
+              ? `${rates.blister} coins · 0 energy · clears a blister`
+              : "No blister on the chart.",
+            { type: "clinic-blister" },
+            !hasBlister(state) || state.coins < rates.blister,
+            hasBlister(state) ? `Need ${rates.blister} coins.` : "No blister to dress.",
+          ),
           item("Injury screen", "Free · what the chart says", { type: "clinic-screen" }),
         ],
       };
     }
+    case "activity":
+      return {
+        title: "Activity Board",
+        speaker: "Activity Board",
+        testId: "activity-menu",
+        intro: "Three neighborhood efforts by the fountain. Each one spends energy like any other workout.",
+        items: [
+          runItem(state, "neighborhood-easy"),
+          runItem(state, "neighborhood-walk"),
+          runItem(state, "neighborhood-speed"),
+          runItem(state, "neighborhood-5k"),
+        ],
+      };
     case "cafe": {
       const shop = cafeFor(state);
       const cups = coffeeCount(state);
