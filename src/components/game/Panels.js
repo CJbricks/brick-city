@@ -23,7 +23,7 @@ import { RACES, describeLoadout, readiness } from "@/lib/race";
 import { readRaceIq } from "@/lib/cafe";
 import { attributeLevel, levelProgress, trackRank } from "@/lib/xp";
 import { runnerLevel, mountainStatus, describeNeeds } from "@/lib/unlocks";
-import { calendarView } from "@/lib/activities";
+import { calendarView, fiveKPbLine } from "@/lib/activities";
 
 function Window({ title, children, testId }) {
   return (
@@ -206,6 +206,7 @@ export function StatusView({ game, onClose, onSponsors }) {
         ))}
       </div>
       <p data-testid="race-iq">{`Race IQ ${readRaceIq(game)}`}</p>
+      <p data-testid="fivek-pb">{fiveKPbLine(game)}</p>
       {game.condition?.coffeeNext === "boost" ? <p>Coffee: a small pace bump on the next run.</p> : null}
       {game.condition?.coffeeNext === "jitter" ? (
         <p className="warn">Jittery. The next run pays a small pace penalty.</p>
@@ -278,6 +279,7 @@ export function HelpView({ onClose }) {
       <p>Shoes change one style and cost you in the others. A belt is +5 max nutrition. A vest is +10, with a small penalty in short road races. Socks and a hat trim a little fatigue.</p>
       <p>Tall grass in the park and on the mountain trail can hide a find. The PT clinic treats a real injury. A protein shake only eases soreness.</p>
       <p>The coffee shop sells a cup, a pastry, and an hour of Wi-Fi. Two cups help the next run. A third makes you jittery. Wi-Fi raises Race IQ. That number is on this status sheet, not the corner card.</p>
+      <p>The activity board in the town square lists three neighborhood runs. The easy one rests you. The speed one costs two energy. The 5K is a solo time trial. Your best 5K time is on the status sheet.</p>
       <p>Brands offer deals after a result. Accept or decline in Sponsors. An offer lasts 3 days. You can hold one shoe sponsor, one nutrition sponsor, and one gear sponsor. A gear deal covers the belt and vest from that brand.</p>
       <Button className="gbc-btn" onClick={onClose}>Close</Button>
     </Window>

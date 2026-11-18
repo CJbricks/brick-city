@@ -29,6 +29,11 @@
  * activationTiles() from town.js, which is the same grid A checks.
  * A mat is only drawn where you can stand and press A.
  *
+ * The activity board is an original kiosk: a cedar post, a plywood
+ * face, and three painted stripes for the three neighborhood runs.
+ * It is not a badge, a logo, or a sign copied from another game.
+ * sceneryLayout owns its rectangle so the picture stays on the post.
+ *
  * Runner letters (the pictures are drawn as text so the outline is easy
  * to see in the source):
  *   o outline   C cap   P panel   B brim   H hair
@@ -39,7 +44,7 @@
  * lit edge and the shaded edge. That is the 3-tone shading.
  */
 
-import { BUILDINGS, CITY_SIGNS, COLS, ROWS, TILE, activationTiles, buildWorld } from "@/game/town";
+import { ACTIVITY_BOARD, BUILDINGS, CITY_SIGNS, COLS, ROWS, TILE, activationTiles, buildWorld } from "@/game/town";
 import { townLights } from "@/lib/lighting";
 import { applyBrandOutfit, gearTint, hatColors } from "@/game/brandColors";
 import { hatById } from "@/lib/catalog";
@@ -1277,6 +1282,15 @@ export function sceneryLayout() {
       w: TILE,
       h: TILE,
     })),
+    {
+      id: "activity",
+      kind: "kiosk",
+      text: "RUN",
+      x: ACTIVITY_BOARD.kiosk.tx * TILE,
+      y: ACTIVITY_BOARD.kiosk.ty * TILE,
+      w: TILE,
+      h: TILE,
+    },
   ];
   const parkX0 = 15 * TILE + 8;
   const parkX1 = 31 * TILE - 8;
@@ -1529,6 +1543,25 @@ function drawParkAndTrackSigns(ctx, scene) {
   for (const id of ["park", "track", "5k"]) paintBoard(ctx, scenePart(scene, id));
 }
 
+function drawActivityBoard(ctx, scene) {
+  // Drawn from the same rectangle as the solid post in town.js. The
+  // board sits in the top of the tile so a runner standing on the mat
+  // below does not cover the word. The three stripes are the menu:
+  // easy, speed, and the 5K clock. Original pixels, no borrowed mark.
+  const sign = scenePart(scene, "activity");
+  if (!sign) return;
+  const x = sign.x;
+  const y = sign.y;
+  box(ctx, x + 14, y + 20, 4, 12, "#6b4428", "#c4956a", "#3e2614");
+  box(ctx, x + 3, y + 2, 26, 20, "#f3e2c0", "#fff8ea", "#6b4428");
+  ink(ctx, x + 6, y + 1, 8, 3, "#8d6a3a");
+  ink(ctx, x + 8, y + 0, 4, 2, "#c4a574");
+  paintOutlinedText(ctx, "RUN", x + 8, y + 5, "#1c140f", 1);
+  ink(ctx, x + 6, y + 12, 20, 2, "#3d9a4a");
+  ink(ctx, x + 6, y + 15, 20, 2, "#e07a32");
+  ink(ctx, x + 6, y + 18, 20, 2, "#1d4ed8");
+}
+
 function drawCityPost(ctx, tx, ty) {
   const x = tx * TILE;
   const y = ty * TILE;
@@ -1641,6 +1674,7 @@ export function renderWorld(state, waterFrame = 0) {
     if (building.id === "cafe") drawCafe(ctx, px, py, scene);
   }
   drawFountain(ctx, waterFrame);
+  drawActivityBoard(ctx, scene);
   drawGate(ctx, world.mountainOpen, scene);
   drawDepot(ctx, scene);
   for (const lamp of townLights().lamps) drawLampPost(ctx, lamp.x, lamp.y);

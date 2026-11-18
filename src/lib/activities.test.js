@@ -16,6 +16,10 @@
  * answer. The same card stays up if you look twice in one day. The
  * next day, and the next shift today, move on. Old saves and the old
  * shoes / stock / gait ids still pay.
+ *
+ * The town-square activity board is in here too. The easy loop rests
+ * you. The speed loop costs two energy and raises Peak more than
+ * Endurance. The 5K time trial uses the race clock and stores a PB.
  */
 
 import { describe, expect, it } from "vitest";
@@ -32,6 +36,7 @@ import {
   applyShoe,
   applySleep,
   createNewGame,
+  fiveKPbLine,
   homeMealPortion,
   menuFor,
   perform,
@@ -938,5 +943,103 @@ describe("daily meals, snacks, and naps", () => {
     const broke = menuFor("home", used);
     expect(broke.items.find((entry) => entry.action.id === "meal").disabled).toBe(true);
     expect(broke.items.find((entry) => entry.action.id === "meal").disabledReason).toBe("Not enough coins.");
+  });
+});
+
+describe("activity board", () => {
+  it("lists the three neighborhood efforts and their energy", () => {
+    const menu = menuFor("activity", fresh());
+    expect(menu.testId).toBe("activity-menu");
+    expect(menu.items.map((entry) => entry.action.id)).toEqual([
+      "neighborhood-easy",
+      "neighborhood-speed",
+      "neighborhood-5k",
+    ]);
+    expect(menu.items[0].detail).toContain("1 energy");
+    expect(menu.items[1].detail).toContain("2 energy");
+    expect(menu.items[2].detail).toContain("1 energy");
+    expect(fiveKPbLine(fresh())).toBe("Neighborhood 5K: no PB yet");
+  });
+
+  it("lets the easy loop ease fatigue and clear soreness", () => {
+    const state = fresh();
+    state.condition.sore = true;
+    state.condition.fatigue = 74;
+    const result = applyRun(state, "neighborhood-easy");
+    expect(result.ok).toBe(true);
+    expect(result.state.condition.fatigue).toBe(68);
+    expect(result.state.condition.sore).toBe(false);
+    expect(result.state.condition.endurance).toBe(fresh().condition.endurance + 1);
+    expect(result.state.condition.peak).toBe(fresh().condition.peak);
+    expect(result.state.energy).toBe(9);
+    expect(result.state.calendar.trainedToday).toBe(true);
+    expect(result.state.condition.injury).toBeNull();
+  });
+
+  it("makes the speed loop a heavy peak session", () => {
+    const gain = meterGain("neighborhood-speed");
+    expect(gain.result.ok).toBe(true);
+    expect(gain.energy).toBe(2);
+    expect(gain.peak).toBeGreaterThan(gain.endurance);
+    expect(gain.endurance).toBeGreaterThan(0);
+    expect(gain.fatigue).toBeGreaterThan(0);
+    expect(gain.fatigue).toBeGreaterThan(meterGain("neighborhood-easy").fatigue);
+    const tired = fresh();
+    tired.energy = 1;
+    const row = menuFor("activity", tired).items.find((entry) => entry.action.id === "neighborhood-speed");
+    expect(row.disabled).toBe(true);
+    expect(applyRun(tired, "neighborhood-speed").ok).toBe(false);
+  });
+
+  it("times a solo 5K, saves a personal best, and spends one energy", () => {
+    const first = applyRun(fresh(), "neighborhood-5k");
+    expect(first.ok).toBe(true);
+    expect(first.lines[0]).toBe("Neighborhood 5K: 29:05. New PB!");
+    expect(first.state.records.fiveK).toBe("29:05");
+    expect(first.state.energy).toBe(9);
+    expect(first.state.progress.fiveKFinished).toBe(false);
+    expect(first.state.progress.totalMiles).toBe(3.1);
+    expect(first.state.sponsors.offers.shoe).toBeNull();
+    expect(first.state.sponsors.mailbox).toEqual([]);
+    expect(fiveKPbLine(first.state)).toBe("Neighborhood 5K PB 29:05");
+
+    const tied = fresh();
+    tied.records.fiveK = "29:05";
+    const same = applyRun(tied, "neighborhood-5k");
+    expect(same.lines[0]).toBe("Neighborhood 5K: 29:05. Your best is still 29:05.");
+    expect(same.state.records.fiveK).toBe("29:05");
+
+    const sharp = first.state;
+    sharp.energy = 10;
+    sharp.condition.endurance = 90;
+    sharp.condition.peak = 90;
+    sharp.condition.fatigue = 5;
+    const better = applyRun(sharp, "neighborhood-5k");
+    expect(better.lines[0]).toBe("Neighborhood 5K: 21:10. New PB!");
+    expect(better.state.records.fiveK).toBe("21:10");
+  });
+
+  it("lets coffee, Race IQ, and road shoes move the 5K clock", () => {
+    const base = fresh();
+    base.condition.endurance = 40;
+    base.condition.peak = 45;
+    base.condition.fatigue = 12;
+    const plain = applyRun(structuredClone(base), "neighborhood-5k");
+    expect(plain.lines[0]).toBe("Neighborhood 5K: 26:40. New PB!");
+
+    const caffeinated = structuredClone(base);
+    caffeinated.condition.coffeeNext = "boost";
+    const bumped = applyRun(caffeinated, "neighborhood-5k");
+    expect(bumped.lines[0]).toBe("Neighborhood 5K: 23:55. New PB!");
+    expect(bumped.state.condition.coffeeNext).toBeNull();
+    expect(bumped.state.condition.fatigue).toBe(base.condition.fatigue + 12);
+
+    const studied = structuredClone(base);
+    studied.raceIq = 8;
+    expect(applyRun(studied, "neighborhood-5k").lines[0]).toBe("Neighborhood 5K: 23:55. New PB!");
+
+    const geared = structuredClone(base);
+    geared.gear.equipped = "road";
+    expect(applyRun(geared, "neighborhood-5k").lines[0]).toBe("Neighborhood 5K: 23:55. New PB!");
   });
 });

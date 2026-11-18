@@ -8,12 +8,14 @@
  * and it refuses a fence that shares a tile with a sign or the gate.
  * It also presses A on the 5K board and the TRACK name: the tile under
  * you, and every neighbor facing the sign, has to open the track.
+ * The activity board in the square is the same kind of check: the post
+ * is solid, the mat is walkable, and A opens it without cutting a path.
  */
 
 import { describe, expect, it } from "vitest";
 import { createNewGame } from "@/lib/activities";
 import { paintActivationPads, sceneryLayout, tilesTouchedBy } from "@/game/art";
-import { COLS, DIR, ROWS, TRACK_GATE, TRACK_SIGN_TILES, UNBUILT_CITIES, activationTiles, buildWorld, canReach, cityMaps, entranceAt, footBlocked, homeSpawn, isBlocked, lookupInteract, noteArrival, PLACES, TILE, signCopy, trackLaneTiles, unreachableTiles, worldPixelSize } from "@/game/town";
+import { ACTIVITY_BOARD, COLS, DIR, ROWS, TRACK_GATE, TRACK_SIGN_TILES, UNBUILT_CITIES, activationTiles, buildWorld, canReach, cityMaps, entranceAt, footBlocked, homeSpawn, isBlocked, lookupInteract, noteArrival, PLACES, TILE, signCopy, trackLaneTiles, unreachableTiles, worldPixelSize } from "@/game/town";
 import { cafeRates, clinicRates } from "@/lib/constants";
 import { xpToReachLevel } from "@/lib/xp";
 import { deserialize } from "@/lib/save";
@@ -357,6 +359,34 @@ describe("track sign interaction", () => {
     // Remy stands on the sidewalk south of the booth. Face him.
     expect(lookupInteract(world, 25, 16, "right")).toBe("rival");
     expect(lookupInteract(world, 26, 15, "down")).toBe("rival");
+  });
+});
+
+describe("activity board", () => {
+  it("stands in the square on a gold mat without blocking the walk", () => {
+    const state = createNewGame({ name: "Ada", gender: "female" });
+    const world = buildWorld(state);
+    const home = homeSpawn();
+    const origin = { tx: Math.floor(home.x / TILE), ty: Math.floor(home.y / TILE) };
+    const { kiosk, mat, id } = ACTIVITY_BOARD;
+    expect(isBlocked(world, kiosk.tx, kiosk.ty)).toBe(true);
+    expect(isBlocked(world, mat.tx, mat.ty)).toBe(false);
+    expect(world.interact[kiosk.ty][kiosk.tx]).toBe(id);
+    expect(world.interact[mat.ty][mat.tx]).toBe(id);
+    expect(canReach(world, origin, mat)).toBe(true);
+    expect(unreachableTiles(world, origin)).toEqual([]);
+    expectSignOpens(world, mat, id);
+    expectSignOpens(world, kiosk, id);
+    expect(entranceAt(mat.tx, mat.ty)).toBeNull();
+
+    const pads = activationTiles(world);
+    expect(pads).toContainEqual({ tx: mat.tx, ty: mat.ty, id });
+    expect(pads.some((pad) => pad.tx === kiosk.tx && pad.ty === kiosk.ty)).toBe(false);
+
+    const scene = sceneryLayout();
+    const painted = scene.signs.find((sign) => sign.id === "activity");
+    expect(tilesTouchedBy(painted)).toEqual([kiosk]);
+    expect(lookupInteract(world, 15, 13, "down")).toBe("chat-bram");
   });
 });
 

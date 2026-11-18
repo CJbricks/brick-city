@@ -17,8 +17,8 @@
  * race. Skipping drops standing. Standing under STANDING_DROP ends that
  * deal. The brand then waits COOLDOWN_LEAVE days before they will offer
  * again. You do not sign yourself from a list. offers.js is what lets a
- * brand ask. The rules here are pure. activities.js is what writes them
- * onto a save.
+ * brand ask, including the quiet days between offers. The rules here are
+ * pure. activities.js is what writes them onto a save.
  */
 
 /**
@@ -425,6 +425,10 @@ export function emptySponsors() {
     mailbox: [],
     shoeTerms: null,
     gearTerms: null,
+    // Day the last new offer was created, any category. Null means
+    // there has not been one. An old save has no memory of it, and
+    // offers.js treats null as "the gap is already open".
+    lastOfferDay: null,
   };
 }
 
@@ -799,6 +803,16 @@ export function normalizeSponsors(raw) {
   // a gear discount the player never signed.
   const shoeTerms = shoe ? readStoredTerms(raw.shoeTerms) : null;
   const gearTerms = gear ? readStoredTerms(raw.gearTerms) : null;
+  // Missing, negative, or not a number means "no recent offer". A day
+  // number is kept so Resume does not hand the player a brand the gap
+  // was still holding off.
+  // Number(null) is 0, and 0 would look like an offer on a day that
+  // never happened. Only a real day number counts. Anything else,
+  // including a missing field on an old save, stays null.
+  const lastRaw = raw.lastOfferDay;
+  const lastOfferDay = typeof lastRaw === "number" && Number.isFinite(lastRaw) && lastRaw >= 0
+    ? Math.round(lastRaw)
+    : null;
   const next = {
     shoe,
     nutrition,
@@ -811,6 +825,7 @@ export function normalizeSponsors(raw) {
     mailbox,
     shoeTerms,
     gearTerms,
+    lastOfferDay,
   };
   if (obligationStillValid(next, raw.obligation)) {
     // "wear" is not in the photo-shoot list. Falling back to the first

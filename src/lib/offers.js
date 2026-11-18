@@ -8,12 +8,16 @@
  * is a function the caller passes in, so a test can force the offer
  * without touching Math.random.
  *
- * One shoe offer, one nutrition offer, and one gear offer can be
- * pending. Each lasts 3 in-game days. Decline or expiry waits 7 days
- * before that brand asks again. Leaving a shoe or gear brand (you
- * accepted a rival, or they dropped you) waits 14 days. A rival can
- * poach on a strong result, and the new terms have to beat the contract
- * you already signed. Nutrition brands do not poach.
+ * One offer can be pending, across shoe, nutrition, and gear together.
+ * A letter still in the mailbox counts. Each note lasts 3 in-game days.
+ * After any new offer, every category waits OFFER_GAP_DAYS before
+ * another brand may ask. A win is still a sure offer, but only once
+ * that gap has passed and the table is empty. It does not skip either
+ * gate. Decline or expiry waits 7 days before that brand asks again.
+ * Leaving a shoe or gear brand (you accepted a rival, or they dropped
+ * you) waits 14 days. A rival can poach on a strong result, and the
+ * new terms have to beat the contract you already signed. Nutrition
+ * brands do not poach.
  *
  * Gear is the belt and the vest as one deal. A road result leans toward
  * belt brands. A trail or ultra result leans toward vest brands. Every
@@ -40,11 +44,24 @@ import {
   sponsorById,
 } from "@/lib/sponsors";
 
-// Win is certain. Top 3 is likely. Just finishing is a long shot, so a
-// jog-in does not fill the mailbox every afternoon.
+// Days that must pass after any new offer before another brand, in any
+// category, may ask. An offer created on day 1 can be followed on day
+// 6 (1 + 5). The per-brand cooldown is separate and usually longer.
+// This gap is why a week of good races does not fill the table.
+export const OFFER_GAP_DAYS = 5;
+
+// Live notes plus letters that have not arrived yet. One, so a single
+// win cannot hand you a shoe rep, a fuel rep, and a vest rep together.
+export const MAX_PENDING_OFFERS = 1;
+
+// Win stays certain once the gap is open and the table is empty. It
+// does not skip those two gates. Top 3 used to be 0.7, which with three
+// categories felt like a rep at every banner. 0.35 is still the strong
+// result, just not most of them. A plain finish used to be 0.18. 0.08
+// is about one in twelve, so jogging it in rarely starts a conversation.
 export const CHANCE_WIN = 1;
-export const CHANCE_PODIUM = 0.7;
-export const CHANCE_FINISH = 0.18;
+export const CHANCE_PODIUM = 0.35;
+export const CHANCE_FINISH = 0.08;
 
 /**
  * Who a result can attract. Trail results include the trail lines of
@@ -160,6 +177,11 @@ export function ensureSponsors(state) {
   if (!Array.isArray(state.sponsors.mailbox)) state.sponsors.mailbox = [];
   if (!("shoeTerms" in state.sponsors)) state.sponsors.shoeTerms = null;
   if (!("gearTerms" in state.sponsors)) state.sponsors.gearTerms = null;
+  // Missing means the gap is open. Do not invent "yesterday" or an old
+  // save would go quiet on the first morning back.
+  if (typeof state.sponsors.lastOfferDay !== "number" || !Number.isFinite(state.sponsors.lastOfferDay)) {
+    state.sponsors.lastOfferDay = null;
+  }
 }
 
 function dayOf(state) {
@@ -179,6 +201,30 @@ function offerIsCurrent(state, offer) {
 export function liveOffer(state, kind) {
   const offer = state?.sponsors?.offers?.[kind];
   return offerIsCurrent(state, offer) ? offer : null;
+}
+
+function livePending(state) {
+  return OFFER_KINDS.reduce((sum, kind) => sum + (liveOffer(state, kind) ? 1 : 0), 0);
+}
+
+/**
+ * Notes on the table, plus letters that arrive tomorrow. A letter is
+ * already an offer. Counting it here is why a trail loop and a race
+ * on the same day cannot both start a conversation.
+ */
+function pendingOffers(state) {
+  return livePending(state) + (state.sponsors.mailbox?.length || 0);
+}
+
+/**
+ * Null lastOfferDay means this save has never recorded an offer. That
+ * includes every old brick-city-save-v1 file. The gap stays open so
+ * Resume does not invent a silence the player never earned.
+ */
+function gapOpen(state) {
+  const last = state.sponsors?.lastOfferDay;
+  if (typeof last !== "number") return true;
+  return dayOf(state) >= last + OFFER_GAP_DAYS;
 }
 
 function beatsContract(offerTerms, current) {
@@ -247,7 +293,9 @@ function considerKind(state, kind, event, rng) {
   const ids = eligibleIds(state, kind, event.style, poach);
   if (ids.length === 0) return null;
   // A win skips the roll. Calling rng here would make a "sure thing"
-  // depend on the same number the brand picker needs.
+  // depend on the same number the brand picker needs. The sure thing
+  // still waits on the gap and the one-note rule. rollOffers checks
+  // both before it gets here.
   if (chanceFor(event.quality) < 1 && rng() >= chanceFor(event.quality)) return null;
   const index = Math.min(ids.length - 1, Math.floor(rng() * ids.length));
   return buildOffer(state, kind, ids[index], poach);
@@ -301,6 +349,10 @@ export function rollOffers(state, event, rng = Math.random) {
   const quality = event?.quality || "finish";
   const channel = event?.channel === "letter" ? "letter" : "finish";
   if (!RESULT_BRANDS[style]) return { lines, created };
+  // Checked before any brand is picked, so a win cannot dodge them.
+  if (!gapOpen(state) || pendingOffers(state) >= MAX_PENDING_OFFERS) {
+    return { lines, created };
+  }
   for (const kind of OFFER_KINDS) {
     const offer = considerKind(state, kind, { style, quality }, rng);
     if (!offer) continue;
@@ -308,12 +360,15 @@ export function rollOffers(state, event, rng = Math.random) {
       const waiting = state.sponsors.mailbox.some((item) => item.kind === kind);
       if (waiting) continue;
       state.sponsors.mailbox.push({ ...offer, arrivesOn: dayOf(state) + 1 });
-      created.push(offer);
-      continue;
+    } else {
+      state.sponsors.offers[kind] = offer;
+      lines.push(offerSentence(offer, state, "finish"));
     }
-    state.sponsors.offers[kind] = offer;
+    // The gap starts the day the offer is created, not the morning a
+    // letter lands. Delivering it later must not reset the wait.
+    state.sponsors.lastOfferDay = dayOf(state);
     created.push(offer);
-    lines.push(offerSentence(offer, state, "finish"));
+    break;
   }
   return { lines, created };
 }
@@ -332,6 +387,9 @@ export function grantOffer(state, kind, id, options = {}) {
   if (!isCooled(next, id)) return { ok: false, state, lines: ["That brand is waiting out a cooldown."] };
   const offer = buildOffer(next, kind, id, Boolean(options.poach));
   next.sponsors.offers[kind] = offer;
+  // A hand-placed note is still a new offer. The next natural roll
+  // waits out the same gap a finish-line rep would have started.
+  next.sponsors.lastOfferDay = dayOf(next);
   return { ok: true, state: next, offer, lines: [offerSentence(offer, next, "finish")] };
 }
 
@@ -360,9 +418,9 @@ export function deliverMail(state) {
       keep.push(letter);
       continue;
     }
-    // One pending offer per kind. A letter that shows up while that
-    // slot is full waits for the next morning instead of being thrown out.
-    if (state.sponsors.offers[letter.kind]) {
+    // One note on the table, any category. A second letter waits for
+    // the next morning instead of stacking another deal beside it.
+    if (livePending(state) >= MAX_PENDING_OFFERS) {
       keep.push({ ...letter, arrivesOn: day + 1 });
       continue;
     }

@@ -34,6 +34,13 @@
  * and a missing count as zero. Resume does not need a new save version,
  * and an old job id (shoes, stock, gait) still names its original scene.
  *
+ * The neighborhood 5K personal best arrived on this same key too. A blob
+ * from before the activity board has no records.fiveK. That loads as no
+ * PB, not as a time you never ran. The offer gap's lastOfferDay is the
+ * same idea: missing means brands may still ask, because inventing a
+ * recent offer would silence a mailbox the player never saw. The version
+ * stays 1.
+ *
  * v2 widened every tile from 16px to 32px. A position is stored in pixels,
  * so an old save's x/y would land on the wrong half of the new tile and
  * often inside a wall. New games stamp tileSize: 32. A save without that
@@ -43,6 +50,7 @@
 import { MAX_ENERGY, SAVE_KEY, SAVE_VERSION } from "@/lib/constants";
 import { slotFromEnergy } from "@/lib/calendar";
 import { TILE } from "@/game/town";
+import { normalizeFiveKTime } from "@/lib/activities";
 import { maxNutritionFromGear, normalizeGear } from "@/lib/catalog";
 import { normalizeSponsors } from "@/lib/sponsors";
 
@@ -92,6 +100,12 @@ export function deserialize(raw) {
     if (data.condition.coffeeNext !== "boost" && data.condition.coffeeNext !== "jitter") {
       data.condition.coffeeNext = null;
     }
+    // No records object, or a best that is not a 5K clock, means you
+    // have not run the neighborhood time trial. Do not invent a time.
+    if (!data.records || typeof data.records !== "object" || Array.isArray(data.records)) {
+      data.records = {};
+    }
+    data.records.fiveK = normalizeFiveKTime(data.records.fiveK);
     if (typeof data.calendar.homeMealUsed !== "boolean") data.calendar.homeMealUsed = false;
     if (typeof data.calendar.homeSnackUsed !== "boolean") data.calendar.homeSnackUsed = false;
     // The counts are newer than the yes/no flags. An old brick-city-save-v1

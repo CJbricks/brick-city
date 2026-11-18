@@ -38,6 +38,12 @@
  * The coffee shop is three buttons: a cup, a pastry, and Wi-Fi. The cup
  * count, the Wi-Fi flag, and any leftover pace note reset on sleep.
  * Race IQ does not. It is the point of studying, and it stays.
+ *
+ * The town-square activity board is three more workouts in RUNS. The
+ * easy loop and the 5K time trial cost 1 energy. The speed loop costs
+ * 2, the same heavy session as a threshold or an interval run. The
+ * time trial borrows the 5K clock (fitness, fatigue, gear, coffee,
+ * Race IQ) and stores a personal best. An old save has no best.
  */
 
 import { formatWhen, isSunday, sleepPlan, slotFromEnergy, slotLabel, summarizeWeek } from "@/lib/calendar";
@@ -453,6 +459,75 @@ const RUNS = {
     ],
     longUltra: true,
   },
+  // Quieter than the park easy run. Fatigue goes down, and hard is
+  // false, so nextSoreness can clear a sore flag when the other strikes
+  // (tired, hungry, worn shoes, a hard week) are already quiet. There
+  // is no separate heal. Peak does not move. Endurance moves a little.
+  "neighborhood-easy": {
+    id: "neighborhood-easy",
+    name: "Neighborhood Easy Recovery",
+    slots: 1,
+    miles: 1.5,
+    fatigue: -6,
+    nutrition: -4,
+    peak: 0,
+    endurance: 1,
+    xp: { overall: 8, versatile: 2 },
+    attributes: { recovery: 6, endurance: 1 },
+    hard: false,
+    training: true,
+    style: "road",
+    lines: [
+      "You jog the block easy enough to say hello.",
+      "Legs loosen. It is a recovery day, not a workout you will brag about.",
+    ],
+  },
+  // Same energy cost as Threshold and Interval Run. Shorter, so the
+  // fatigue hit sits with those sessions but the miles do not. Peak is
+  // the gain. Endurance comes along, less than the peak.
+  "neighborhood-speed": {
+    id: "neighborhood-speed",
+    name: "Neighborhood Speed Run",
+    slots: 2,
+    miles: 3,
+    fatigue: 16,
+    nutrition: -10,
+    peak: 10,
+    endurance: 2,
+    xp: { overall: 22, marathon: 14 },
+    attributes: { speed: 8, endurance: 2 },
+    hard: true,
+    training: true,
+    style: "road",
+    lines: [
+      "A short faster loop. The turn at the fountain comes up quick.",
+      "Peak is the point. Endurance comes along, a little.",
+    ],
+  },
+  // clock: "5k" means applyRun reads the race clock before it adds this
+  // session's fatigue. The official Brick City 5K is still a race.
+  // This one does not pay coins, does not set fiveKFinished, and does
+  // not call a sponsor to the square.
+  "neighborhood-5k": {
+    id: "neighborhood-5k",
+    name: "Neighborhood 5K Time Trial",
+    slots: 1,
+    miles: 3.1,
+    fatigue: 12,
+    nutrition: -10,
+    peak: 2,
+    endurance: 2,
+    xp: { overall: 16, marathon: 8 },
+    attributes: { speed: 4, endurance: 2, mental: 2 },
+    hard: true,
+    training: true,
+    style: "road",
+    clock: "5k",
+    lines: [
+      "You toe a quiet line by the board. No one else is racing.",
+      "The fountain, Brick Street, and back. Just you and the clock.",
+    ],
+  },
 };
 
 function clone(state) {
@@ -548,6 +623,9 @@ export function createNewGame({ name, gender }) {
     flaskReady: 0,
     // Study points from the shop Wi-Fi. 0 on a new game and on an old save.
     raceIq: 0,
+    // Neighborhood 5K personal best, "m:ss", or null if you have not
+    // run the time trial. An old save is missing this and loads as null.
+    records: { fiveK: null },
     energy: MAX_ENERGY,
     nappedToday: false,
     // 0, 1, or 2. The boolean above is the old save flag. Both reset on sleep.
@@ -823,6 +901,10 @@ export function applyRun(state, runId, rng = Math.random) {
   const before = state;
   const next = clone(state);
   const lines = [...activity.lines];
+  // The clock reads the runner you started as, same as a race. Adding
+  // this session's fatigue first would make the time you just ran
+  // include the tiredness you finish with.
+  if (activity.clock) lines.unshift(recordTimeTrial(next, activity.clock));
   if (next.condition.nutrition <= 0) {
     next.condition.fatigue = clampMeter(next.condition.fatigue + 6);
     lines.push("You start on empty. The workout turns into a shuffle.");
@@ -846,10 +928,14 @@ export function applyRun(state, runId, rng = Math.random) {
   if (gear.wear === "worn out" && activity.miles > 0) {
     lines.push(`${gear.name} are worn out. Replace them at the Run Store.`);
   }
-  // The cup is spent by this run even if the line is empty. A race uses
-  // the pace percent instead of this fatigue swing. See cafe.js.
-  const coffeeDelta = coffeeFatigueDelta(next);
-  if (coffeeDelta) next.condition.fatigue = clampMeter(next.condition.fatigue + coffeeDelta);
+  // The cup is spent by this run even if the line is empty. A normal
+  // workout has no finish clock, so the cup moves fatigue instead.
+  // A time trial already put that same cup into the clock (finishScore).
+  // Swinging fatigue too would count the coffee twice.
+  if (!activity.clock) {
+    const coffeeDelta = coffeeFatigueDelta(next);
+    if (coffeeDelta) next.condition.fatigue = clampMeter(next.condition.fatigue + coffeeDelta);
+  }
   const coffeeLine = coffeeEffectLine(next);
   if (coffeeLine) lines.push(coffeeLine);
   clearCoffee(next);
@@ -2105,6 +2191,53 @@ function item(label, detail, action, disabled, disabledReason) {
   return { label, detail, action, disabled: Boolean(disabled), disabledReason: disabledReason || "" };
 }
 
+/**
+ * "21:10" style. flavorTime prints a 5K that way. Anything else (a 10K
+ * clock, a blank, a sentence) is not a personal best we can compare.
+ */
+export function normalizeFiveKTime(value) {
+  if (typeof value !== "string") return null;
+  const match = /^(\d+):(\d{2})$/.exec(value);
+  if (!match) return null;
+  if (Number(match[2]) >= 60) return null;
+  return value;
+}
+
+function clockSeconds(time) {
+  const match = /^(\d+):(\d{2})$/.exec(time || "");
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+export function readFiveKPb(state) {
+  return normalizeFiveKTime(state?.records?.fiveK);
+}
+
+export function fiveKPbLine(state) {
+  const time = readFiveKPb(state);
+  return time ? `Neighborhood 5K PB ${time}` : "Neighborhood 5K: no PB yet";
+}
+
+/**
+ * Writes the personal best when this clock is faster, and returns the
+ * line the result screen shows first. A missing best, which is every
+ * old save and every new game, counts as a PB. A tie does not.
+ * finishScore is the race clock: shoes, vest, sponsor, coffee, Race IQ.
+ */
+function recordTimeTrial(state, raceId) {
+  const race = RACES[raceId];
+  const time = flavorTime(race, finishScore(state, race), false);
+  const previous = readFiveKPb(state);
+  const seconds = clockSeconds(time);
+  const previousSeconds = previous ? clockSeconds(previous) : null;
+  const beaten = previousSeconds == null || (seconds != null && seconds < previousSeconds);
+  if (beaten) {
+    state.records = { ...(state.records || {}), fiveK: time };
+  }
+  if (beaten) return `Neighborhood 5K: ${time}. New PB!`;
+  return `Neighborhood 5K: ${time}. Your best is still ${previous}.`;
+}
+
 function runEnergyCost(runId) {
   // 1 block is a normal session. 2 is a heavy one (long run, ridge,
   // threshold, interval run). The menu label and applyRun both call
@@ -2363,6 +2496,18 @@ export function menuFor(locationId, state) {
         ],
       };
     }
+    case "activity":
+      return {
+        title: "Activity Board",
+        speaker: "Activity Board",
+        testId: "activity-menu",
+        intro: "Three neighborhood efforts by the fountain. Each one spends energy like any other workout.",
+        items: [
+          runItem(state, "neighborhood-easy"),
+          runItem(state, "neighborhood-speed"),
+          runItem(state, "neighborhood-5k"),
+        ],
+      };
     case "cafe": {
       const shop = cafeFor(state);
       const cups = coffeeCount(state);

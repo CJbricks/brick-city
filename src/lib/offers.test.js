@@ -18,7 +18,11 @@ import {
 import {
   CHANCE_FINISH,
   CHANCE_PODIUM,
+  CHANCE_WIN,
+  MAX_PENDING_OFFERS,
+  OFFER_GAP_DAYS,
   RESULT_BRANDS,
+  deliverMail,
   grantOffer,
   makeRng,
   rollOffers,
@@ -55,8 +59,13 @@ describe("offer triggers", () => {
     expect(finishQuality(55)).toBe("win");
     expect(finishQuality(40)).toBe("podium");
     expect(finishQuality(39)).toBe("finish");
+    expect(CHANCE_WIN).toBe(1);
     expect(CHANCE_PODIUM).toBeGreaterThan(CHANCE_FINISH);
-    expect(CHANCE_FINISH).toBeLessThan(0.3);
+    expect(CHANCE_PODIUM).toBeGreaterThan(0.2);
+    expect(CHANCE_PODIUM).toBeLessThan(0.7);
+    expect(CHANCE_FINISH).toBeLessThan(0.18);
+    expect(OFFER_GAP_DAYS).toBeGreaterThanOrEqual(5);
+    expect(MAX_PENDING_OFFERS).toBe(1);
   });
 
   it("draws a road brand from a road win and not from a trail result", () => {
@@ -201,6 +210,12 @@ describe("offer triggers", () => {
     later.condition.peak = 90;
     later.condition.fatigue = 5;
     except(later, ["hoka"]);
+    // Signing today started the global gap. A same-day win must not
+    // poach. The rival can ask once OFFER_GAP_DAYS have passed.
+    const tooSoon = structuredClone(later);
+    const early = applyRace(tooSoon, "5k", 0.9, undefined, () => 0);
+    expect(early.state.sponsors.offers.shoe).toBeNull();
+    later.calendar.day += OFFER_GAP_DAYS;
     const poached = applyRace(later, "5k", 0.9, undefined, () => 0);
     expect(poached.state.sponsors.offers.shoe.poach).toBe(true);
     expect(poached.state.sponsors.offers.shoe.id).toBe("hoka");
@@ -246,6 +261,68 @@ describe("offer triggers", () => {
     expect(labels.some((label) => label.startsWith("Sign"))).toBe(false);
     expect(labels.some((label) => label.includes("not interested yet"))).toBe(true);
     expect(labels.some((label) => label.startsWith("Gear sponsor:"))).toBe(true);
+  });
+});
+
+describe("offer spacing", () => {
+  function countOffers(state) {
+    return ["shoe", "nutrition", "gear"].filter((kind) => state.sponsors.offers[kind]).length
+      + state.sponsors.mailbox.length;
+  }
+
+  it("gives a win one offer, not one per category", () => {
+    const state = primed(8);
+    const rolled = rollOffers(state, { style: "road", quality: "win", channel: "finish" }, () => 0);
+    expect(rolled.created).toHaveLength(1);
+    expect(countOffers(state)).toBe(1);
+    expect(state.sponsors.offers.shoe).not.toBeNull();
+    expect(state.sponsors.offers.nutrition).toBeNull();
+    expect(state.sponsors.offers.gear).toBeNull();
+    expect(state.sponsors.lastOfferDay).toBe(state.calendar.day);
+  });
+
+  it("holds every category until the gap has passed, including a win", () => {
+    const state = primed(8);
+    rollOffers(state, { style: "road", quality: "win", channel: "finish" }, () => 0);
+    const offered = state.sponsors.offers.shoe.id;
+    state.sponsors.offers.shoe = null;
+    const soon = rollOffers(state, { style: "road", quality: "win", channel: "finish" }, () => 0);
+    expect(soon.created).toEqual([]);
+    expect(countOffers(state)).toBe(0);
+    state.calendar.day += OFFER_GAP_DAYS - 1;
+    const still = rollOffers(state, { style: "road", quality: "win", channel: "finish" }, () => 0);
+    expect(still.created).toEqual([]);
+    state.calendar.day += 1;
+    const again = rollOffers(state, { style: "road", quality: "win", channel: "finish" }, () => 0);
+    expect(again.created).toHaveLength(1);
+    expect(state.sponsors.offers.shoe.id).toBe(offered);
+  });
+
+  it("will not stack a second note while one is still on the table", () => {
+    const state = primed(8);
+    rollOffers(state, { style: "road", quality: "win", channel: "finish" }, () => 0);
+    const first = state.sponsors.offers.shoe.id;
+    state.sponsors.lastOfferDay = state.calendar.day - OFFER_GAP_DAYS;
+    const blocked = rollOffers(state, { style: "trail", quality: "win", channel: "finish" }, () => 0);
+    expect(blocked.created).toEqual([]);
+    expect(state.sponsors.offers.shoe.id).toBe(first);
+    expect(state.sponsors.offers.nutrition).toBeNull();
+    expect(state.sponsors.offers.gear).toBeNull();
+  });
+
+  it("delivers one letter and holds the next while that note is live", () => {
+    const state = primed(8);
+    state.sponsors.mailbox = [
+      { id: "norda", kind: "shoe", offeredOn: 1, expiresOn: 4, discount: 0.4, raceCoins: 8, poach: false, arrivesOn: 1 },
+      { id: "maurten", kind: "nutrition", offeredOn: 1, expiresOn: 4, discount: 0, raceCoins: 0, poach: false, arrivesOn: 1 },
+    ];
+    const lines = deliverMail(state);
+    expect(lines).toHaveLength(1);
+    expect(state.sponsors.offers.shoe.id).toBe("norda");
+    expect(state.sponsors.offers.nutrition).toBeNull();
+    expect(state.sponsors.mailbox).toHaveLength(1);
+    expect(state.sponsors.mailbox[0].id).toBe("maurten");
+    expect(state.sponsors.mailbox[0].arrivesOn).toBe(state.calendar.day + 1);
   });
 });
 
@@ -313,6 +390,7 @@ describe("gear offers", () => {
     later.condition.peak = 90;
     later.condition.fatigue = 5;
     except(later, ["nathan"]);
+    later.calendar.day += OFFER_GAP_DAYS;
     const poached = applyRace(later, "5k", 0.9, undefined, () => 0);
     expect(poached.state.sponsors.offers.gear.poach).toBe(true);
     expect(poached.state.sponsors.offers.gear.id).toBe("nathan");

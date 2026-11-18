@@ -259,7 +259,7 @@ The HUD prints `FOOD 85 / 110` and fills the bar as a fraction of that cap. The 
 
 `src/lib/sponsors.js` holds the deals. `src/lib/offers.js` decides when a brand asks. `activities.js` is what writes the answer onto the save when you press a button.
 
-You may hold **one shoe sponsor**, **one nutrition sponsor**, and **one gear sponsor** at the same time. Accepting a second shoe offer ends the first shoe deal. Shoes you already bought stay in the closet. The same idea applies to nutrition deals, except a nutrition brand does not poach, and to gear deals, which can be poached. You can end a deal from the menu. That brand waits 7 days before it can ask again. Gear sponsors are the belt-and-vest deals. They have their own section below.
+You may hold **one shoe sponsor**, **one nutrition sponsor**, and **one gear sponsor** at the same time. That is signed deals, not offers. Only one offer can be waiting, in any category. Accepting a second shoe offer ends the first shoe deal. Shoes you already bought stay in the closet. The same idea applies to nutrition deals, except a nutrition brand does not poach, and to gear deals, which can be poached. You can end a deal from the menu. That brand waits 7 days before it can ask again. Gear sponsors are the belt-and-vest deals. They have their own section below.
 
 Brands make the offer. The Sponsors menu is not a sign-anything list. See the beginner notes further down.
 
@@ -295,7 +295,7 @@ What you get when you sign:
 
 The cost of the deal is a note that says "Wear their belt or vest in your next race." It shows up the morning after you sign, then on the same every-fourth-day rhythm as the other notes. Finish a race while wearing their belt or vest and the note is done: standing goes up, and the note pays you. Finish in something else, or skip the note from the menu, and standing goes down. Under 25 they drop you and wait 14 days. A DNF does not count as the race, so the note stays until you actually finish one. You cannot clear a wear note by spending an energy block at home. The race is the check.
 
-How a brand decides to ask is the same machinery as shoes. `src/lib/offers.js` rolls it. An offer lasts 3 days. Decline or expiry waits 7 days. A rival can poach on a win or a top-3 finish when their terms are better, and the brand you leave waits 14 days. A plain finish does not poach. Terms start at the numbers in the catalog and step up with your level.
+How a brand decides to ask is the same machinery as shoes, including the five-day gap and the one-note table. `src/lib/offers.js` rolls it. An offer lasts 3 days. Decline or expiry waits 7 days. A rival can poach on a win or a top-3 finish when their terms are better, and the brand you leave waits 14 days. A plain finish does not poach. A poach still waits out the global gap. Terms start at the numbers in the catalog and step up with your level.
 
 Which brands are likely depends on the result:
 
@@ -453,20 +453,26 @@ You do not walk up to a logo and sign. `src/lib/offers.js` watches the result.
 
 A **road race** (the 5K, the 10K, or the mile against Remy) can interest Nike, Adidas, Brooks, and Hoka, plus the early fuel brands Honey Stinger and BPN. A **trail result** (park trail or ridge repeats) can interest Norda, Speedland, Mount to Coast, Satisfy, Salomon, and the trail lines of Nike, Adidas, and Hoka, plus Maurten and Precision. A **backyard yard** can interest Norda, Speedland, Mount to Coast, Adidas, Hoka, and Salomon, plus those same later fuel brands.
 
-How good the result was changes the chance:
+How good the result was changes the chance. The roll only happens when two other gates are already open: no offer is waiting, and at least five days have passed since the last new offer.
 
-| Result | Chance of an offer |
+| Result | Chance, once the gap is open and the table is empty |
 |---|---|
-| Win, or a boss win (you beat Remy) | Sure, if any eligible brand is free |
-| Top 3 (the fast-ish clock, score 40 or better) | Strong, about 7 in 10 |
-| You finished, nothing special | Small, a bit under 1 in 5 |
+| Win, or a boss win (you beat Remy) | Sure. One offer, not one per category. |
+| Top 3 (the fast-ish clock, score 40 or better) | About 35 in 100. It used to be 70 in 100. |
+| You finished, nothing special | About 8 in 100. It used to be 18 in 100. |
 | DNF | None |
+
+A win does not skip the gap or the one-note rule. If a brand wrote yesterday, today's win is silent. The constants are `OFFER_GAP_DAYS` (5), `MAX_PENDING_OFFERS` (1), `CHANCE_WIN`, `CHANCE_PODIUM`, and `CHANCE_FINISH` in `src/lib/offers.js`.
+
+Before this, one result could roll shoe, nutrition, and gear separately, so a win with everyone eligible dropped three notes at once, and the next race could fill any slot that was empty. A winning racer kept about one new offer a day. After this, a result creates at most one note, and the next note waits until day `lastOfferDay + 5`. A winning racer sees about one offer every five days. A plain finish is rarer than that, because 8 in 100 only applies on a day the gap is already open.
+
+`lastOfferDay` is the day the offer was created, including a letter that will not arrive until morning. Delivering the letter does not start the wait over. An old save has no `lastOfferDay`. Resume leaves it null, and null means the gap is already open. Inventing "yesterday" would silence brands the player had never heard from. The version stays 1.
 
 The roll is a function the screen passes in. Tests pass their own function so the same race does the same thing every time. `makeRng(seed)` is the seeded version.
 
 A race offer is a line in the finish dialogue. A trail run or a yard does not stop you on the path. The letter is on the kitchen table the next morning, which is `applySleep`.
 
-An offer lasts **3 in-game days** (it is gone on the morning of `offeredOn + 3`). Only one shoe offer, one nutrition offer, and one gear offer can sit at once. Decline, or let it expire, and that brand waits **7 days**. If you accept a rival and leave your shoe brand or your gear brand, or they drop you for low standing, the wait is **14 days**.
+An offer lasts **3 in-game days** (it is gone on the morning of `offeredOn + 3`). Only one offer can sit at once, letter or finish line, shoe or nutrition or gear. A second letter waits until the next morning instead of landing beside the first. Decline, or let it expire, and that brand waits **7 days**. The global gap is separate: even a different brand waits until five days after the note was created. If you accept a rival and leave your shoe brand or your gear brand, or they drop you for low standing, that brand's own wait is **14 days**.
 
 A rival poaches only on a strong shoe result (a win or a top 3), and only when their terms beat the contract you already signed. Accepting ends the old deal. The shoes in the closet stay.
 
@@ -538,13 +544,33 @@ The letter A on a keyboard is not the confirm button. It is the left step of WAS
 
 The menus worked if you already knew the square. The sidewalk, the road, and the pebble path all looked the same, so the 5K board did not look like a button.
 
-`activationTiles()` in `src/game/town.js` walks the interaction grid and keeps every square that is not solid. That is the list of places you can stand and press A: Home, the Grocery, the Gym (treadmill and the new runs), the Run Store, the Park, the track booth, the 5K board, the TRACK name, the mountain gate, the depot, and the sidewalk tile just north of Remy. His own square stays solid. You can still face him from the other side. The mat is the obvious spot.
+`activationTiles()` in `src/game/town.js` walks the interaction grid and keeps every square that is not solid. That is the list of places you can stand and press A: Home, the Grocery, the Gym (treadmill and the new runs), the Run Store, the Park, the track booth, the 5K board, the TRACK name, the mountain gate, the depot, the sidewalk tile just north of Remy, and the activity-board mat in the town square. His own square stays solid. You can still face him from the other side. The mat is the obvious spot.
 
 `paintActivationPads()` in `src/game/art.js` draws that list and nothing else. There is no second copy of the coordinates. A test fails if a mat is missing, or if a mat shows up on a square A ignores. The welcome post and the doors hidden inside buildings are solid, so they do not get a mat. You face those.
 
 The mat is a brick-red paver with a gold lip and a light corner. Sidewalk is pale gray. The lip stays light gold, so the dusk and night wash (a dark tint over the whole map) does not turn the mat into the same color as the path.
 
 While your feet are on a mat, a small A bobs above your head. It hides when a menu is open. If the browser asks for less motion, the letter stays still. It is not saved. Old `brick-city-save-v1` files do not know about mats, and they do not need to.
+
+## The activity board
+
+The town square is the dirt plaza between the four roads. The fountain sits in the middle, on tiles (17–18, 14–15). Coach Bram stands on (15, 13). The activity board is east of both, on tile (20, 13), so it does not sit on a road and it does not wall the paths around the fountain.
+
+The post is solid. You cannot walk through it. The tile south of it, (20, 14), is the gold mat. Stand there and press A, or face the post from a neighbor tile. Both open the same menu. The picture is a cedar post and a plywood board that says RUN, with three stripes (green, orange, blue) for the three efforts. It is drawn in `src/game/art.js`. Nothing in that picture is borrowed from another game.
+
+The menu is `menuFor("activity")` in `src/lib/activities.js`. The three rows are ordinary workouts in the `RUNS` table, so they use the same energy, fatigue, soreness, shoe, and training rules as the park and the track.
+
+| Effort | Energy | What it does |
+|---|---|---|
+| Neighborhood Easy Recovery | 1 | 1.5 miles. Fatigue goes down by 6. Endurance +1. Peak does not move. Not a hard session, so if you were only sore from stacking hard days, this is enough for the sore flag to clear. It does not heal a blister. That is still the clinic. |
+| Neighborhood Speed Run | 2 | 3 miles. Peak +10, Endurance +2, fatigue +16. Same energy cost as a Threshold or Interval Run, and the same idea: peak is the point, endurance comes along a little, and `hard: true` counts as a soreness strike. |
+| Neighborhood 5K Time Trial | 1 | 3.1 miles. A solo clock, not the Brick City 5K race. No coins, no sponsor at the line, and it does not check off `fiveKFinished`. |
+
+The time trial calls `finishScore` and `flavorTime` from `src/lib/race.js` before it adds the session's own fatigue. That is the same clock as the track 5K: Endurance, Peak, fatigue, the shoes you are wearing, a vest's short-road tax, a shoe sponsor, the coffee pace note, and the Race IQ lift. A normal workout has no clock, so coffee moves fatigue instead. Here the cup is already in the time, so it is not also subtracted from fatigue. The cup is still spent.
+
+The first line of the result is the time. If it is faster than the saved best, or you have no best yet, that line ends with `New PB!` and the time is stored on `records.fiveK`. A tie keeps the old best. The status sheet prints `Neighborhood 5K PB 23:55`, or `Neighborhood 5K: no PB yet` when the field is empty.
+
+An old `brick-city-save-v1` file has no `records`. Resume sets `fiveK` to null. The version stays 1. The board itself is not saved. Loading an old runner rebuilds the map, post and mat included.
 
 ### How a workout is defined
 
@@ -573,6 +599,9 @@ Balance, compared with what was already on the board:
 - Threshold Run is 2 blocks, Peak +10, Endurance +4, fatigue +17. A tempo. Peak is the main gain. Endurance moves less. It is a hard session, so it counts toward soreness the way intervals do.
 - Interval Run is 2 blocks, Peak +14, Endurance +3, fatigue +20. Repeats with a jog between. Sharper than the tempo, and the legs pay more.
 - Zone 2 Run is 1 block, Peak +3, Endurance +3, fatigue +4. Easy aerobic. Both meters grow, and by about the same amount. Fatigue stays low. It is not `hard`.
+- Neighborhood Easy Recovery is 1 block, fatigue −6, Endurance +1, Peak +0. Gentler than the park easy run.
+- Neighborhood Speed Run is 2 blocks, Peak +10, Endurance +2, fatigue +16. A short version of the tempo.
+- Neighborhood 5K Time Trial is 1 block and a clock. The numbers are in "The activity board" above.
 
 Threshold and Interval Run are on the track menu and the gym treadmill menu. Zone 2 is on the park menu, next to the easy run. The old Track Intervals row is still there, and it is still the one that ticks `trackRuns` for the half-marathon checklist. The new sessions do not add a save field. An old `brick-city-save-v1` blob loads unchanged.
 
