@@ -58,21 +58,21 @@ describe("runs, food, and shifts", () => {
     expect(result.state.condition.fatigue).toBe(2);
     expect(result.state.condition.peak).toBe(21);
     expect(result.state.condition.endurance).toBe(26);
-    expect(result.state.condition.nutrition).toBe(60);
-    expect(result.state.energy).toBe(9);
-    expect(result.state.calendar.slot).toBe(0);
+    expect(result.state.condition.nutrition).toBe(56);
+    expect(result.state.energy).toBe(8);
+    expect(result.state.calendar.slot).toBe(1);
     expect(result.state.calendar.trainedToday).toBe(true);
     expect(result.state.xp.overall).toBe(12);
     expect(result.state.xp.versatile).toBe(4);
     expect(result.state.attributes.recovery).toBe(8);
     expect(result.state.progress.totalMiles).toBe(2);
     expect(result.state.gear.miles.starter).toBe(2);
-    expect(result.ticker).toBe("+2 Endurance ▲  +1 Peak ▲  −10 Fatigue ▼  −10 Nutrition ▼");
+    expect(result.ticker).toBe("+2 Endurance ▲  +1 Peak ▲  −10 Fatigue ▼  −14 Nutrition ▼");
   });
 
-  it("refuses a long run when fewer than two energy blocks are left", () => {
+  it("refuses a long run when fewer than three energy blocks are left", () => {
     const state = fresh();
-    state.energy = 1;
+    state.energy = 2;
     const result = applyRun(state, "long-run");
     expect(result.ok).toBe(false);
     expect(result.state).toBe(state);
@@ -493,7 +493,7 @@ describe("races, rivals, and unlocks", () => {
     expect(eaten.state.progress.fiveKFinished).toBe(true);
     expect(eaten.state.gels).toBe(0);
     expect(eaten.state.coins).toBe(76);
-    expect(eaten.state.energy).toBe(10);
+    expect(eaten.state.energy).toBe(9);
     expect(eaten.lines.join(" ")).toMatch(/gel/i);
 
     const empty = fresh();
@@ -555,11 +555,11 @@ describe("races, rivals, and unlocks", () => {
 });
 
 describe("energy blocks and gels", () => {
-  it("starts at 10, spends 1 or 2, and refills completely on sleep", () => {
+  it("starts at 10, spends 2 or 3 on a run, and refills completely on sleep", () => {
     const easy = applyRun(fresh(), "easy-run");
-    expect(easy.state.energy).toBe(9);
+    expect(easy.state.energy).toBe(8);
     const long = applyRun(fresh(), "long-run");
-    expect(long.state.energy).toBe(8);
+    expect(long.state.energy).toBe(7);
     expect(long.state.calendar.slot).toBe(1);
     const tired = fresh();
     tired.energy = 2;
@@ -683,7 +683,7 @@ describe("track, treadmill, and park workouts", () => {
     const raced = applyRace(fresh(), "5k", 0.9);
     expect(raced.ok).toBe(true);
     expect(raced.state.progress.fiveKFinished).toBe(true);
-    expect(raced.state.energy).toBe(9);
+    expect(raced.state.energy).toBe(8);
     expect(raced.state.xp.overall).toBeGreaterThan(0);
   });
 
@@ -694,7 +694,7 @@ describe("track, treadmill, and park workouts", () => {
       expect(gain.endurance, id).toBeGreaterThan(0);
       expect(gain.peak, id).toBeGreaterThan(gain.endurance);
       expect(gain.fatigue, id).toBeGreaterThan(meterGain("easy-run").fatigue);
-      expect(gain.energy, id).toBe(2);
+      expect(gain.energy, id).toBe(3);
       expect(gain.result.state.calendar.trainedToday, id).toBe(true);
     }
     // One block left is not enough for a heavy session. The menu says so
@@ -703,7 +703,7 @@ describe("track, treadmill, and park workouts", () => {
     tired.energy = 1;
     const row = menuFor("track", tired).items.find((entry) => entry.action.id === "threshold");
     expect(row.disabled).toBe(true);
-    expect(row.detail).toMatch(/2 energy/);
+    expect(row.detail).toMatch(/3 energy/);
     const refused = applyRun(tired, "interval-run");
     expect(refused.ok).toBe(false);
     expect(refused.state).toBe(tired);
@@ -728,7 +728,7 @@ describe("track, treadmill, and park workouts", () => {
     expect(gain.endurance).toBeGreaterThan(0);
     expect(gain.peak).toBeGreaterThan(0);
     expect(Math.abs(gain.endurance - gain.peak)).toBeLessThanOrEqual(1);
-    expect(gain.energy).toBe(1);
+    expect(gain.energy).toBe(2);
     expect(gain.fatigue).toBeGreaterThan(0);
     expect(gain.fatigue).toBeLessThan(meterGain("threshold").fatigue);
     expect(gain.result.lines.join(" ")).toMatch(/Endurance and Peak/);
@@ -869,7 +869,7 @@ describe("daily meals, snacks, and naps", () => {
     expect(full.state.energy).toBe(10);
     expect(full.state.calendar.slot).toBe(1);
     const later = applyRun(full.state, "long-run");
-    expect(later.state.energy).toBe(8);
+    expect(later.state.energy).toBe(7);
     expect(later.state.calendar.slot).toBe(2);
   });
 
@@ -947,17 +947,20 @@ describe("daily meals, snacks, and naps", () => {
 });
 
 describe("activity board", () => {
-  it("lists the three neighborhood efforts and their energy", () => {
+  it("lists the neighborhood efforts, including the walk, and their energy", () => {
     const menu = menuFor("activity", fresh());
     expect(menu.testId).toBe("activity-menu");
     expect(menu.items.map((entry) => entry.action.id)).toEqual([
       "neighborhood-easy",
+      "neighborhood-walk",
       "neighborhood-speed",
       "neighborhood-5k",
     ]);
-    expect(menu.items[0].detail).toContain("1 energy");
-    expect(menu.items[1].detail).toContain("2 energy");
-    expect(menu.items[2].detail).toContain("1 energy");
+    expect(menu.items[0].detail).toContain("2 energy");
+    expect(menu.items[1].detail).toContain("1 energy");
+    expect(menu.items[1].detail).not.toContain("mi");
+    expect(menu.items[2].detail).toContain("3 energy");
+    expect(menu.items[3].detail).toContain("2 energy");
     expect(fiveKPbLine(fresh())).toBe("Neighborhood 5K: no PB yet");
   });
 
@@ -971,32 +974,53 @@ describe("activity board", () => {
     expect(result.state.condition.sore).toBe(false);
     expect(result.state.condition.endurance).toBe(fresh().condition.endurance + 1);
     expect(result.state.condition.peak).toBe(fresh().condition.peak);
-    expect(result.state.energy).toBe(9);
+    expect(result.state.energy).toBe(8);
     expect(result.state.calendar.trainedToday).toBe(true);
     expect(result.state.condition.injury).toBeNull();
+  });
+
+  it("lets a long walk recover fatigue without miles, soreness, or a blister", () => {
+    const state = fresh();
+    state.condition.sore = true;
+    state.condition.fatigue = 80;
+    state.condition.nutrition = 10;
+    state.calendar.hardWeeks = 2;
+    const beforeMiles = state.progress.totalMiles;
+    const result = applyRun(state, "neighborhood-walk");
+    expect(result.ok).toBe(true);
+    expect(result.state.energy).toBe(9);
+    expect(result.state.condition.fatigue).toBe(68);
+    expect(result.state.condition.endurance).toBe(fresh().condition.endurance + 1);
+    expect(result.state.condition.peak).toBe(fresh().condition.peak);
+    expect(result.state.xp.overall).toBe(6);
+    expect(result.state.progress.totalMiles).toBe(beforeMiles);
+    expect(result.state.gear.miles.starter || 0).toBe(0);
+    expect(result.state.condition.sore).toBe(true);
+    expect(result.state.condition.injury).toBeNull();
+    expect(result.state.calendar.trainedToday).toBe(true);
   });
 
   it("makes the speed loop a heavy peak session", () => {
     const gain = meterGain("neighborhood-speed");
     expect(gain.result.ok).toBe(true);
-    expect(gain.energy).toBe(2);
+    expect(gain.energy).toBe(3);
     expect(gain.peak).toBeGreaterThan(gain.endurance);
     expect(gain.endurance).toBeGreaterThan(0);
     expect(gain.fatigue).toBeGreaterThan(0);
     expect(gain.fatigue).toBeGreaterThan(meterGain("neighborhood-easy").fatigue);
     const tired = fresh();
-    tired.energy = 1;
+    tired.energy = 2;
     const row = menuFor("activity", tired).items.find((entry) => entry.action.id === "neighborhood-speed");
     expect(row.disabled).toBe(true);
     expect(applyRun(tired, "neighborhood-speed").ok).toBe(false);
   });
 
-  it("times a solo 5K, saves a personal best, and spends one energy", () => {
+  it("times a solo 5K, saves a personal best, and spends two energy", () => {
     const first = applyRun(fresh(), "neighborhood-5k");
     expect(first.ok).toBe(true);
     expect(first.lines[0]).toBe("Neighborhood 5K: 29:05. New PB!");
     expect(first.state.records.fiveK).toBe("29:05");
-    expect(first.state.energy).toBe(9);
+    expect(first.state.energy).toBe(8);
     expect(first.state.progress.fiveKFinished).toBe(false);
     expect(first.state.progress.totalMiles).toBe(3.1);
     expect(first.state.sponsors.offers.shoe).toBeNull();

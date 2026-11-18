@@ -91,7 +91,7 @@ describe("nutrition sponsors", () => {
     const hungry = primed(4);
     const bpn = accept(hungry, "nutrition", "bpn");
     const run = applyRun(bpn.state, "easy-run");
-    expect(run.state.condition.nutrition).toBe(61);
+    expect(run.state.condition.nutrition).toBe(58);
     expect(nutritionTuning(run.state).drainCut).toBe(1);
   });
 

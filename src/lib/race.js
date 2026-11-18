@@ -15,6 +15,11 @@
  * short race can be "just slow" while an under-fueled, under-slept start
  * ends the race.
  *
+ * A race spends energy the same way a run does. The 5K and Remy's mile
+ * cost 2. The 10K costs 3. That is one block more than the old prices,
+ * in line with every other run. Eating a gel still gives one block back.
+ * It does not refund the whole race.
+ *
  * Shoe stats live in catalog.js. This file turns them into a pace percent
  * for the race in front of you, then adds the sponsor and the vest.
  * finishQuality uses the same score bands as the clock, so a fast time
@@ -54,14 +59,14 @@ export const RACES = {
     name: "Brick City 5K",
     km: 5,
     miles: 3.1,
-    slots: 1,
+    slots: 2,
     style: "road",
     ideal: { endurance: 0.35, peak: 0.65 },
     idealLabel: "35% Endurance / 65% Peak",
     xp: { overall: 46, marathon: 30, versatile: 6 },
     attributes: { speed: 8, endurance: 4, mental: 2 },
     coins: 28,
-    energy: 1,
+    energy: 2,
     peak: 6,
     endurance: 2,
     fatigue: 16,
@@ -74,14 +79,14 @@ export const RACES = {
     name: "Community 10K",
     km: 10,
     miles: 6.2,
-    slots: 2,
+    slots: 3,
     style: "road",
     ideal: { endurance: 0.45, peak: 0.55 },
     idealLabel: "45% Endurance / 55% Peak",
     xp: { overall: 70, marathon: 48, ultra: 10, versatile: 8 },
     attributes: { speed: 8, endurance: 10, mental: 4 },
     coins: 46,
-    energy: 2,
+    energy: 3,
     peak: 5,
     endurance: 5,
     fatigue: 22,
@@ -96,8 +101,8 @@ export const RIVAL = {
   name: "Remy Calder",
   title: "the track kicker",
   base: 26,
-  slots: 1,
-  energy: 1,
+  slots: 2,
+  energy: 2,
   miles: 1,
   winXp: { overall: 24, marathon: 14, versatile: 4 },
   winAttributes: { speed: 6, mental: 3 },

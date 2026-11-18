@@ -2,11 +2,12 @@
  * clinic.js
  * Prices and the free injury screen for the PT clinic.
  *
- * Treatment and soft-tissue work are applied in activities.js, because
- * they spend coins and energy the same way a run does. This file only
- * knows what a visit costs in each town, and what the free screen should
- * say. Summit Hollow is the expensive one. Its store is already the
- * priciest in the design, and the clinic matches that.
+ * Treatment, soft-tissue work, and blister care are applied in
+ * activities.js, because they spend coins the same way a run spends
+ * energy. This file only knows what a visit costs in each town, and
+ * what the free screen should say. Summit Hollow is the expensive one.
+ * Its store is already the priciest in the design, and the clinic
+ * matches that. Blister care is the cheap dressing, under soft tissue.
  */
 
 import { CITIES, cityById, clinicRates } from "@/lib/constants";
@@ -49,6 +50,6 @@ export function injuryScreenLines(state) {
     lines.push("Risk looks ordinary. Keep the easy days easy.");
   }
   const city = cityById(clinicCityId(state));
-  lines.push(`${city.clinic.name}. Treatment is ${city.clinic.treatment} coins. Soft tissue is ${city.clinic.tissue}.`);
+  lines.push(`${city.clinic.name}. Treatment is ${city.clinic.treatment} coins. Soft tissue is ${city.clinic.tissue}. Blister care is ${city.clinic.blister}.`);
   return lines;
 }

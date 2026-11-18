@@ -1,12 +1,15 @@
 /**
  * clinic.test.js
  * PT visits. Treatment spends coins only when there is an injury.
- * One a day. Soft tissue clears the sore flag. An old save has
- * never been treated today.
+ * One a day. Soft tissue clears the sore flag. Blister care clears a
+ * blister and does not charge when there is none. An old save has
+ * never been treated today. The blister price is city data, not a
+ * field on the save.
  */
 
 import { describe, expect, it } from "vitest";
 import {
+  applyClinicBlister,
   applyClinicScreen,
   applyClinicTissue,
   applyClinicTreat,
@@ -95,14 +98,55 @@ describe("PT clinic", () => {
     expect(billed.state.coins).toBe(fresh().coins - summit);
   });
 
-  it("shows the three rows and a free screen", () => {
+  it("dresses a blister for the city price and refuses when there is none", () => {
+    const state = hurt(2);
+    const energy = state.energy;
+    const done = applyClinicBlister(state);
+    expect(done.ok).toBe(true);
+    expect(done.state.condition.injury).toBeNull();
+    expect(done.state.condition.sore).toBe(false);
+    expect(done.state.energy).toBe(energy);
+    expect(done.state.coins).toBe(fresh().coins - clinicRates("brick-city").blister);
+    expect(done.state.calendar.clinicTreated).toBe(false);
+
+    const again = applyClinicBlister(done.state);
+    expect(again.ok).toBe(false);
+    expect(again.state.coins).toBe(done.state.coins);
+    expect(again.lines[0]).toMatch(/keep your coins/);
+
+    const broke = hurt(2);
+    broke.coins = clinicRates("brick-city").blister - 1;
+    const refused = applyClinicBlister(broke);
+    expect(refused.ok).toBe(false);
+    expect(refused.state.coins).toBe(broke.coins);
+    expect(refused.state.condition.injury.id).toBe("blister");
+
+    const summit = hurt(2);
+    summit.city = "summit-hollow";
+    const billed = applyClinicBlister(summit);
+    expect(billed.state.coins).toBe(fresh().coins - clinicRates("summit-hollow").blister);
+    expect(clinicRates("summit-hollow").blister).toBeGreaterThan(clinicRates("brick-city").blister);
+    const prices = ["brick-city", "ridgeview", "lakeport", "mesa-verde-flats", "flatland", "summit-hollow"]
+      .map((id) => clinicRates(id).blister);
+    expect(clinicRates("summit-hollow").blister).toBe(Math.max(...prices));
+    for (const id of ["brick-city", "ridgeview", "lakeport", "mesa-verde-flats", "flatland", "summit-hollow"]) {
+      expect(clinicRates(id).blister).toBeLessThan(clinicRates(id).tissue);
+    }
+  });
+
+  it("shows the clinic rows and a free screen", () => {
     const menu = menuFor("clinic", hurt(2));
     expect(menu.testId).toBe("clinic-menu");
     expect(menu.items.map((row) => row.label)).toEqual([
       "Treatment session",
       "Soft tissue work",
+      "Blister care",
       "Injury screen",
     ]);
+    const healthy = menuFor("clinic", fresh());
+    const row = healthy.items.find((entry) => entry.action.type === "clinic-blister");
+    expect(row.disabled).toBe(true);
+    expect(row.detail).toMatch(/No blister/);
     const screen = applyClinicScreen(hurt(2));
     expect(screen.ok).toBe(true);
     expect(screen.state.coins).toBe(fresh().coins);
