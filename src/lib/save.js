@@ -28,6 +28,12 @@
  * The shop name is not a field. The map door is the id "cafe", so
  * renaming the sign does not change what an old blob has to load.
  *
+ * Which cities have opened the Run Store shelf lives on this same key,
+ * as citiesReached. An old blob has no list. Resume fills ['brick-city'].
+ * state.city is not that list. It is only the town whose cafe and clinic
+ * prices you are using, and the other towns are not reachable yet.
+ * The version stays 1.
+ *
  * The Run Store deck keeps shiftCursor and shiftsToday on the calendar.
  * Both arrived on this same key. A blob from before the deck has neither.
  * The shift code treats a missing cursor as "start from the day number"
@@ -51,7 +57,7 @@ import { MAX_ENERGY, SAVE_KEY, SAVE_VERSION } from "@/lib/constants";
 import { slotFromEnergy } from "@/lib/calendar";
 import { TILE } from "@/game/town";
 import { normalizeFiveKTime } from "@/lib/activities";
-import { maxNutritionFromGear, normalizeGear } from "@/lib/catalog";
+import { maxNutritionFromGear, normalizeCitiesReached, normalizeGear } from "@/lib/catalog";
 import { normalizeSponsors } from "@/lib/sponsors";
 
 export function serialize(state) {
@@ -126,6 +132,10 @@ export function deserialize(raw) {
     // inside the cap the equipped belt or vest actually allows.
     data.gear = normalizeGear(data.gear);
     data.sponsors = normalizeSponsors(data.sponsors);
+    // The shelf list is its own field. A missing one is Brick City only.
+    // Do not copy state.city into it. A save that set city for a price
+    // table (or a future town) must not unlock that town's models.
+    data.citiesReached = normalizeCitiesReached(data.citiesReached);
     if (typeof data.condition.nutrition === "number") {
       const cap = maxNutritionFromGear(data.gear);
       data.condition.nutrition = Math.max(0, Math.min(cap, Math.round(data.condition.nutrition)));

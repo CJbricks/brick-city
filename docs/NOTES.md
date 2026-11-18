@@ -244,6 +244,31 @@ Each brand pair has its own percents. They are not copies. Worn shoes stack a fl
 
 The Run Store groups the rack into Trail, Marathon, and Backyard Ultra. The closet shows the same groups, the wear percent, and the trade-off line.
 
+## Catalogs and city unlocks
+
+The shelf gets deeper as you reach towns, and it never shrinks. Brick City stocks the original models. Each later town adds models on top of everything from earlier towns. The full rack is only there after Summit Hollow. A store in any town shows the whole unlocked set, not just that town's new models. The latest town's additions wear a `NEW` tag. The Run Store intro says which town put them there, because the bus between towns is not running in this build and there is no arrival cutscene yet.
+
+The shelf reads one field, `citiesReached`, on the same `brick-city-save-v1` key. A new game sets it to `['brick-city']`. An old save has no field, and Resume fills the same list. `city` is not this list. The cafe and the clinic use `city` for prices. Sam at the depot still says the bus is not running, so you cannot walk into another town, and setting `city` does not stock that town's models.
+
+`citiesReached()` in `src/lib/catalog.js` is the helper. Naming a later town includes every town before it, so the shelf only grows. `arriveInCity` in `src/lib/activities.js` is what a future bus should call. It writes the list and returns the one-line NEW message. It does not move the runner and it does not change `city`. A debug save can set `citiesReached` the same way, which is how you can see NEW tags while you are still standing in Brick City.
+
+The original ids (`nike-acg`, `nathan-belt`, `ciele`, `gel`, and the rest) still resolve, and they are still for sale on day one. Owned shoes, belts, socks, and hats still equip. The version stays 1.
+
+A sponsor gift does not check the city lock. Signing Osprey still puts the Osprey belt in the closet even if that belt's unlock city is one you have not reached. The counter is what refuses a locked purchase. The deal is allowed to be generous.
+
+Stats stay inside the ranges the original models already used. A later shoe can be a better mix, and Summit Hollow costs more than the old maximum, but it cannot invent a bigger pace bonus than the original rack. Gels, shakes, and flasks share the old rules: a new flavor is not a stronger potion. You pay more for the later bottle. You do not get a second kind of gel.
+
+On a phone the racks are brands, then models, then a detail screen. Trail, Marathon, and Backyard are tabs. Belts and vests are tabs. Gels, shakes, and flasks are tabs. Left and right move the tabs. Up and down move the list. A long sock wall or gel case is five rows and a Next page button. B goes back one menu.
+
+### How to add a product
+
+1. Use a brand the game already sells. Do not add a brand. Shoes go in `EXTRA_SHOES` in `src/lib/catalogModels.js` (or the original tables in `src/lib/catalog.js` if it should be Brick City stock with no `unlock` field). Belts and vests go in `EXTRA_CARRY`, and only in a kind that brand already sells. Hats, socks, and fuel have their own tables in the same file.
+2. Give it a new `id` that is not already a key. Old ids must keep their old names.
+3. Set `unlock` to a city id from `CITIES` in `src/lib/constants.js`: `brick-city`, `ridgeview`, `lakeport`, `mesa-verde-flats`, `flatland`, or `summit-hollow`. Leave it off only for a day-one item.
+4. Keep the numbers inside the original range for that style. Pace, climb, miles, fatigue, and the vest's short-road penalty should not exceed what an original model already does. Summit Hollow can cost more than the old price. Put new belts and vests after the originals. `starterCarryId` gives the first belt it finds, and that gift should stay the original one.
+5. Use a real product name only when you are sure it is that product. Otherwise use a plain name like "Yard Day" or "Summit Belt". Colors only. No logos.
+6. Run `npm test`. The catalog tests check that the id is real, the city exists, the unlocked set grows town by town, and the old ids still resolve.
+
 ## Belts, vests, and the nutrition cap
 
 `MAX_NUTRITION` in `src/lib/constants.js` is 100. That number is the base, not the number the bar always uses.

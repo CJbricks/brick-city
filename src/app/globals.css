@@ -554,6 +554,37 @@ canvas {
   color: #4a453c;
 }
 
+/* Category tabs for a long Run Store rack. They stay put while the
+   list under them scrolls, and they are tall enough for a thumb. */
+.shop-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  margin: 0 0 8px;
+  position: sticky;
+  top: 0;
+  background: #f3ead7;
+  z-index: 2;
+  padding-bottom: 4px;
+}
+
+.shop-tab {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 8px 10px;
+  font-family: var(--font-pixel), monospace;
+  font-size: 8px;
+  line-height: 1.4;
+  color: #1c1a16;
+  background: #fffdf8;
+  border: 2px solid #1c1a16;
+  cursor: pointer;
+}
+
+.shop-tab.selected {
+  background: #f2c14e;
+}
+
 .map-canvas {
   width: 100%;
   height: auto;

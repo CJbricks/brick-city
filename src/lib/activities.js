@@ -49,13 +49,17 @@
  *
  * Blister care is a clinic button. The coin price lives on each city's
  * clinic record. It is not a save field.
+ *
+ * The Run Store shelf grows when you reach a city. catalog.js decides
+ * which models are unlocked. This file only builds the buttons and
+ * takes the coins. A locked model is not on the button list. A sponsor
+ * gift does not look at that list, so a deal can still hand you one.
  */
 
 import { formatWhen, isSunday, sleepPlan, slotFromEnergy, slotLabel, summarizeWeek } from "@/lib/calendar";
 import {
   FREE_HOME_MEALS,
   FREE_HOME_SNACKS,
-  BPN_GEL_COST,
   CLINIC_TREATMENT_NIGHTS,
   COFFEE_CUPS_BEFORE_JITTER,
   COFFEE_ENERGY,
@@ -64,7 +68,6 @@ import {
   GEL_NUTRITION,
   PASTRY_NUTRITION,
   PROTEIN_FATIGUE_RELIEF,
-  SHAKE_COST,
   TISSUE_FATIGUE_RELIEF,
   HARD_WEEK_AVG_FATIGUE,
   HOME_SNACK_NUTRITION,
@@ -88,6 +91,7 @@ import {
   START_PEAK,
   START_SLEEP_HOURS,
   START_SLEEP_QUALITY,
+  CITIES,
 } from "@/lib/constants";
 import { clampMeter, formatTicker, meterDelta, readMeters, slotDrain } from "@/lib/condition";
 import { detrainingDelta, detrainingNote } from "@/lib/detrain";
@@ -98,17 +102,27 @@ import {
   carryNutrition,
   carryTradeText,
   CARRY,
+  catalogArrivalMessage,
+  citiesReached,
+  CITY_UNLOCK_ORDER,
+  FUEL,
   hatById,
   hatTradeText,
   isKnownHat,
   isKnownShoe,
   isKnownSock,
+  isNewUnlock,
+  isUnlocked,
   maxNutritionFromGear,
+  newTag,
+  normalizeCitiesReached,
+  shelfBlock,
   shoeTradeText,
   shoesOfStyle,
   sockById,
   sockTradeText,
   styleLabel,
+  unlockCityOf,
   wearPercent,
 } from "@/lib/catalog";
 import {
@@ -186,6 +200,19 @@ export { JOBS, SHIFT_POOL, currentShift } from "@/lib/shifts";
 
 const XP_KEYS = ["overall", "trail", "marathon", "ultra", "versatile"];
 
+function shopFromFuel(entry) {
+  return {
+    id: entry.id,
+    label: entry.name,
+    detail: `${entry.price} coins · 0 energy`,
+    cost: entry.price,
+    kind: entry.kind,
+    energy: 0,
+    unlock: entry.unlock,
+    lines: entry.lines,
+  };
+}
+
 export const SHOP = {
   meal: {
     id: "meal",
@@ -209,33 +236,10 @@ export const SHOP = {
     junk: true,
     lines: ["Sweet, fast, and gone. The next run will burn it quicker."],
   },
-  gel: {
-    id: "gel",
-    label: "Stride Fuel gel",
-    detail: "12 coins · 0 energy",
-    cost: 12,
-    kind: "gel",
-    energy: 0,
-    lines: ["You tuck a gel in the pocket. It costs no energy. Eat it from Inventory for +1 block, or save it for a bonk."],
-  },
-  "bpn-gel": {
-    id: "bpn-gel",
-    label: "BPN gel",
-    detail: `${BPN_GEL_COST} coins · 0 energy`,
-    cost: BPN_GEL_COST,
-    kind: "gel",
-    energy: 0,
-    lines: ["You tuck a BPN gel in the pocket. It costs no energy. It eats like any other gel, and a nutrition sponsor discounts it the same way."],
-  },
-  shake: {
-    id: "shake",
-    label: "Protein shake",
-    detail: `${SHAKE_COST} coins · 0 energy · eases fatigue and soreness`,
-    cost: SHAKE_COST,
-    kind: "shake",
-    energy: 0,
-    lines: ["A protein shake. 0 energy. Drink it from Inventory to ease fatigue and clear soreness. It does not heal a blister. That is the clinic."],
-  },
+  // The fuel case is the catalog, so a new gel does not need a second
+  // copy of its price in this file. Meals stay here because they are food,
+  // not the gear shelf.
+  ...Object.fromEntries(Object.values(FUEL).map((entry) => [entry.id, shopFromFuel(entry)])),
 };
 
 const RUNS = {
@@ -628,6 +632,14 @@ export function createNewGame({ name, gender }) {
       wifiToday: false,
     },
     coins: START_COINS,
+    // The town you are standing in. The cafe and the clinic read this
+    // for prices. It does not open the Run Store shelf. The other towns
+    // are not maps yet.
+    city: "brick-city",
+    // Cities whose models are on the shelf. Brick City only, until a
+    // future bus writes the next id. An old save is missing this and
+    // Resume fills the same default. state.city is not this list.
+    citiesReached: ["brick-city"],
     gear: {
       equipped: "starter",
       owned: ["starter"],
@@ -1186,6 +1198,13 @@ function napCount(state) {
 export function applyPurchase(state, itemId) {
   const item = SHOP[itemId];
   if (!item) return refuse(state, ["The shelf doesn't have that."]);
+  // Meals have no city. Gels, shakes, and flasks do. A locked flavor
+  // stays off the counter until that city is reached.
+  const fuel = FUEL[itemId];
+  if (fuel) {
+    const blocked = shelfBlock(fuel, state);
+    if (blocked) return refuse(state, [blocked]);
+  }
   // Food, gels, and gear are fueling. They cost coins, never an energy block,
   // so eating cannot make you too tired to eat. A nutrition sponsor can
   // discount the gel. The meal prices stay put.
@@ -1205,6 +1224,8 @@ export function applyPurchase(state, itemId) {
     if (price.name) lines.push(`${price.name} covers part of the gel. You pay ${price.cost} coins.`);
   } else if (item.kind === "shake") {
     next.shakes = (next.shakes || 0) + 1;
+  } else if (item.kind === "flask") {
+    next.flasks = (next.flasks || 0) + 1;
   } else {
     next.condition.nutrition = clampFood(next, next.condition.nutrition + item.nutrition);
     next.condition.mealName = item.mealName;
@@ -1337,6 +1358,12 @@ export function applyShoe(state, shoeId) {
   if (!isKnownShoe(shoeId)) return refuse(state, ["The shelf doesn't have that pair."]);
   const shoe = shoeById(shoeId);
   const owned = state.gear.owned.includes(shoeId);
+  // Owning the pair already (a sponsor gift, or a city you have since
+  // left) lets you replace it. The lock is only on the first purchase.
+  if (!owned) {
+    const blocked = shelfBlock(shoe, state);
+    if (blocked) return refuse(state, [blocked]);
+  }
   const wornOut = shoeWear(state.gear, shoeId).ratio >= 1;
   const price = pricedShoe(state, shoeId, owned, wornOut);
   if (!owned && shoe.price <= 0) {
@@ -1365,6 +1392,8 @@ export function applyShoe(state, shoeId) {
 export function applyBuyCarry(state, carryId) {
   const item = carryById(carryId);
   if (!item) return refuse(state, ["The rack doesn't have that."]);
+  const blocked = shelfBlock(item, state);
+  if (blocked) return refuse(state, [blocked]);
   const owned = (state.gear.ownedCarry || []).includes(carryId);
   const price = pricedCarry(state, carryId);
   if (owned) return refuse(state, ["You already own that. Equip it from the closet."]);
@@ -1766,6 +1795,8 @@ function settleWearObligation(state, lines) {
 function giveStarterCarry(state, sponsor, lines) {
   const gift = carryById(sponsor.starter);
   if (!gift) return;
+  // No shelfBlock here. A sponsor can hand you a belt the store still
+  // has locked. The deal is the gift. The counter is the purchase.
   if (!Array.isArray(state.gear.ownedCarry)) state.gear.ownedCarry = [];
   const already = state.gear.ownedCarry.includes(gift.id);
   if (!already) state.gear.ownedCarry = [...state.gear.ownedCarry, gift.id];
@@ -1959,6 +1990,8 @@ export function applyFlask(state) {
 function buyWearable(state, table, id, slot, ownedKey) {
   const item = table[id];
   if (!item) return refuse(state, ["The shelf doesn't have that."]);
+  const blocked = shelfBlock(item, state);
+  if (blocked) return refuse(state, [blocked]);
   const owned = (state.gear[ownedKey] || []).includes(id);
   if (owned) return refuse(state, ["You already own that. Equip it from the closet."]);
   if (state.coins < item.price) return refuse(state, [`${item.name} costs ${item.price} coins.`]);
@@ -2417,11 +2450,16 @@ export function menuFor(locationId, state) {
           runItem(state, "strength"),
         ],
       };
-    case "store":
+    case "store": {
+      // The arrival line is empty in Brick City, so a new game still
+      // hears the old sentence. A later city adds one line about NEW.
+      const arrival = catalogArrivalMessage(state);
       return {
         title: "Run Store",
         speaker: "Run Store",
-        intro: "Manager Nia is lacing a demo shoe on the stool.",
+        intro: arrival
+          ? `Manager Nia is lacing a demo shoe on the stool.\n${arrival}`
+          : "Manager Nia is lacing a demo shoe on the stool.",
         items: [
           // One row, every day. The card behind it changes. The label
           // and the 1 energy cost do not, so the board stays put.
@@ -2435,12 +2473,13 @@ export function menuFor(locationId, state) {
             state.coins < SHOP.shake.cost,
             "Not enough coins.",
           ),
-          item("Gels", "Stride Fuel and BPN", { type: "open-gels" }),
+          item("Gels", "Flavors, shakes, and flasks", { type: "open-gels" }),
           item("Shop shoes", "Trail, Marathon, Backyard", { type: "open-shoe-categories" }),
           item("Belts & vests", "+5 or +10 max nutrition", { type: "open-carry-shop" }),
           item("Sponsors", "Offers, deals, obligations", { type: "open-sponsors" }),
         ],
       };
+    }
     case "grocery":
       return {
         title: "Grocery",
@@ -2691,6 +2730,9 @@ export function shoeStyleItems(state, style) {
   for (const shoe of shoesOfStyle(style)) {
     const owned = state.gear.owned.includes(shoe.id);
     if (!owned && shoe.price <= 0) continue;
+    // A pair you already own stays on the list so you can replace it.
+    // A pair the cities have not unlocked yet does not.
+    if (!owned && !isUnlocked(shoe, state)) continue;
     const worn = shoeWear(state.gear, shoe.id);
     const priced = shoePriceDetail(state, shoe, owned);
     if (!owned) {
@@ -2740,8 +2782,8 @@ export function carryShopItems(state) {
   const rows = [
     headerItem("Running belts", "+5 max nutrition. No speed penalty. Any style."),
   ];
-  const belts = Object.values(CARRY).filter((entry) => entry.kind === "belt" && !entry.wild);
-  const vests = Object.values(CARRY).filter((entry) => entry.kind === "vest" && !entry.wild);
+  const belts = Object.values(CARRY).filter((entry) => entry.kind === "belt" && !entry.wild && isUnlocked(entry, state));
+  const vests = Object.values(CARRY).filter((entry) => entry.kind === "vest" && !entry.wild && isUnlocked(entry, state));
   for (const entry of belts) rows.push(carryRow(state, entry));
   rows.push(headerItem("Trail hydration vests", "+10 max nutrition. Small −speed in short road races."));
   for (const entry of vests) rows.push(carryRow(state, entry));
@@ -2752,7 +2794,10 @@ export function sockShopItems(state) {
   const rows = [
     headerItem("Sock wall", "Long ultras lose a little fatigue. Some pairs also ease blisters from worn shoes."),
   ];
-  for (const id of Object.keys(SOCKS)) rows.push(wearableRow(state, SOCKS[id], "socks", "ownedSocks", "buy-sock", "equip-sock", "unequip-sock"));
+  for (const id of Object.keys(SOCKS)) {
+    if (!isUnlocked(SOCKS[id], state)) continue;
+    rows.push(wearableRow(state, SOCKS[id], "socks", "ownedSocks", "buy-sock", "equip-sock", "unequip-sock"));
+  }
   return rows;
 }
 
@@ -2760,18 +2805,23 @@ export function hatShopItems(state) {
   const rows = [
     headerItem("Running hats", "A small fatigue cut on a tiring run. The cap on your sprite takes the brand color. No logos."),
   ];
-  for (const id of Object.keys(HATS)) rows.push(wearableRow(state, HATS[id], "hat", "ownedHats", "buy-hat", "equip-hat", "unequip-hat"));
+  for (const id of Object.keys(HATS)) {
+    if (!isUnlocked(HATS[id], state)) continue;
+    rows.push(wearableRow(state, HATS[id], "hat", "ownedHats", "buy-hat", "equip-hat", "unequip-hat"));
+  }
   return rows;
 }
 
 export function gelShopItems(state) {
-  return ["gel", "bpn-gel"].map((id) => item(
-    SHOP[id].label,
-    gelMenuDetail(state, id),
-    { type: "buy", id },
-    state.coins < pricedGel(state, SHOP[id].cost).cost,
-    "Not enough coins.",
-  ));
+  return Object.values(FUEL)
+    .filter((entry) => entry.kind === "gel" && isUnlocked(entry, state))
+    .map((entry) => item(
+      `${newTag(entry, state)}${entry.name}`,
+      gelMenuDetail(state, entry.id),
+      { type: "buy", id: entry.id },
+      state.coins < pricedGel(state, entry.price).cost,
+      "Not enough coins.",
+    ));
 }
 
 function wearableRow(state, entry, slot, ownedKey, buyType, equipType, unequipType) {
@@ -2809,6 +2859,353 @@ function carryRow(state, entry) {
     return item(`Unequip ${entry.name}`, carryTradeText(entry), { type: "unequip-carry" });
   }
   return item(`Wear ${entry.name}`, carryTradeText(entry), { type: "equip-carry", id: entry.id });
+}
+
+/**
+ * Page size is five rows plus the next button. A phone at 390 by 844
+ * shows about that many menu rows under the HUD and above the d-pad.
+ * Shorter racks skip the pager so a three-model brand is not a page.
+ */
+const SHOP_PAGE = 5;
+
+function pageItems(rows, page, action) {
+  const pages = Math.max(1, Math.ceil(rows.length / SHOP_PAGE));
+  const safe = Math.min(Math.max(0, page || 0), pages - 1);
+  if (pages === 1) return rows;
+  const slice = rows.slice(safe * SHOP_PAGE, safe * SHOP_PAGE + SHOP_PAGE);
+  const nav = [];
+  if (safe > 0) {
+    nav.push(item("Previous page", `Page ${safe + 1} of ${pages}`, { ...action, page: safe - 1, replace: true }));
+  }
+  if (safe < pages - 1) {
+    nav.push(item("Next page", `Page ${safe + 1} of ${pages}`, { ...action, page: safe + 1, replace: true }));
+  }
+  return [
+    headerItem(`Page ${safe + 1} of ${pages}`, "Next keeps a long rack short on a phone."),
+    ...slice,
+    ...nav,
+  ];
+}
+
+function groupsOf(list, state) {
+  const groups = [];
+  const index = new Map();
+  for (const entry of list) {
+    if (!isUnlocked(entry, state)) continue;
+    const brand = entry.brand || "Other";
+    if (!index.has(brand)) {
+      const group = { brand, items: [] };
+      index.set(brand, group);
+      groups.push(group);
+    }
+    index.get(brand).items.push(entry);
+  }
+  return groups;
+}
+
+function sinceLine(item) {
+  const id = unlockCityOf(item);
+  const city = id ? CITIES[id] : null;
+  if (!id || id === "brick-city") return "On the shelf from Brick City.";
+  return `Arrived with ${city ? city.name : id}. It stays on the shelf after you leave.`;
+}
+
+function brandRows(groups, state, actionType, extra) {
+  return groups.map((group) => {
+    const fresh = group.items.some((entry) => isNewUnlock(entry, state));
+    return item(
+      `${fresh ? "NEW " : ""}${group.brand}`,
+      `${group.items.length} model${group.items.length === 1 ? "" : "s"}`,
+      { type: actionType, brand: group.brand, ...extra },
+    );
+  });
+}
+
+function shoeTabs(style) {
+  return [
+    ["trail", "Trail"],
+    ["road", "Marathon"],
+    ["versatile", "Backyard"],
+  ].map(([id, label]) => ({
+    label,
+    active: id === style,
+    action: { type: "open-shop-style", style: id, replace: true },
+  }));
+}
+
+function carryTabs(kind) {
+  return [
+    ["belt", "Belts"],
+    ["vest", "Vests"],
+  ].map(([id, label]) => ({
+    label,
+    active: id === kind,
+    action: { type: "open-carry-kind", kind: id, replace: true },
+  }));
+}
+
+function fuelTabs(kind) {
+  return [
+    ["gel", "Gels"],
+    ["shake", "Shakes"],
+    ["flask", "Flasks"],
+  ].map(([id, label]) => ({
+    label,
+    active: id === kind,
+    action: { type: "open-fuel-kind", kind: id, replace: true },
+  }));
+}
+
+function shoeStyleView(state, style) {
+  const shoes = shoesOfStyle(style).filter((shoe) => shoe.price > 0);
+  return {
+    title: `${styleLabel(style)} shoes`,
+    intro: "Left and right switch style. A brand opens its models.",
+    testId: "shoe-shop",
+    tabs: shoeTabs(style),
+    items: brandRows(groupsOf(shoes, state), state, "open-shop-brand", { style }),
+  };
+}
+
+function shoeBrandView(state, style, brand) {
+  const shoes = shoesOfStyle(style).filter((shoe) => shoe.brand === brand && shoe.price > 0 && isUnlocked(shoe, state));
+  return {
+    title: brand,
+    intro: `${styleLabel(style)}. Open a model for the tradeoff.`,
+    testId: "shoe-brand",
+    items: shoes.map((shoe) => {
+      const owned = state.gear.owned.includes(shoe.id);
+      const priced = shoePriceDetail(state, shoe, owned);
+      return item(
+        `${newTag(shoe, state)}${shoe.name}`,
+        owned ? "Owned · open for wear and replace" : `${priced.cost} coins · open for the tradeoff`,
+        { type: "open-gear-detail", shelf: "shoe", id: shoe.id },
+      );
+    }),
+  };
+}
+
+function carryKindView(state, kind) {
+  const list = Object.values(CARRY).filter((entry) => entry.kind === kind && !entry.wild);
+  const noun = kind === "belt" ? "Belts" : "Vests";
+  return {
+    title: noun,
+    intro: kind === "belt"
+      ? "+5 max nutrition. No speed penalty. Left and right switch."
+      : "+10 max nutrition. A small short-road penalty. Left and right switch.",
+    testId: "carry-shop",
+    tabs: carryTabs(kind),
+    items: brandRows(groupsOf(list, state), state, "open-carry-brand", { kind }),
+  };
+}
+
+function carryBrandView(state, kind, brand) {
+  const list = Object.values(CARRY).filter((entry) => entry.kind === kind && entry.brand === brand && !entry.wild && isUnlocked(entry, state));
+  return {
+    title: brand,
+    intro: kind === "belt" ? "Belts. Open a model for the price." : "Vests. Open a model for the price.",
+    testId: "carry-brand",
+    items: list.map((entry) => item(
+      `${newTag(entry, state)}${entry.name}`,
+      `${pricedCarry(state, entry.id).cost} coins`,
+      { type: "open-gear-detail", shelf: "carry", id: entry.id },
+    )),
+  };
+}
+
+function wearableShop(state, table, title, intro, testId, pageAction) {
+  const rows = Object.values(table)
+    .filter((entry) => isUnlocked(entry, state))
+    .map((entry) => item(
+      `${newTag(entry, state)}${entry.name}`,
+      `${entry.price} coins · ${entry.brand}`,
+      { type: "open-gear-detail", shelf: pageAction.shelf, id: entry.id },
+    ));
+  return {
+    title,
+    intro,
+    testId,
+    items: pageItems(rows, pageAction.page, pageAction),
+  };
+}
+
+function fuelKindView(state, kind, page) {
+  const titles = { gel: "Gels", shake: "Shakes", flask: "Flasks" };
+  const rows = Object.values(FUEL)
+    .filter((entry) => entry.kind === kind && isUnlocked(entry, state))
+    .map((entry) => item(
+      `${newTag(entry, state)}${entry.name}`,
+      kind === "gel" ? gelMenuDetail(state, entry.id) : `${entry.price} coins · ${entry.blurb}`,
+      { type: "open-gear-detail", shelf: "fuel", id: entry.id },
+    ));
+  return {
+    title: titles[kind] || "Nutrition",
+    intro: "Left and right switch. A gel is still one gel. A later flavor is not a stronger one.",
+    testId: kind === "gel" ? "gel-shop" : "fuel-shop",
+    tabs: fuelTabs(kind),
+    items: pageItems(rows, page, { type: "open-fuel-kind", kind }),
+  };
+}
+
+function gearDetail(state, shelf, id) {
+  if (shelf === "shoe") {
+    const shoe = shoeById(id);
+    if (!shoe) return null;
+    const owned = state.gear.owned.includes(id);
+    const priced = shoePriceDetail(state, shoe, owned);
+    const lines = [
+      shoe.blurb,
+      shoeTradeText(shoe),
+      `${shoe.maxMiles} miles before they wear out.`,
+      sinceLine(shoe),
+      isNewUnlock(shoe, state) ? "NEW. This city just put it on the wall." : "",
+    ].filter(Boolean);
+    const items = [];
+    if (!owned) {
+      items.push(item(
+        `Buy for ${priced.cost} coins`,
+        priced.deal ? `Was ${priced.base}. ${shoe.brand}` : shoe.brand,
+        { type: "shoe", id },
+        state.coins < priced.cost,
+        `Need ${priced.cost} coins.`,
+      ));
+    } else {
+      if (state.gear.equipped !== id) items.push(item("Wear these", "Free to swap", { type: "equip", id }));
+      items.push(item(
+        priced.free ? "Replace for free" : `Replace for ${priced.cost} coins`,
+        `${priced.detail}`,
+        { type: "shoe", id },
+        state.coins < priced.cost,
+        `Need ${priced.cost} coins.`,
+      ));
+    }
+    return { title: `${newTag(shoe, state)}${shoe.name}`, intro: lines.join("\n"), items, testId: "item-detail" };
+  }
+  if (shelf === "carry") {
+    const entry = carryById(id);
+    if (!entry) return null;
+    const owned = (state.gear.ownedCarry || []).includes(id);
+    const price = pricedCarry(state, id);
+    const lines = [entry.blurb, carryTradeText(entry), sinceLine(entry)].filter(Boolean);
+    if (isNewUnlock(entry, state)) lines.push("NEW. This city just put it on the wall.");
+    const items = [];
+    if (!owned) {
+      const costText = price.deal ? `${price.cost} coins (was ${price.base})` : `${price.cost} coins`;
+      items.push(item(
+        `Buy for ${costText}`,
+        entry.brand,
+        { type: "buy-carry", id },
+        state.coins < price.cost,
+        `Need ${price.cost} coins.`,
+      ));
+    } else if (state.gear.carry === id) {
+      items.push(item(`Unequip ${entry.name}`, carryTradeText(entry), { type: "unequip-carry" }));
+    } else {
+      items.push(item(`Wear ${entry.name}`, carryTradeText(entry), { type: "equip-carry", id }));
+    }
+    return { title: `${newTag(entry, state)}${entry.name}`, intro: lines.join("\n"), items, testId: "item-detail" };
+  }
+  if (shelf === "socks" || shelf === "hat") {
+    const table = shelf === "socks" ? SOCKS : HATS;
+    const entry = table[id];
+    if (!entry) return null;
+    const slot = shelf === "socks" ? "socks" : "hat";
+    const ownedKey = shelf === "socks" ? "ownedSocks" : "ownedHats";
+    const buyType = shelf === "socks" ? "buy-sock" : "buy-hat";
+    const equipType = shelf === "socks" ? "equip-sock" : "equip-hat";
+    const unequipType = shelf === "socks" ? "unequip-sock" : "unequip-hat";
+    const text = shelf === "socks" ? sockTradeText(entry) : hatTradeText(entry);
+    const owned = (state.gear[ownedKey] || []).includes(id);
+    const lines = [entry.blurb, text, sinceLine(entry)];
+    if (isNewUnlock(entry, state)) lines.push("NEW. This city just put it on the wall.");
+    const items = [];
+    if (!owned) {
+      items.push(item(
+        `Buy for ${entry.price} coins`,
+        entry.brand,
+        { type: buyType, id },
+        state.coins < entry.price,
+        `Need ${entry.price} coins.`,
+      ));
+    } else if (state.gear[slot] === id) {
+      items.push(item(`Unequip ${entry.name}`, text, { type: unequipType }));
+    } else {
+      items.push(item(`Wear ${entry.name}`, text, { type: equipType, id }));
+    }
+    return { title: `${newTag(entry, state)}${entry.name}`, intro: lines.join("\n"), items, testId: "item-detail" };
+  }
+  if (shelf === "fuel") {
+    const entry = FUEL[id];
+    if (!entry) return null;
+    const price = entry.kind === "gel" ? pricedGel(state, entry.price) : { cost: entry.price, name: null, base: entry.price };
+    const lines = [entry.blurb, sinceLine(entry)];
+    if (price.name) lines.push(`${price.name} deal. Was ${entry.price} coins.`);
+    if (isNewUnlock(entry, state)) lines.push("NEW. This city just put it on the wall.");
+    return {
+      title: `${newTag(entry, state)}${entry.name}`,
+      intro: lines.join("\n"),
+      items: [
+        item(
+          `Buy for ${price.cost} coins`,
+          entry.brand,
+          { type: "buy", id },
+          state.coins < price.cost,
+          "Not enough coins.",
+        ),
+      ],
+      testId: "item-detail",
+    };
+  }
+  return null;
+}
+
+/**
+ * One door for every Run Store rack. PlayScreen asks this instead of
+ * building a list itself, so the phone tabs and the pages stay in the
+ * same place as the unlock rules. replace on an action means "switch
+ * tab or page", and the screen keeps the menu underneath as Back.
+ */
+export function presentShop(action, state) {
+  if (!action) return null;
+  if (action.type === "open-shoe-categories" || action.type === "open-shop") return shoeStyleView(state, "trail");
+  if (action.type === "open-shop-style") return shoeStyleView(state, action.style || "trail");
+  if (action.type === "open-shop-brand") return shoeBrandView(state, action.style, action.brand);
+  if (action.type === "open-carry-shop") return carryKindView(state, "belt");
+  if (action.type === "open-carry-kind") return carryKindView(state, action.kind || "belt");
+  if (action.type === "open-carry-brand") return carryBrandView(state, action.kind, action.brand);
+  if (action.type === "open-socks") {
+    return wearableShop(state, SOCKS, "Socks", "Long ultras lose a little fatigue. Some pairs also ease blisters.", "sock-shop", { type: "open-socks", shelf: "socks", page: action.page });
+  }
+  if (action.type === "open-hats") {
+    return wearableShop(state, HATS, "Hats", "A small fatigue cut. The cap takes the brand color. No logos.", "hat-shop", { type: "open-hats", shelf: "hat", page: action.page });
+  }
+  if (action.type === "open-gels" || action.type === "open-fuel") return fuelKindView(state, "gel", 0);
+  if (action.type === "open-fuel-kind") return fuelKindView(state, action.kind || "gel", action.page || 0);
+  if (action.type === "open-gear-detail") return gearDetail(state, action.shelf, action.id);
+  return null;
+}
+
+/**
+ * The bus is not running yet, so the depot does not call this. A test,
+ * a debug save, and a future trip do. It only writes citiesReached.
+ * It does not move you, and it does not read or write state.city, because
+ * that field is the cafe and clinic price table for the town you can
+ * actually stand in. Naming a later town keeps every earlier town.
+ */
+export function arriveInCity(state, cityId) {
+  if (!CITY_UNLOCK_ORDER.includes(cityId)) {
+    return { ok: false, state, lines: ["That town is not on the road."], ticker: "" };
+  }
+  const before = citiesReached(state);
+  if (before.includes(cityId)) {
+    return { ok: true, state, lines: [], ticker: "" };
+  }
+  const next = clone(state);
+  next.citiesReached = normalizeCitiesReached([...(next.citiesReached || []), cityId]);
+  const lines = [];
+  const msg = catalogArrivalMessage(next);
+  if (msg) lines.push(msg);
+  return { ok: true, state: next, lines, ticker: "" };
 }
 
 export function closetItems(state) {

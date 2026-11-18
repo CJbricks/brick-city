@@ -42,7 +42,7 @@ function CityPlaque() {
   );
 }
 
-export function MenuList({ title, intro, introTestId, items, index, onPick, testId }) {
+export function MenuList({ title, intro, introTestId, items, index, onPick, onTab, tabs, testId }) {
   const listRef = useRef(null);
   useEffect(() => {
     const selected = listRef.current?.querySelector(".selected");
@@ -52,6 +52,20 @@ export function MenuList({ title, intro, introTestId, items, index, onPick, test
     <Window title={title} testId={testId || "menu"}>
       <CityPlaque />
       {intro ? <p data-testid={introTestId || undefined}>{intro}</p> : null}
+      {tabs?.length ? (
+        <div className="shop-tabs" data-testid="shop-tabs">
+          {tabs.map((tab) => (
+            <button
+              key={tab.label}
+              type="button"
+              className={tab.active ? "shop-tab selected" : "shop-tab"}
+              onClick={() => onTab?.(tab.action)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div ref={listRef}>
         {items.map((item, itemIndex) => (
           <button
@@ -70,7 +84,7 @@ export function MenuList({ title, intro, introTestId, items, index, onPick, test
           </button>
         ))}
       </div>
-      <p className="menu-detail">A confirm · B back</p>
+      <p className="menu-detail">{tabs?.length ? "Left and right change category · A confirm · B back" : "A confirm · B back"}</p>
     </Window>
   );
 }
