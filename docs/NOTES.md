@@ -78,7 +78,7 @@ Almost every tunable number is in `src/lib/constants.js`.
 | How much a nap or a home snack restores | `NAP_ENERGY` (3), `HOME_SNACK_NUTRITION` (12) |
 | Price of an extra meal or snack | `MEAL_COIN_COST` (18), `SNACK_COIN_COST` (7) |
 
-Run rewards (miles, fatigue, XP) are the `RUNS` object in `src/lib/activities.js`. Shoe prices, belt and vest stats, and the style trade-offs are in `src/lib/catalog.js`. Sponsor percents and unlocks are in `src/lib/sponsors.js`. `src/lib/race.js` turns that gear into a pace percent for the race in front of you. Race ideals ("a 5K wants more Peak than Endurance") are on each race in `RACES`.
+Run rewards (miles, fatigue, XP) are the `RUNS` object in `src/lib/activities.js`. Shoe prices, belt and vest stats, and the style trade-offs are in `src/lib/catalog.js`. Which town sells which of those products, and how far that town's tag sits from the sticker, is `src/lib/stores.js`. Sponsor percents and unlocks are in `src/lib/sponsors.js`. `src/lib/race.js` turns that gear into a pace percent for the race in front of you. Race ideals ("a 5K wants more Peak than Endurance") are on each race in `RACES`.
 
 If you change a number, run `npm test`. Several tests check exact results, like "an easy run from a fresh runner ends at fatigue 2". Update the test if you meant to change that result.
 
@@ -243,6 +243,37 @@ The house pairs `road`, `trail`, and `hybrid` sit in those three styles too, so 
 Each brand pair has its own percents. They are not copies. Worn shoes stack a flat pace penalty on top (`shoeWear`). At 100% of `maxMiles` the pair is worn out. A matching shoe sponsor replaces that pair for free. A fresh pair from the sponsor is only discounted.
 
 The Run Store groups the rack into Trail, Marathon, and Backyard Ultra. The closet shows the same groups, the wear percent, and the trade-off line.
+
+## Shop catalogs
+
+Two files, on purpose.
+
+| File | What it answers |
+|---|---|
+| `src/lib/catalog.js` | What a product is. Name, brand, price, stats, the level it unlocks. |
+| `src/lib/stores.js` | Which town hangs it on the wall, and how that town's tag feels. |
+
+`catalog.js` is the whole warehouse. A shoe, a belt, a vest, a sock, a hat, or a fuel item is one object with a stable `id`. `stores.js` is the shelf list for each city. Brick City is the only shop you can walk into. Ridgeview, Lakeport, Mesa Verde Flats, Flatland, and Summit Hollow are the same kind of record the clinic and the coffee shop already keep: design data, ready for a later map. Summit Hollow stocks every product and multiplies the tag (`priceScale` 1.4). Flatland is the cheap backyard shop. Ridgeview leans trail. Lakeport leans marathon. Mesa Verde leans long miles, cushion, and hats, because the motto is short shade.
+
+The Run Store menu is pages, not one endless list: Shoes (then Trail, Marathon, or Backyard), Belts, Vests, Socks, Hats, Nutrition (gels, shakes, flasks). A page that is still taller than a phone scrolls inside the window, and the "A confirm · B back" line stays put. Tap a row for the item detail (the blurb and the buy button). B goes back one page. It does not throw you onto the sidewalk until you are on the front counter.
+
+### What a new model is allowed to do
+
+`SHOE_LIMITS` in `catalog.js` is the old best and the old worst for each style. A new brand shoe has to land inside that box. That is why a later Norda cannot out-climb the 001, and a later Nike cannot be faster than the Alphafly. The trade is cushion against speed: more `maxMiles` and a softer bonus, or a sharper bonus and fewer miles. `minLevel` above 1 is the other price. Day one can still buy the original pairs.
+
+Belts are all +5 with no speed penalty. Vests are all +10. A vest's only stat trade is `shortRoad` (how much a 5K notices it), between the old −3% and −5%. Socks stay at a fatigue cut of 2 to 4. Hats stay at 1 or 2. Those caps are what keep a long run feeling like a long run.
+
+Gels, shakes, and flasks are flavors of three pockets the save already has (`gels`, `shakes`, `flasks`). Eating any gel is still +1 energy and +12 food. Any shake is still the protein drink. Any flask is still +2 nutrition at the next start. A Maurten gel costs more and unlocks later. It does not fill more, or the bonk rule would change. Stride Fuel, BPN, Honey Stinger, Maurten, and Precision are the gel brands already in the sponsor list. No new brands.
+
+### How to add a product
+
+1. Add an object in `src/lib/catalog.js` under the right table (`MORE_SHOES`, `CARRY`, `SOCKS`, `HATS`, or `NUTRITION`). Use a new `id`. Do not rename an id that already exists. Old saves look shoes, belts, socks, and hats up by that string.
+2. Copy the shape of the neighbor above it. A trail shoe needs `style: "trail"` and mods inside `SHOE_LIMITS.trail`. Set `minLevel` if it should wait. Write a `blurb` a person can read. Use a real model name only when you are sure that brand sells it. Otherwise use a plain name like "Daily Trail".
+3. Do not add a brand the game does not already sell. Shoe brands are Nike, Adidas, Hoka, Brooks, Norda, Speedland, Mount to Coast, Salomon, and Satisfy. Belt and vest brands are Nathan, Osprey, REI, Salomon, Dera, CamelBak, Naked, and Satisfy. Hat brands are Ciele, Bandit, Nike ACG, rnnr, and BPN. The brand field has to match the sponsor's brand string (`Nike`, not `Nike ACG`, on a shoe) or the discount will miss it.
+4. Put the id on the shelves in `src/lib/stores.js`. Brick City if the walkable store should sell it. A mountain town if it is a trail specialty. Lakeport if it is a road shoe. Summit Hollow does not need an edit: it sells the whole catalog. Leave a model off a town when that town should not have it.
+5. Run `npm test`. `src/lib/stores.test.js` checks that every item is valid, every town's shelf names a real id, the old ids still resolve, and Summit's tag is the highest.
+
+The house pairs `road`, `trail`, and `hybrid` stay for sale in Brick City. `starter` is not for sale. Wild belts and vests from the tall grass stay off every shelf.
 
 ## Belts, vests, and the nutrition cap
 

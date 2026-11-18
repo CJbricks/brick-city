@@ -493,6 +493,12 @@ canvas {
   white-space: pre-line;
 }
 
+.menu-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .menu-row {
   width: 100%;
   text-align: left;
@@ -698,6 +704,12 @@ canvas {
   .gbc-window {
     margin-top: 72px;
     max-height: calc(100% - 72px);
+  }
+
+  /* A 390-wide phone cannot show a whole shoe wall at once. Cap the
+     list and leave the title and the A/B line outside the scroller. */
+  .menu-scroll {
+    max-height: min(42vh, 340px);
   }
 
   .hud-desktop {
