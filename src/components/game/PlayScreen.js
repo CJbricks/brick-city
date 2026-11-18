@@ -584,7 +584,9 @@ export function PlayScreen({ game, setGame, onTitle }) {
               tabs={panel.tabs}
               index={panel.index}
               testId={panel.testId}
-              onTab={(tabAction) => activate({ ...tabAction, replace: true })}
+              // A tab is already an action. activate reads item.action, so the
+              // click has to wrap it or the store says nothing happens.
+              onTab={(tabAction) => activate({ action: { ...tabAction, replace: true } })}
               onPick={(itemIndex) => {
                 const items = panel.title === "Menu" ? systemItems(soundOn) : panel.items;
                 activate(items[itemIndex]);
