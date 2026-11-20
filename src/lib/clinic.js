@@ -5,14 +5,17 @@
  * Treatment, soft-tissue work, blister care, and a sick visit are
  * applied in activities.js, because they spend coins the same way a
  * run spends energy. This file only knows what a visit costs in each
- * town, and what the free screen should say. Summit Hollow is the
- * expensive one. Its store is already the priciest in the design, and
- * the clinic matches that. Blister care is the cheap dressing, under
- * soft tissue. A sick visit is the pricey cure for the rare morning
- * illness; Brick City is 200 coins.
+ * town, and what the free screen should say. The free Injury screen
+ * also warns when Fatigue is high enough for overnight overtraining
+ * (see overtrain.js). Summit Hollow is the expensive one. Its store
+ * is already the priciest in the design, and the clinic matches that.
+ * Blister care is the cheap dressing, under soft tissue. A sick visit
+ * is the pricey cure for the rare morning illness; Brick City is 200
+ * coins.
  */
 
 import { CITIES, cityById, clinicRates } from "@/lib/constants";
+import { OVERTRAIN_FATIGUE, isOvertrained, overtrainingStatusLine } from "@/lib/overtrain";
 import { isSick, sicknessStatusLine } from "@/lib/sickness";
 
 export { clinicRates };
@@ -29,9 +32,9 @@ export function ratesFor(state) {
 
 /**
  * The free screen. It does not change the save. It reads the blister
- * (condition.injury), the rare sickness, the sore flag, and how many
- * hard weeks are stacked, which is the same injury risk sleep already
- * warns about.
+ * (condition.injury), the rare sickness, overtraining (Fatigue still
+ * cooked), the sore flag, and how many hard weeks are stacked, which
+ * is the same injury risk sleep already warns about.
  */
 export function injuryScreenLines(state) {
   const injury = state?.condition?.injury;
@@ -45,6 +48,11 @@ export function injuryScreenLines(state) {
   if (isSick(state)) {
     lines.push(`${sicknessStatusLine(state)}. A sick visit clears it so you can run again.`);
   }
+  if (isOvertrained(state)) {
+    lines.push(
+      `${overtrainingStatusLine()}. Sleep Fatigue down under ${OVERTRAIN_FATIGUE} before Peak keeps slipping overnight.`,
+    );
+  }
   if (state?.condition?.sore) {
     lines.push("You are sore. Easy running, or soft tissue work, clears that ache.");
   }
@@ -53,7 +61,7 @@ export function injuryScreenLines(state) {
     lines.push(`${hard} hard weeks in a row. That is raising injury risk.`);
   } else if ((state?.condition?.fatigue || 0) >= 70) {
     lines.push("Fatigue is high. That is one strike toward getting sore.");
-  } else if (!injury && !state?.condition?.sore && !isSick(state)) {
+  } else if (!injury && !state?.condition?.sore && !isSick(state) && !isOvertrained(state)) {
     lines.push("Risk looks ordinary. Keep the easy days easy.");
   }
   const city = cityById(clinicCityId(state));
