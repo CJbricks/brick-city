@@ -161,6 +161,19 @@ const BRAND_SHOES = {
     blurb: "Long-trail cushion. The ridge feels shorter. The track does not.",
     mods: { road: -0.04, trail: 0.08, versatile: 0, climbing: 0.09 },
   },
+  // H1 is a real door-to-trail hybrid. It sits on both the Trail rack and
+  // the Backyard rack (see mtc-h1-yard below) so the same name shows in
+  // both tabs from Brick City day one. Two ids, one product name.
+  "mtc-h1": {
+    id: "mtc-h1",
+    name: "Mount to Coast H1",
+    brand: "Mount to Coast",
+    style: "trail",
+    price: 160,
+    maxMiles: 210,
+    blurb: "Door-to-trail hybrid. Light lugs, soft cushion. The ridge is fine. A steep climb wants more.",
+    mods: { road: -0.04, trail: 0.07, versatile: 0, climbing: 0.07 },
+  },
   "adidas-agravic": {
     id: "adidas-agravic",
     name: "Adidas Terrex Agravic Speed Ultra",
@@ -231,6 +244,18 @@ const BRAND_SHOES = {
     blurb: "Marathon racer. Honest speed, unhappy on a wet trail.",
     mods: { road: 0.08, trail: -0.05, versatile: 0, speed: 0.07, ultraFatigue: 3 },
   },
+  // C1 is Mount to Coast's road super trainer. First marathon shoe for
+  // the brand. Brick City stocks it with no unlock field, same as T1/R1.
+  "mtc-c1": {
+    id: "mtc-c1",
+    name: "Mount to Coast C1",
+    brand: "Mount to Coast",
+    style: "road",
+    price: 180,
+    maxMiles: 140,
+    blurb: "Road super trainer. Soft for long pavement days. Mud is not the point.",
+    mods: { road: 0.08, trail: -0.05, versatile: 0, speed: 0.07, ultraFatigue: 3 },
+  },
   "norda-005": {
     id: "norda-005",
     name: "Norda 005",
@@ -260,6 +285,18 @@ const BRAND_SHOES = {
     maxMiles: 230,
     blurb: "Road ultra cruiser. The steep ridge still wants lugs.",
     mods: { road: 0, trail: 0, versatile: 0.07, shortRoad: -0.03, steepTrail: -0.03 },
+  },
+  // Same H1 name as the trail pair. Backyard tab needs its own id because
+  // every shoe row has one style. The save key is the id, not the name.
+  "mtc-h1-yard": {
+    id: "mtc-h1-yard",
+    name: "Mount to Coast H1",
+    brand: "Mount to Coast",
+    style: "versatile",
+    price: 160,
+    maxMiles: 220,
+    blurb: "Door-to-trail hybrid for long loops. Soft on a steep ridge. Fine for a yard.",
+    mods: { road: 0, trail: 0, versatile: 0.06, shortRoad: -0.02, steepTrail: -0.03 },
   },
   "adidas-hybrid": {
     id: "adidas-hybrid",
@@ -297,7 +334,8 @@ export const SHOES = { ...HOUSE, ...BRAND_SHOES, ...EXTRA_SHOES };
 
 /**
  * House brands are the pairs from before the real brands. They stay in
- * the closet, and they are not part of the "2 to 4 models per brand" rack.
+ * the closet, and they are not part of the "at least 5 models per brand"
+ * rack the deeper shelf tests for.
  */
 const HOUSE_BRANDS = new Set(["Brickside", "Tempo", "Peakline", "Switchback"]);
 
