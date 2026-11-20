@@ -24,6 +24,46 @@ export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export const MAX_ENERGY = 10;
 export const GEL_ENERGY = 1;
 export const GEL_NUTRITION = 12;
+/**
+ * Non-run activities that spend energy. Kept here so a future retune
+ * does not hunt through menus, shifts, and the clinic. Free things
+ * (meals, snacks, naps, sleep, shopping, soft tissue, blister care,
+ * sick visits, coffee) stay at 0 and are not listed.
+ *
+ * These used to cost 1. CJ was getting too many runs a day, so every
+ * paid activity went up by 1. A full 10-block day used to fit five
+ * easy runs (2 each); now it fits three (3 each), with 1 block left.
+ */
+export const SHIFT_ENERGY = 2;
+export const CLINIC_TREATMENT_ENERGY = 2;
+export const OBLIGATION_ENERGY = 2;
+/**
+ * Night runs (park, city street, mountain trail) only appear once the
+ * day has reached Evening. Slot 3 is Evening, 4–5 are Night. Morning
+ * through Afternoon stay daytime-only. See docs/NOTES.md "Night runs".
+ */
+export const NIGHT_RUN_MIN_SLOT = 3;
+/**
+ * Extra soreness strikes for night runs. nextSoreness adds these on
+ * top of the usual tired / hungry / worn / hard / hard-week checks.
+ * Poor visibility: city streets are the safest, park paths middling,
+ * mountain trail roots and rocks the riskiest. Order must stay
+ * trail > park > city so the tests can lock that ranking.
+ *
+ * TODO: a future headlamp (hat / headlamp gear slot) should cut these
+ * by 1 so night work is less punishing once you buy the light.
+ */
+export const NIGHT_RISK_CITY = 1;
+export const NIGHT_RISK_PARK = 2;
+export const NIGHT_RISK_TRAIL = 3;
+/**
+ * Modest Mental Toughness bumps so a night run is worth considering
+ * against its higher injury risk. Trail pays the most because it
+ * costs the most risk. XP bumps live on each RUNS row.
+ */
+export const NIGHT_MENTAL_CITY = 2;
+export const NIGHT_MENTAL_PARK = 3;
+export const NIGHT_MENTAL_TRAIL = 4;
 /** BPN gel on the grocery and Run Store lineup. Same pocket as other gels. */
 export const BPN_GEL_COST = 14;
 /** Protein shake. 0 energy. Eases fatigue and clears the sore flag. */

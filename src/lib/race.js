@@ -17,8 +17,10 @@
  * fatigue, so gels and tapering matter more the longer the course.
  *
  * A race spends energy the same way a run does. The 5K and Remy's mile
- * cost 2. The 10K costs 3. The Half costs 4. The Marathon costs 5. Eating
- * a gel still gives one block back. It does not refund the whole race.
+ * cost 3. The 10K costs 4. The Half costs 5. The Marathon costs 6.
+ * (Each used to be one less; every paid activity went up by 1 so a day
+ * fits fewer starts.) Eating a gel still gives one block back. It does
+ * not refund the whole race.
  *
  * Shoe stats live in catalog.js. This file turns them into a pace percent
  * for the race in front of you, then adds the sponsor and the vest.
@@ -61,14 +63,14 @@ export const RACES = {
     name: "Brick City 5K",
     km: 5,
     miles: 3.1,
-    slots: 2,
+    slots: 3,
     style: "road",
     ideal: { endurance: 0.35, peak: 0.65 },
     idealLabel: "35% Endurance / 65% Peak",
     xp: { overall: 46, marathon: 30, versatile: 6 },
     attributes: { speed: 8, endurance: 4, mental: 2 },
     coins: 28,
-    energy: 2,
+    energy: 3,
     peak: 6,
     endurance: 2,
     fatigue: 16,
@@ -81,14 +83,14 @@ export const RACES = {
     name: "Community 10K",
     km: 10,
     miles: 6.2,
-    slots: 3,
+    slots: 4,
     style: "road",
     ideal: { endurance: 0.45, peak: 0.55 },
     idealLabel: "45% Endurance / 55% Peak",
     xp: { overall: 70, marathon: 48, ultra: 10, versatile: 8 },
     attributes: { speed: 8, endurance: 10, mental: 4 },
     coins: 46,
-    energy: 3,
+    energy: 4,
     peak: 5,
     endurance: 5,
     fatigue: 22,
@@ -96,21 +98,22 @@ export const RACES = {
     dnfXp: { overall: 12, marathon: 6 },
     dnfFatigue: 16,
   },
-  // Half: ~2× the 10K in miles. One more energy block, endurance-leaning
-  // form, bigger FOOD drain so a gel (or two) is real insurance.
+  // Half: ~2× the 10K in miles. One more energy block than the 10K,
+  // endurance-leaning form, bigger FOOD drain so a gel (or two) is
+  // real insurance.
   half: {
     id: "half",
     name: "Brick City Half",
     km: 21.1,
     miles: 13.1,
-    slots: 4,
+    slots: 5,
     style: "road",
     ideal: { endurance: 0.55, peak: 0.45 },
     idealLabel: "55% Endurance / 45% Peak",
     xp: { overall: 110, marathon: 80, ultra: 14, versatile: 10 },
     attributes: { speed: 6, endurance: 16, mental: 6 },
     coins: 72,
-    energy: 4,
+    energy: 5,
     peak: 4,
     endurance: 8,
     fatigue: 32,
@@ -118,21 +121,21 @@ export const RACES = {
     dnfXp: { overall: 18, marathon: 10 },
     dnfFatigue: 22,
   },
-  // Marathon: the milestone. Heavier endurance mix than the half, five
+  // Marathon: the milestone. Heavier endurance mix than the half, six
   // energy blocks, the biggest FOOD and fatigue hit on the calendar.
   marathon: {
     id: "marathon",
     name: "Brick City Marathon",
     km: 42.2,
     miles: 26.2,
-    slots: 5,
+    slots: 6,
     style: "road",
     ideal: { endurance: 0.65, peak: 0.35 },
     idealLabel: "65% Endurance / 35% Peak",
     xp: { overall: 170, marathon: 130, ultra: 20, versatile: 12 },
     attributes: { speed: 4, endurance: 24, mental: 10 },
     coins: 120,
-    energy: 5,
+    energy: 6,
     peak: 3,
     endurance: 12,
     fatigue: 44,
@@ -147,8 +150,8 @@ export const RIVAL = {
   name: "Remy Calder",
   title: "the track kicker",
   base: 26,
-  slots: 2,
-  energy: 2,
+  slots: 3,
+  energy: 3,
   miles: 1,
   winXp: { overall: 24, marathon: 14, versatile: 4 },
   winAttributes: { speed: 6, mental: 3 },

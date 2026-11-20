@@ -5,8 +5,8 @@
  * clean 5K, the rival, and the unlock checks.
  *
  * Track and park workouts are in here too. Threshold and Interval Run
- * have to raise Peak more than Endurance and cost two energy blocks.
- * Zone 2 raises both meters about evenly and costs one.
+ * have to raise Peak more than Endurance and cost four energy blocks.
+ * Zone 2 raises both meters about evenly and costs three.
  *
  * Home meals, snacks, and naps are in here too. A free meal is a third
  * of the FOOD cap. The fourth plate and the third snack cost coins.
@@ -18,7 +18,7 @@
  * shoes / stock / gait ids still pay.
  *
  * The town-square activity board is in here too. The easy loop rests
- * you. The speed loop costs two energy and raises Peak more than
+ * you. The speed loop costs four energy and raises Peak more than
  * Endurance. The 5K time trial uses the race clock and stores a PB.
  */
 
@@ -38,16 +38,30 @@ import {
   createNewGame,
   fiveKPbLine,
   homeMealPortion,
+  isAfterDark,
   menuFor,
+  nextSoreness,
+  nightRiskOf,
   perform,
+  RUNS,
 } from "@/lib/activities";
 import { slotFromEnergy } from "@/lib/calendar";
 import { SHIFT_POOL, currentShift } from "@/lib/shifts";
 import { deserialize, serialize } from "@/lib/save";
 import { RACES } from "@/lib/race";
 import {
+  CLINIC_TREATMENT_ENERGY,
   HALF_UNLOCK_LEVEL,
   MARATHON_UNLOCK_LEVEL,
+  NIGHT_MENTAL_CITY,
+  NIGHT_MENTAL_PARK,
+  NIGHT_MENTAL_TRAIL,
+  NIGHT_RISK_CITY,
+  NIGHT_RISK_PARK,
+  NIGHT_RISK_TRAIL,
+  NIGHT_RUN_MIN_SLOT,
+  OBLIGATION_ENERGY,
+  SHIFT_ENERGY,
   START_COINS,
 } from "@/lib/constants";
 import {
@@ -70,8 +84,8 @@ describe("runs, food, and shifts", () => {
     expect(result.state.condition.fatigue).toBe(2);
     expect(result.state.condition.peak).toBe(21);
     expect(result.state.condition.endurance).toBe(26);
-    expect(result.state.condition.nutrition).toBe(56);
-    expect(result.state.energy).toBe(8);
+    expect(result.state.condition.nutrition).toBe(52);
+    expect(result.state.energy).toBe(7);
     expect(result.state.calendar.slot).toBe(1);
     expect(result.state.calendar.trainedToday).toBe(true);
     expect(result.state.xp.overall).toBe(12);
@@ -79,10 +93,10 @@ describe("runs, food, and shifts", () => {
     expect(result.state.attributes.recovery).toBe(8);
     expect(result.state.progress.totalMiles).toBe(2);
     expect(result.state.gear.miles.starter).toBe(2);
-    expect(result.ticker).toBe("+2 Endurance ▲  +1 Peak ▲  −10 Fatigue ▼  −14 Nutrition ▼");
+    expect(result.ticker).toBe("+2 Endurance ▲  +1 Peak ▲  −10 Fatigue ▼  −18 Nutrition ▼");
   });
 
-  it("refuses a long run when fewer than three energy blocks are left", () => {
+  it("refuses a long run when fewer than four energy blocks are left", () => {
     const state = fresh();
     state.energy = 2;
     const result = applyRun(state, "long-run");
@@ -247,7 +261,7 @@ describe("the run store shift deck", () => {
     const shifts = store.items.filter((entry) => entry.action.type === "open-shift");
     expect(shifts).toHaveLength(1);
     expect(shifts[0].label).toBe("Work a shift");
-    expect(shifts[0].detail).toBe("1 energy");
+    expect(shifts[0].detail).toBe("2 energy");
     expect(shifts[0].disabled).toBe(false);
 
     const tired = fresh();
@@ -259,7 +273,7 @@ describe("the run store shift deck", () => {
     later.calendar.shiftCursor = 4;
     const laterMenu = menuFor("store", later).items.find((entry) => entry.action.type === "open-shift");
     expect(laterMenu.label).toBe("Work a shift");
-    expect(laterMenu.detail).toBe("1 energy");
+    expect(laterMenu.detail).toBe("2 energy");
   });
 
   it("stays on the same card all day, then changes without repeating yesterday", () => {
@@ -559,7 +573,7 @@ describe("races, rivals, and unlocks", () => {
     expect(eaten.state.progress.fiveKFinished).toBe(true);
     expect(eaten.state.gels).toBe(0);
     expect(eaten.state.coins).toBe(76);
-    expect(eaten.state.energy).toBe(9);
+    expect(eaten.state.energy).toBe(8);
     expect(eaten.lines.join(" ")).toMatch(/gel/i);
 
     const empty = fresh();
@@ -621,12 +635,12 @@ describe("races, rivals, and unlocks", () => {
 });
 
 describe("energy blocks and gels", () => {
-  it("starts at 10, spends 2 or 3 on a run, and refills completely on sleep", () => {
+  it("starts at 10, spends 3 or 4 on a run, and refills completely on sleep", () => {
     const easy = applyRun(fresh(), "easy-run");
-    expect(easy.state.energy).toBe(8);
+    expect(easy.state.energy).toBe(7);
     const long = applyRun(fresh(), "long-run");
-    expect(long.state.energy).toBe(7);
-    expect(long.state.calendar.slot).toBe(1);
+    expect(long.state.energy).toBe(6);
+    expect(long.state.calendar.slot).toBe(2);
     const tired = fresh();
     tired.energy = 2;
     const slept = applySleep(tired);
@@ -756,7 +770,7 @@ describe("track, treadmill, and park workouts", () => {
     const raced = applyRace(fresh(), "5k", 0.9);
     expect(raced.ok).toBe(true);
     expect(raced.state.progress.fiveKFinished).toBe(true);
-    expect(raced.state.energy).toBe(8);
+    expect(raced.state.energy).toBe(7);
     expect(raced.state.xp.overall).toBeGreaterThan(0);
   });
 
@@ -767,7 +781,7 @@ describe("track, treadmill, and park workouts", () => {
       expect(gain.endurance, id).toBeGreaterThan(0);
       expect(gain.peak, id).toBeGreaterThan(gain.endurance);
       expect(gain.fatigue, id).toBeGreaterThan(meterGain("easy-run").fatigue);
-      expect(gain.energy, id).toBe(3);
+      expect(gain.energy, id).toBe(4);
       expect(gain.result.state.calendar.trainedToday, id).toBe(true);
     }
     // One block left is not enough for a heavy session. The menu says so
@@ -776,7 +790,7 @@ describe("track, treadmill, and park workouts", () => {
     tired.energy = 1;
     const row = menuFor("track", tired).items.find((entry) => entry.action.id === "threshold");
     expect(row.disabled).toBe(true);
-    expect(row.detail).toMatch(/3 energy/);
+    expect(row.detail).toMatch(/4 energy/);
     const refused = applyRun(tired, "interval-run");
     expect(refused.ok).toBe(false);
     expect(refused.state).toBe(tired);
@@ -801,7 +815,7 @@ describe("track, treadmill, and park workouts", () => {
     expect(gain.endurance).toBeGreaterThan(0);
     expect(gain.peak).toBeGreaterThan(0);
     expect(Math.abs(gain.endurance - gain.peak)).toBeLessThanOrEqual(1);
-    expect(gain.energy).toBe(2);
+    expect(gain.energy).toBe(3);
     expect(gain.fatigue).toBeGreaterThan(0);
     expect(gain.fatigue).toBeLessThan(meterGain("threshold").fatigue);
     expect(gain.result.lines.join(" ")).toMatch(/Endurance and Peak/);
@@ -942,8 +956,8 @@ describe("daily meals, snacks, and naps", () => {
     expect(full.state.energy).toBe(10);
     expect(full.state.calendar.slot).toBe(1);
     const later = applyRun(full.state, "long-run");
-    expect(later.state.energy).toBe(7);
-    expect(later.state.calendar.slot).toBe(2);
+    expect(later.state.energy).toBe(6);
+    expect(later.state.calendar.slot).toBe(3);
   });
 
   it("resets meal, snack, and nap counters after sleep", () => {
@@ -1028,12 +1042,14 @@ describe("activity board", () => {
       "neighborhood-walk",
       "neighborhood-speed",
       "neighborhood-5k",
+      "night-city",
     ]);
-    expect(menu.items[0].detail).toContain("2 energy");
-    expect(menu.items[1].detail).toContain("1 energy");
+    expect(menu.items[0].detail).toContain("3 energy");
+    expect(menu.items[1].detail).toContain("2 energy");
     expect(menu.items[1].detail).not.toContain("mi");
-    expect(menu.items[2].detail).toContain("3 energy");
-    expect(menu.items[3].detail).toContain("2 energy");
+    expect(menu.items[2].detail).toContain("4 energy");
+    expect(menu.items[3].detail).toContain("3 energy");
+    expect(menu.items[4].detail).toMatch(/Only after dark|Night run/);
     expect(fiveKPbLine(fresh())).toBe("Neighborhood 5K: no PB yet");
   });
 
@@ -1047,7 +1063,7 @@ describe("activity board", () => {
     expect(result.state.condition.sore).toBe(false);
     expect(result.state.condition.endurance).toBe(fresh().condition.endurance + 1);
     expect(result.state.condition.peak).toBe(fresh().condition.peak);
-    expect(result.state.energy).toBe(8);
+    expect(result.state.energy).toBe(7);
     expect(result.state.calendar.trainedToday).toBe(true);
     expect(result.state.condition.injury).toBeNull();
   });
@@ -1061,7 +1077,7 @@ describe("activity board", () => {
     const beforeMiles = state.progress.totalMiles;
     const result = applyRun(state, "neighborhood-walk");
     expect(result.ok).toBe(true);
-    expect(result.state.energy).toBe(9);
+    expect(result.state.energy).toBe(8);
     expect(result.state.condition.fatigue).toBe(68);
     expect(result.state.condition.endurance).toBe(fresh().condition.endurance + 1);
     expect(result.state.condition.peak).toBe(fresh().condition.peak);
@@ -1076,7 +1092,7 @@ describe("activity board", () => {
   it("makes the speed loop a heavy peak session", () => {
     const gain = meterGain("neighborhood-speed");
     expect(gain.result.ok).toBe(true);
-    expect(gain.energy).toBe(3);
+    expect(gain.energy).toBe(4);
     expect(gain.peak).toBeGreaterThan(gain.endurance);
     expect(gain.endurance).toBeGreaterThan(0);
     expect(gain.fatigue).toBeGreaterThan(0);
@@ -1088,12 +1104,12 @@ describe("activity board", () => {
     expect(applyRun(tired, "neighborhood-speed").ok).toBe(false);
   });
 
-  it("times a solo 5K, saves a personal best, and spends two energy", () => {
+  it("times a solo 5K, saves a personal best, and spends three energy", () => {
     const first = applyRun(fresh(), "neighborhood-5k");
     expect(first.ok).toBe(true);
     expect(first.lines[0]).toBe("Neighborhood 5K: 29:05. New PB!");
     expect(first.state.records.fiveK).toBe("29:05");
-    expect(first.state.energy).toBe(8);
+    expect(first.state.energy).toBe(7);
     expect(first.state.progress.fiveKFinished).toBe(false);
     expect(first.state.progress.totalMiles).toBe(3.1);
     expect(first.state.sponsors.offers.shoe).toBeNull();
@@ -1138,5 +1154,101 @@ describe("activity board", () => {
     const geared = structuredClone(base);
     geared.gear.equipped = "road";
     expect(applyRun(geared, "neighborhood-5k").lines[0]).toBe("Neighborhood 5K: 23:55. New PB!");
+  });
+});
+
+describe("energy cost +1 bump", () => {
+  it("charges one more block than the previous build on paid activities", () => {
+    // Named constants for non-run spenders. Free kitchen / coffee / soft
+    // tissue stay at 0 and are covered elsewhere.
+    expect(SHIFT_ENERGY).toBe(2);
+    expect(CLINIC_TREATMENT_ENERGY).toBe(2);
+    expect(OBLIGATION_ENERGY).toBe(2);
+    expect(RUNS["easy-run"].slots).toBe(3);
+    expect(RUNS["long-run"].slots).toBe(4);
+    expect(RUNS.strength.slots).toBe(2);
+    expect(RUNS["neighborhood-walk"].slots).toBe(2);
+    expect(RACES["5k"].energy).toBe(3);
+    expect(RACES["10k"].energy).toBe(4);
+    expect(RACES.half.energy).toBe(5);
+    expect(RACES.marathon.energy).toBe(6);
+  });
+});
+
+describe("night runs", () => {
+  function eveningState() {
+    const state = fresh();
+    // Evening is slot 3. Enough energy for a 3-block night run.
+    state.calendar.slot = NIGHT_RUN_MIN_SLOT;
+    state.energy = 4;
+    return state;
+  }
+
+  it("gates night runs to Evening or Night and shows the warning", () => {
+    expect(NIGHT_RUN_MIN_SLOT).toBe(3);
+    const morning = fresh();
+    expect(isAfterDark(morning)).toBe(false);
+    expect(menuFor("park", morning).items.map((row) => row.action.id)).toContain("night-park");
+    const dayPark = menuFor("park", morning).items.find((row) => row.action.id === "night-park");
+    expect(dayPark.disabled).toBe(true);
+    expect(dayPark.detail).toMatch(/Only after dark/);
+    expect(applyRun(morning, "night-park").ok).toBe(false);
+
+    const night = eveningState();
+    expect(isAfterDark(night)).toBe(true);
+    const openPark = menuFor("park", night).items.find((row) => row.action.id === "night-park");
+    expect(openPark.disabled).toBe(false);
+    expect(openPark.detail).toMatch(/Night run: low visibility, higher injury risk/);
+    expect(applyRun(night, "night-park").ok).toBe(true);
+
+    const cityRow = menuFor("activity", night).items.find((row) => row.action.id === "night-city");
+    expect(cityRow.detail).toMatch(/Night run: low visibility/);
+  });
+
+  it("ranks night injury risk trail > park > city and above day easy runs", () => {
+    expect(NIGHT_RISK_TRAIL).toBeGreaterThan(NIGHT_RISK_PARK);
+    expect(NIGHT_RISK_PARK).toBeGreaterThan(NIGHT_RISK_CITY);
+    expect(nightRiskOf(RUNS["night-trail"])).toBe(NIGHT_RISK_TRAIL);
+    expect(nightRiskOf(RUNS["night-park"])).toBe(NIGHT_RISK_PARK);
+    expect(nightRiskOf(RUNS["night-city"])).toBe(NIGHT_RISK_CITY);
+    expect(nightRiskOf(RUNS["easy-run"])).toBe(0);
+
+    // Fresh runner, no other strikes: day easy stays clear, park night
+    // (2 strikes) lights sore, city night (1 strike) stays clear.
+    const calm = fresh();
+    expect(nextSoreness(calm, RUNS["easy-run"]).sore).toBe(false);
+    expect(nextSoreness(calm, RUNS["night-city"]).sore).toBe(false);
+    expect(nextSoreness(calm, RUNS["night-park"]).sore).toBe(true);
+    expect(nextSoreness(calm, RUNS["night-trail"]).sore).toBe(true);
+
+    // One extra strike (tired) makes city night sore too, and turns an
+    // already-sore park night into a blister path for trail.
+    const tired = fresh();
+    tired.condition.fatigue = 70;
+    expect(nextSoreness(tired, RUNS["night-city"]).sore).toBe(true);
+    expect(nextSoreness(tired, RUNS["easy-run"]).sore).toBe(false);
+  });
+
+  it("pays modest Mental Toughness so night work is worth the risk", () => {
+    expect(NIGHT_MENTAL_TRAIL).toBeGreaterThan(NIGHT_MENTAL_PARK);
+    expect(NIGHT_MENTAL_PARK).toBeGreaterThan(NIGHT_MENTAL_CITY);
+    const park = applyRun(eveningState(), "night-park");
+    expect(park.state.attributes.mental).toBe(NIGHT_MENTAL_PARK);
+    expect(park.state.xp.overall).toBeGreaterThan(RUNS["easy-run"].xp.overall);
+
+    const city = applyRun(eveningState(), "night-city");
+    expect(city.state.attributes.mental).toBe(NIGHT_MENTAL_CITY);
+
+    const mountain = eveningState();
+    mountain.progress.parkTrailRuns = 5;
+    mountain.xp.overall = xpToReachLevel(8);
+    mountain.gear.owned = ["starter", "trail"];
+    mountain.gear.equipped = "trail";
+    mountain.gear.miles.trail = 0;
+    expect(isMountainOpen(mountain)).toBe(true);
+    const trail = applyRun(mountain, "night-trail");
+    expect(trail.ok).toBe(true);
+    expect(trail.state.attributes.mental).toBe(NIGHT_MENTAL_TRAIL);
+    expect(trail.state.xp.trail).toBeGreaterThan(0);
   });
 });

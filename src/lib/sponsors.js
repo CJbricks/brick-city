@@ -12,7 +12,7 @@
  * vest (Naked, for example) still uses this same slot.
  *
  * Obligations are the cost of the deal. Accepting a shoe or nutrition
- * note spends an energy block and pays better than a Run Store shift.
+ * note spends OBLIGATION_ENERGY and pays better than a Run Store shift.
  * A gear note is different: wear that brand's belt or vest in your next
  * race. Skipping drops standing. Standing under STANDING_DROP ends that
  * deal. The brand then waits COOLDOWN_LEAVE days before they will offer

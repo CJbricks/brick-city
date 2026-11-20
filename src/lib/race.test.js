@@ -155,13 +155,13 @@ describe("half and marathon race design", () => {
     expect(marathon.xp.marathon).toBeGreaterThan(half.xp.marathon);
     expect(half.coins).toBeGreaterThan(ten.coins);
     expect(marathon.coins).toBeGreaterThan(half.coins);
-    expect(half.energy).toBe(4);
-    expect(marathon.energy).toBe(5);
+    expect(half.energy).toBe(5);
+    expect(marathon.energy).toBe(6);
     expect(half.fatigue).toBe(32);
     expect(marathon.fatigue).toBe(44);
     expect(half.coins).toBe(72);
     expect(marathon.coins).toBe(120);
-    expect(five.energy).toBe(2);
+    expect(five.energy).toBe(3);
   });
 
   it("weights form toward Endurance more as distance grows", () => {

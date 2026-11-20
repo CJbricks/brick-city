@@ -43,7 +43,7 @@ describe("PT clinic", () => {
     expect(once.ok).toBe(true);
     expect(once.state.condition.injury.daysLeft).toBe(2);
     expect(once.state.coins).toBe(fresh().coins - clinicRates("brick-city").treatment);
-    expect(once.state.energy).toBe(9);
+    expect(once.state.energy).toBe(8);
     expect(once.state.calendar.clinicTreated).toBe(true);
 
     const cleared = applyClinicTreat(hurt(2));

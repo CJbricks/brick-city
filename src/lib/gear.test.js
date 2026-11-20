@@ -217,7 +217,7 @@ describe("belts and vests", () => {
     vested.gear.ownedCarry = ["camelbak-vest"];
     expect(readiness(vested, RACES["5k"]).gearMod).toBeCloseTo(-0.04);
     const easy = applyRun(vested, "easy-run");
-    expect(easy.state.condition.nutrition).toBe(56);
+    expect(easy.state.condition.nutrition).toBe(52);
     expect(easy.state.condition.peak).toBe(21);
 
     const belted = fresh();
