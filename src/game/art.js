@@ -44,7 +44,7 @@
  * lit edge and the shaded edge. That is the 3-tone shading.
  */
 
-import { ACTIVITY_BOARD, BUILDINGS, CITY_SIGNS, COLS, ROWS, TILE, activationTiles, buildWorld } from "@/game/town";
+import { ACTIVITY_BOARD, BUILDINGS, CITY_SIGNS, COLS, LANDMARKS, ROWS, TILE, activationTiles, buildWorld } from "@/game/town";
 import { townLights } from "@/lib/lighting";
 import { applyBrandOutfit, gearTint, hatColors } from "@/game/brandColors";
 import { hatById } from "@/lib/catalog";
@@ -1255,6 +1255,11 @@ export function sceneryLayout() {
     // East-west road, one tile above the track's north rail.
     boardRect("track", "TRACK", 27 * TILE + 6, 9 * TILE + 6),
     boardRect("5k", "5K", 26 * TILE + 2, 11 * TILE + 6),
+    // East expansion landmarks. Original boards, brand colors only.
+    boardRect("garden", "GARDEN", 51 * TILE + 4, 10 * TILE + 4),
+    boardRect("library", "NOOK", 54 * TILE + 8, 5 * TILE + 4),
+    boardRect("kiln", "KILN", 57 * TILE + 8, 20 * TILE + 4),
+    boardRect("club", "CLUB", 49 * TILE + 10, 25 * TILE + 4),
     {
       id: "depot",
       kind: "label",
@@ -1541,6 +1546,39 @@ function drawParkAndTrackSigns(ctx, scene) {
   // After the fences. These three used to be painted first, and the
   // west track rail then covered the 5K letters.
   for (const id of ["park", "track", "5k"]) paintBoard(ctx, scenePart(scene, id));
+  // East expansion name boards.
+  for (const id of ["garden", "library", "kiln", "club"]) {
+    const sign = scenePart(scene, id);
+    if (sign) paintBoard(ctx, sign);
+  }
+}
+
+/**
+ * Solid east-expansion props. Footprints come from LANDMARKS in town.js
+ * so collision and paint stay on the same tiles.
+ */
+function drawLandmarks(ctx) {
+  for (const mark of LANDMARKS) {
+    const x = mark.tx * TILE;
+    const y = mark.ty * TILE;
+    const w = mark.w * TILE;
+    const h = mark.h * TILE;
+    if (mark.id.startsWith("garden")) {
+      box(ctx, x + 2, y + 4, w - 4, h - 6, "#3d6b3a", "#6d9a4a", "#244422");
+      ink(ctx, x + 6, y + 8, 4, 4, "#e23b3b");
+      ink(ctx, x + 14, y + 10, 4, 4, "#f2c14e");
+    } else if (mark.id.startsWith("library")) {
+      box(ctx, x + 2, y + 2, w - 4, h - 4, "#6b4428", "#c4956a", "#3e2614");
+      ink(ctx, x + 8, y + 8, w - 16, 4, "#1d4ed8");
+      ink(ctx, x + 8, y + 16, w - 16, 4, "#f7f1e4");
+    } else if (mark.id.startsWith("kiln")) {
+      box(ctx, x + 4, y + 2, w - 8, h - 4, "#8d3a32", "#c45a48", "#5e221c");
+      ink(ctx, x + w / 2 - 4, y - 6, 8, 10, "#5c656e");
+    } else if (mark.id.startsWith("club-post")) {
+      box(ctx, x + 10, y + 4, 12, h - 6, "#6b4428", "#c4956a", "#3e2614");
+      ink(ctx, x + 8, y + 2, 16, 6, "#f2c14e");
+    }
+  }
 }
 
 function drawActivityBoard(ctx, scene) {
@@ -1674,6 +1712,7 @@ export function renderWorld(state, waterFrame = 0) {
     if (building.id === "cafe") drawCafe(ctx, px, py, scene);
   }
   drawFountain(ctx, waterFrame);
+  drawLandmarks(ctx);
   drawActivityBoard(ctx, scene);
   drawGate(ctx, world.mountainOpen, scene);
   drawDepot(ctx, scene);

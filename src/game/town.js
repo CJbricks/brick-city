@@ -13,6 +13,14 @@
  * not a tile, so an old save has to be doubled on load (see save.js)
  * or the runner spawns halfway into the next tile and often in a wall.
  *
+ * Map size: COLS×ROWS is the standard town footprint (~2× the older
+ * 48×46 area). Future towns should use the same TOWN_MAP_* size so
+ * camera bounds, collision, and tests stay comparable. Existing
+ * buildings and doors keep their old tile coordinates; new streets
+ * and landmarks fill the east and south expansion. An old save whose
+ * pixel position lands in a wall is moved to the town-square spawn
+ * (see safePlayerPosition).
+ *
  * The town has one welcome sign. It names the city and the motto, and
  * it stands on the sidewalk beside the Home mat (where you start).
  * Building name boards (HOME, GROCERY, and the rest) are painted in
@@ -57,15 +65,22 @@
  */
 
 import { CITIES, CITY_INFO } from "@/lib/constants";
+import { RUN_CLUB_NAME } from "@/lib/runclub";
 import { isMountainOpen } from "@/lib/unlocks";
 
 export { CITY_INFO };
 
 export const TILE = 32;
-// Wider and taller than the old 36×30 town so the two trails have room
-// to branch. The buildings, roads, and doors stay on their old tiles.
-export const COLS = 48;
-export const ROWS = 46;
+/**
+ * Standard town grid for Brick City and for future built towns.
+ * Old footprint was 48×46 (2208 tiles). 72×66 is 4752 tiles (~2.15×).
+ * Buildings and doors keep their original coordinates; new content
+ * lives in the extra columns and rows.
+ */
+export const TOWN_MAP_COLS = 72;
+export const TOWN_MAP_ROWS = 66;
+export const COLS = TOWN_MAP_COLS;
+export const ROWS = TOWN_MAP_ROWS;
 
 export const DIR = {
   down: [0, 1],
@@ -199,6 +214,39 @@ export const PLACES = [
   { id: "depot", name: "World Depot", tx: 19, ty: 17, facing: "up" },
   { id: "clinic", name: "PT Clinic", tx: 40, ty: 10, facing: "down" },
   { id: "cafe", name: "Tangentline Roasters", tx: 39, ty: 15, facing: "down" },
+  // East expansion landmarks. Press A on the mat; they are not auto-doors.
+  { id: "garden", name: "Community Garden", tx: 52, ty: 13, facing: "up" },
+  { id: "library", name: "Branch Nook", tx: 55, ty: 8, facing: "up" },
+  { id: "kiln", name: "Brick Kiln Overlook", tx: 58, ty: 23, facing: "up" },
+  // Face south so A on the mat does not look into Lina's stand (50, 27).
+  { id: "club", name: RUN_CLUB_NAME, tx: 50, ty: 28, facing: "down" },
+];
+
+/**
+ * Open dirt east of the fountain. Used when a saved pixel position is
+ * out of bounds or inside a wall after the map grew.
+ */
+export const TOWN_SQUARE = { tx: 16, ty: 12, facing: "down" };
+
+/**
+ * Solid scenery tiles that are not buildings: garden beds, the kiln
+ * chimney block, and the club gazebo posts. art.js paints them; buildWorld
+ * marks them blocked.
+ */
+export const LANDMARKS = [
+  // Community garden beds (solid raised plots).
+  { id: "garden-bed-a", tx: 51, ty: 11, w: 3, h: 1 },
+  { id: "garden-bed-b", tx: 51, ty: 12, w: 1, h: 1 },
+  { id: "garden-bed-c", tx: 53, ty: 12, w: 1, h: 1 },
+  // Branch Nook shelf wall.
+  { id: "library-wall", tx: 54, ty: 6, w: 3, h: 2 },
+  // Kiln chimney footprint.
+  { id: "kiln-stack", tx: 57, ty: 21, w: 3, h: 2 },
+  // Gazebo posts for Cornerstone Pace Club.
+  { id: "club-post-nw", tx: 49, ty: 26, w: 1, h: 1 },
+  { id: "club-post-ne", tx: 52, ty: 26, w: 1, h: 1 },
+  { id: "club-post-sw", tx: 49, ty: 27, w: 1, h: 1 },
+  { id: "club-post-se", tx: 52, ty: 27, w: 1, h: 1 },
 ];
 
 const NPCS = [
@@ -248,6 +296,121 @@ const NPCS = [
     palette: "coach",
     gender: "male",
     location: "chat-bram",
+  },
+  // Street / trail race opponents. Rematches use streetRaces.js.
+  {
+    id: "tess",
+    name: "Tess Quay",
+    tx: 13,
+    ty: 8,
+    facing: "down",
+    palette: "jogger",
+    gender: "female",
+    location: "race-tess",
+    stand: { tx: 13, ty: 9 },
+  },
+  {
+    id: "kit",
+    name: "Kit Solano",
+    tx: 22,
+    ty: 12,
+    facing: "left",
+    palette: "rival",
+    gender: "male",
+    location: "race-kit",
+    stand: { tx: 21, ty: 12 },
+  },
+  {
+    id: "otto",
+    name: "Otto Venn",
+    tx: 22,
+    ty: 36,
+    facing: "up",
+    palette: "jogger",
+    gender: "male",
+    location: "race-otto",
+    stand: { tx: 22, ty: 35 },
+  },
+  {
+    id: "mara",
+    name: "Mara Flint",
+    // On a rock beside the mountain path (same idea as the ranger).
+    // Unreachable until the gate opens. Standing on a trail "d"/"h"
+    // would block that cell after the gate opens and break the
+    // "every trail tile is walkable" test.
+    tx: 39,
+    ty: 2,
+    facing: "left",
+    palette: "ranger",
+    gender: "female",
+    location: "race-mara",
+    stand: { tx: 38, ty: 2 },
+  },
+  // Tips, side quests, flavor.
+  {
+    id: "ned",
+    name: "Ned Brickley",
+    tx: 18,
+    ty: 13,
+    facing: "down",
+    palette: "coach",
+    gender: "male",
+    location: "chat-ned",
+  },
+  {
+    id: "pia",
+    name: "Pia Moss",
+    // East of the garden mat, not south of it. Standing on the mat and
+    // facing down must still read "garden" from your feet.
+    tx: 54,
+    ty: 13,
+    facing: "left",
+    palette: "jogger",
+    gender: "female",
+    location: "chat-pia",
+  },
+  {
+    id: "harlan",
+    name: "Harlan Voss",
+    // East of the kiln mat so facing down on the mat still reads "kiln".
+    tx: 60,
+    ty: 23,
+    facing: "left",
+    palette: "coach",
+    gender: "male",
+    location: "chat-harlan",
+  },
+  // Cornerstone Pace Club members at the gazebo.
+  {
+    id: "lina",
+    name: "Lina Shore",
+    tx: 50,
+    ty: 26,
+    facing: "down",
+    palette: "jogger",
+    gender: "female",
+    location: "chat-lina",
+    stand: { tx: 50, ty: 27 },
+  },
+  {
+    id: "drew",
+    name: "Drew Pebble",
+    tx: 51,
+    ty: 29,
+    facing: "up",
+    palette: "rival",
+    gender: "male",
+    location: "chat-drew",
+  },
+  {
+    id: "sable",
+    name: "Sable Wren",
+    tx: 49,
+    ty: 29,
+    facing: "up",
+    palette: "coach",
+    gender: "female",
+    location: "chat-sable",
   },
 ];
 
@@ -424,13 +587,17 @@ export function createGround() {
   fillRect(grid, 0, 0, 1, ROWS, "t");
   fillRect(grid, COLS - 1, 0, 1, ROWS, "t");
 
-  // Two east-west streets and two north-south streets. The blocks between
-  // them are the buildings. Doors sit on the grass strip just off the road.
-  // The upper street runs east to the PT clinic. The old end was x=33.
-  hRoad(grid, 8, 2, 44);
-  hRoad(grid, 20, 2, 33);
+  // Two east-west streets and two north-south streets in the original
+  // core. The upper street now continues into the east expansion.
+  hRoad(grid, 8, 2, 68);
+  hRoad(grid, 20, 2, 68);
+  // Third east-west street for the south / club district.
+  hRoad(grid, 30, 46, 68);
   vRoad(grid, 10, 2, 27);
   vRoad(grid, 24, 2, 27);
+  // East spine: clinic row down to the club plaza and kiln block.
+  vRoad(grid, 48, 2, 44);
+  vRoad(grid, 60, 8, 32);
 
   // Gym mat sits just west of the west street (x 9, y 14). grid is [y][x].
   fillRect(grid, 26, 11, 1, 8, "d");
@@ -438,6 +605,11 @@ export function createGround() {
   // Center plaza, touching all four roads so you can cut across town.
   fillRect(grid, 12, 10, 12, 10, "d");
   fillRect(grid, 17, 14, 2, 2, "n");
+
+  // East plaza: garden / library sidewalks and the club dirt pad.
+  fillRect(grid, 50, 10, 8, 6, "d");
+  fillRect(grid, 49, 26, 5, 5, "d");
+  fillRect(grid, 56, 20, 6, 6, "d");
 
   // Park dirt loop and pond, south of the lower street.
   fillRect(grid, 16, 23, 15, 1, "d");
@@ -453,8 +625,12 @@ export function createGround() {
   const trees = [
     [3, 10], [8, 19], [14, 24], [32, 24], [14, 27], [32, 27], [21, 24], [33, 23],
     [13, 22], [22, 11], [20, 18],
+    // East expansion shade.
+    [46, 12], [46, 18], [54, 18], [62, 14], [64, 26], [46, 28], [54, 32],
   ];
-  for (const [x, y] of trees) grid[y][x] = "t";
+  for (const [x, y] of trees) {
+    if (y >= 0 && y < ROWS && x >= 0 && x < COLS) grid[y][x] = "t";
+  }
 
   const rocks = [
     [27, 2], [28, 2], [29, 2], [31, 2], [32, 2], [33, 2],
@@ -469,6 +645,7 @@ export function createGround() {
   grid[7][30] = "d";
   stampMountain(grid);
   layParkTrail(grid);
+  layEastParkSpur(grid);
 
   // Continuous oval. See TRACK_ROWS. The sidewalk column x = 26 is
   // paved just below, and TRACK_GATE is the walk from that sidewalk
@@ -500,8 +677,48 @@ export function createGround() {
   for (let y = 11; y <= 15; y += 1) pave(35, y);
   for (let x = 35; x <= 44; x += 1) pave(x, 15);
   for (let y = 17; y <= 19; y += 1) pave(19, y);
+  // East expansion mats: library, garden, kiln, club.
+  for (let x = 50; x <= 56; x += 1) pave(x, 8);
+  for (let x = 50; x <= 54; x += 1) pave(x, 13);
+  for (let x = 56; x <= 60; x += 1) pave(x, 23);
+  for (let x = 49; x <= 53; x += 1) pave(x, 28);
+  // Connect clinic sidewalk east to the new spine.
+  for (let x = 44; x <= 48; x += 1) pave(x, 10);
+  for (let y = 10; y <= 20; y += 1) pave(47, y);
 
   return grid;
+}
+
+/**
+ * Extra park dirt south and east of the old pond loop, so Otto and the
+ * longer trail have room on the bigger map. Keeps every new tip a true
+ * dead end (one walkable neighbor).
+ */
+function layEastParkSpur(grid) {
+  const segments = [
+    [22, 42, 22, 48],
+    [22, 48, 30, 48],
+    [30, 48, 30, 54],
+    [30, 54, 18, 54],
+    [18, 54, 18, 58],
+    [18, 58, 26, 58],
+    [26, 58, 26, 62],
+    // Branches / dead ends.
+    [26, 48, 26, 46],
+    [28, 54, 34, 54],
+    [34, 54, 34, 56],
+    [22, 58, 22, 60],
+  ];
+  for (const [x0, y0, x1, y1] of segments) {
+    paintCodes(grid, orthoLine(x0, y0, x1, y1), "d");
+  }
+  // Otto stands on the old trail spine; keep (22, 36) dirt.
+  paintCodes(grid, orthoLine(22, 34, 22, 38), "d");
+  const grass = [
+    [21, 44], [23, 44], [21, 48], [23, 48], [29, 50], [31, 50],
+    [19, 56], [17, 56], [25, 60], [27, 60], [27, 36], [21, 36],
+  ];
+  paintGrassWhereEmpty(grid, grass);
 }
 
 const BUILDING_DOORS = new Set(["home", "grocery", "gym", "store", "clinic", "cafe"]);
@@ -552,6 +769,40 @@ export function homeSpawn() {
   return spawnFor("home");
 }
 
+export function townSquareSpawn() {
+  const center = tileCenter(TOWN_SQUARE.tx, TOWN_SQUARE.ty);
+  return {
+    ...center,
+    facing: TOWN_SQUARE.facing,
+    tx: TOWN_SQUARE.tx,
+    ty: TOWN_SQUARE.ty,
+  };
+}
+
+/**
+ * If a saved pixel sits out of bounds or inside a wall (map grew, or an
+ * old 16px position landed wrong), move the runner to the town square.
+ * Feet use the same box as walking, so a head-over-fence save still
+ * counts as safe when the feet are clear.
+ */
+export function safePlayerPosition(state, world = null) {
+  const map = world || buildWorld(state);
+  const pos = state?.position;
+  if (!pos || typeof pos.x !== "number" || typeof pos.y !== "number") {
+    return townSquareSpawn();
+  }
+  const { tx, ty } = tileOf(pos.x, pos.y);
+  if (!inBounds(tx, ty) || isBlocked(map, tx, ty) || footBlocked(map, pos.x, pos.y)) {
+    return townSquareSpawn();
+  }
+  // Keep the saved facing and any extra fields. Do not invent tx/ty on
+  // an old blob that never stored them; Resume only needs x/y/facing.
+  const facing = pos.facing === "up" || pos.facing === "left" || pos.facing === "right"
+    ? pos.facing
+    : "down";
+  return { ...pos, x: pos.x, y: pos.y, facing };
+}
+
 /**
  * mountainOpen changes two things: the gate tile, and whether the dirt
  * behind it is a path or a wall. Passing the whole state in keeps the
@@ -566,6 +817,16 @@ export function buildWorld(state) {
     for (let y = building.y; y < building.y + building.h; y += 1) {
       for (let x = building.x; x < building.x + building.w; x += 1) {
         blocked[y][x] = true;
+      }
+    }
+  }
+
+  // Garden beds, kiln stack, gazebo posts. Same idea as a building:
+  // solid footprint, walk around them.
+  for (const mark of LANDMARKS) {
+    for (let y = mark.ty; y < mark.ty + mark.h; y += 1) {
+      for (let x = mark.tx; x < mark.tx + mark.w; x += 1) {
+        if (y >= 0 && y < ROWS && x >= 0 && x < COLS) blocked[y][x] = true;
       }
     }
   }
@@ -623,6 +884,7 @@ export function buildWorld(state) {
     buildings: BUILDINGS,
     places: PLACES,
     signs: CITY_SIGNS,
+    landmarks: LANDMARKS,
     mountainOpen,
     mountainTrail,
   };

@@ -123,6 +123,11 @@ export function townLights() {
       { x: 12 * T + 16, y: 22 * T + 28, r: 30 },
       { x: 23 * T + 16, y: 19 * T + 28, r: 30 },
       { x: 26 * T + 16, y: 22 * T + 28, r: 30 },
+      // East expansion: garden, club, kiln block.
+      { x: 48 * T + 16, y: 7 * T + 28, r: 30 },
+      { x: 52 * T + 16, y: 13 * T + 28, r: 28 },
+      { x: 50 * T + 16, y: 28 * T + 28, r: 30 },
+      { x: 58 * T + 16, y: 23 * T + 28, r: 28 },
     ],
   };
 }

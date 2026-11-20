@@ -57,10 +57,21 @@ describe("save serialization", () => {
 
     const stamped = createNewGame({ name: "Ada", gender: "male" });
     stamped.tileSize = 16;
-    stamped.position = { x: 40, y: 50, facing: "left" };
+    // Home mat in 16px space. Doubling must land on a walkable tile, or
+    // safePlayerPosition would move the runner to the town square.
+    stamped.position = { x: 88, y: 120, facing: "left" };
     const fromSixteen = deserialize(serialize(stamped));
-    expect(fromSixteen.position).toEqual({ x: 80, y: 100, facing: "left" });
+    expect(fromSixteen.position).toEqual({ x: 176, y: 240, facing: "left" });
     expect(fromSixteen.tileSize).toBe(32);
+
+    // A doubled pixel that lands inside a wall relocates to the square.
+    const trapped = createNewGame({ name: "Ada", gender: "female" });
+    trapped.tileSize = 16;
+    trapped.position = { x: 8, y: 8, facing: "up" };
+    const rescued = deserialize(serialize(trapped));
+    expect(rescued.position.facing).toBe("down");
+    expect(rescued.position.x).toBe(16.5 * 32);
+    expect(rescued.position.y).toBe(12.5 * 32);
 
     const kept = deserialize(serialize(modern));
     expect(kept.position).toEqual(modern.position);

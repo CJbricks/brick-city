@@ -15,7 +15,7 @@
 import { describe, expect, it } from "vitest";
 import { createNewGame } from "@/lib/activities";
 import { paintActivationPads, sceneryLayout, tilesTouchedBy } from "@/game/art";
-import { ACTIVITY_BOARD, COLS, DIR, ROWS, TRACK_GATE, TRACK_SIGN_TILES, UNBUILT_CITIES, activationTiles, buildWorld, canReach, cityMaps, entranceAt, footBlocked, homeSpawn, isBlocked, lookupInteract, noteArrival, PLACES, TILE, signCopy, trackLaneTiles, unreachableTiles, worldPixelSize } from "@/game/town";
+import { ACTIVITY_BOARD, COLS, DIR, ROWS, TOWN_MAP_COLS, TOWN_MAP_ROWS, TRACK_GATE, TRACK_SIGN_TILES, UNBUILT_CITIES, activationTiles, buildWorld, canReach, cityMaps, entranceAt, footBlocked, homeSpawn, isBlocked, lookupInteract, noteArrival, PLACES, TILE, safePlayerPosition, signCopy, townSquareSpawn, trackLaneTiles, unreachableTiles, worldPixelSize } from "@/game/town";
 import { cafeRates, clinicRates } from "@/lib/constants";
 import { xpToReachLevel } from "@/lib/xp";
 import { deserialize } from "@/lib/save";
@@ -35,9 +35,22 @@ function citySignsOnMap(world) {
 }
 
 describe("town paths", () => {
-  it("draws the town at 32px tiles", () => {
+  it("draws the town at 32px tiles on the standard ~2× town footprint", () => {
     expect(TILE).toBe(32);
+    // Old map was 48×46. This size is what future towns should copy.
+    expect(TOWN_MAP_COLS).toBe(72);
+    expect(TOWN_MAP_ROWS).toBe(66);
+    expect(COLS).toBe(TOWN_MAP_COLS);
+    expect(ROWS).toBe(TOWN_MAP_ROWS);
     expect(worldPixelSize()).toEqual({ width: COLS * 32, height: ROWS * 32 });
+    expect(COLS * ROWS).toBeGreaterThan(48 * 46 * 1.9);
+  });
+
+  it("moves a blocked save position to the town square", () => {
+    const state = createNewGame({ name: "Ada", gender: "female" });
+    state.position = { x: 16, y: 16, facing: "up" };
+    const safe = safePlayerPosition(state);
+    expect(safe).toEqual(townSquareSpawn());
   });
 
   it("starts at home on a walkable tile and can reach every place", () => {

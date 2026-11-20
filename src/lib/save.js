@@ -58,19 +58,32 @@
  * finished, so the unlock checks stay locked until you earn them. The
  * version stays 1.
  *
+ * Total cafe Wi-Fi hours (wifiTurns), Cornerstone Pace Club membership
+ * (runClub), street-race rematch timers (rematches), and garden / club
+ * side-quest flags arrived on this same key too. A blob from before the
+ * bigger map has none of them. Missing means 0 Wi-Fi hours, not a
+ * member, empty rematch book, and quests not started. The version
+ * stays 1.
+ *
  * v2 widened every tile from 16px to 32px. A position is stored in pixels,
  * so an old save's x/y would land on the wrong half of the new tile and
  * often inside a wall. New games stamp tileSize: 32. A save without that
  * stamp is treated as 16px and doubled once on load.
+ *
+ * The map then grew again (~2× area). A pixel that now sits out of
+ * bounds or inside a wall is moved to the town-square spawn so Resume
+ * never traps the runner.
  */
 
 import { MAX_ENERGY, SAVE_KEY, SAVE_VERSION } from "@/lib/constants";
 import { slotFromEnergy } from "@/lib/calendar";
-import { TILE } from "@/game/town";
+import { TILE, safePlayerPosition } from "@/game/town";
 import { normalizeFiveKTime } from "@/lib/activities";
 import { maxNutritionFromGear, normalizeCitiesReached, normalizeGear } from "@/lib/catalog";
 import { normalizeSickness } from "@/lib/sickness";
 import { normalizeSponsors } from "@/lib/sponsors";
+import { normalizeRematches } from "@/lib/streetRaces";
+import { readWifiTurns } from "@/lib/runclub";
 
 export function serialize(state) {
   return JSON.stringify(state);
@@ -113,6 +126,40 @@ export function deserialize(raw) {
       data.calendar.coffeesToday = Math.floor(data.calendar.coffeesToday);
     }
     if (typeof data.calendar.wifiToday !== "boolean") data.calendar.wifiToday = false;
+    // Lifetime Wi-Fi hours for the run-club invite. Missing means 0.
+    // We do not invent past study sessions on an old save.
+    if (typeof data.wifiTurns !== "number" || !Number.isFinite(data.wifiTurns) || data.wifiTurns < 0) {
+      data.wifiTurns = 0;
+    } else {
+      data.wifiTurns = Math.floor(data.wifiTurns);
+    }
+    // Cornerstone Pace Club. Missing means not invited / not a member.
+    if (!data.runClub || typeof data.runClub !== "object" || Array.isArray(data.runClub)) {
+      data.runClub = {
+        member: false,
+        invited: false,
+        lastGroupWeek: null,
+        groupPaceUntilDay: null,
+        gardenQuest: null,
+        gardenStartParks: null,
+        nightQuest: null,
+        nightCityDone: false,
+      };
+    } else {
+      data.runClub.member = Boolean(data.runClub.member);
+      data.runClub.invited = Boolean(data.runClub.invited);
+      if (typeof data.runClub.lastGroupWeek !== "number") data.runClub.lastGroupWeek = null;
+      if (typeof data.runClub.groupPaceUntilDay !== "number") data.runClub.groupPaceUntilDay = null;
+      if (data.runClub.gardenQuest !== "started" && data.runClub.gardenQuest !== "done") {
+        data.runClub.gardenQuest = null;
+      }
+      if (typeof data.runClub.gardenStartParks !== "number") data.runClub.gardenStartParks = null;
+      if (data.runClub.nightQuest !== "started" && data.runClub.nightQuest !== "done") {
+        data.runClub.nightQuest = null;
+      }
+      data.runClub.nightCityDone = Boolean(data.runClub.nightCityDone);
+    }
+    normalizeRematches(data);
     // Only the two cup notes are real. Anything else (including a missing
     // field on an old save) is "no coffee waiting".
     if (data.condition.coffeeNext !== "boost" && data.condition.coffeeNext !== "jitter") {
@@ -175,6 +222,11 @@ export function deserialize(raw) {
       }
       data.tileSize = TILE;
     }
+    // After tile scaling, a grown map may put old pixels in a wall.
+    // Move those runners to the town square instead of trapping them.
+    data.position = safePlayerPosition(data);
+    // Touch wifiTurns through the helper so a weird NaN cannot linger.
+    data.wifiTurns = readWifiTurns(data);
     return data;
   } catch {
     return null;

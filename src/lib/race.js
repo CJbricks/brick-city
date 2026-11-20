@@ -39,6 +39,7 @@
 import { attributeLevel, levelFromXp } from "@/lib/xp";
 import { BONK_CHANCE } from "@/lib/constants";
 import { coffeePaceMod, courseHint, raceIqLift, readRaceIq } from "@/lib/cafe";
+import { clubPaceMod } from "@/lib/runclub";
 import {
   carryById,
   carryTradeText,
@@ -331,9 +332,11 @@ export function readiness(state, race) {
  * opening this function from a test does not spend the cup.
  */
 export function finishScore(state, race) {
+  // Coffee is one race. Club pace is the join bump plus any leftover
+  // group-run bump. Both are fractions, same units as a shoe mod.
   const pace = combinedMod(state, race.style, {
     shortRoad: race.style === "road" && (race.km || 0) <= 5.5,
-  }).mod + coffeePaceMod(state);
+  }).mod + coffeePaceMod(state) + clubPaceMod(state);
   const raw =
     (state.condition.endurance * race.ideal.endurance +
       state.condition.peak * race.ideal.peak -
@@ -353,7 +356,9 @@ export function rivalScores(state, roll) {
   // The mile is a short road race, so a vest or a backyard shoe shows up
   // here. Starter shoes and an empty sponsor slot add zero, which keeps
   // a fresh runner's result the same as before the gear rack existed.
-  const pace = combinedMod(state, "road", { shortRoad: true }).mod + coffeePaceMod(state);
+  const pace = combinedMod(state, "road", { shortRoad: true }).mod
+    + coffeePaceMod(state)
+    + clubPaceMod(state);
   const playerBase =
     speed * 8 +
     mental * 2 +
