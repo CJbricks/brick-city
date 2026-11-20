@@ -72,6 +72,7 @@ Almost every tunable number is in `src/lib/constants.js`.
 | The sure-bonk line | `LOW_NUTRITION` (40) and fatigue 80 or sleep quality `"poor"` |
 | How unlucky a "maybe bonk" is | `BONK_CHANCE` (0.45) |
 | When rest starts costing fitness | `DETRAIN_FREE_DAYS` (2 free days) |
+| When high Fatigue starts cutting Peak overnight | `OVERTRAIN_FATIGUE` / `OVERTRAIN_PEAK_FRACTION` in `src/lib/overtrain.js` |
 | What counts as a hard or recovery week | `HARD_WEEK_AVG_FATIGUE`, `RECOVERY_WEEK_AVG_FATIGUE` |
 | Starting coins and starting meters | the `START_*` constants |
 | Free meals, snacks, and naps each day | `FREE_HOME_MEALS` (3), `FREE_HOME_SNACKS` (2), `NAPS_PER_DAY` (2) |
@@ -87,7 +88,7 @@ If you change a number, run `npm test`. Several tests check exact results, like 
 This is the easiest thing to mix up.
 
 - **Endurance meter** (blue heart on the HUD) is long-term fitness. It moves slowly, from long runs and consistent weeks, and detraining nibbles it only after Peak is already falling.
-- **Peak meter** (orange bolt) is sharpness. Intervals push it up fast. A few days off, or racing while exhausted, knock it down.
+- **Peak meter** (orange bolt) is sharpness. Intervals push it up fast. A few days off, racing while exhausted, or sleeping while still overtrained (Fatigue still high) knock it down.
 - **Endurance attribute** (on the status sheet, next to Speed and Recovery) is a skill level earned from XP. It does not fall when you rest. The HUD meter does.
 
 Race-day form uses the two meters, minus fatigue, plus whatever your shoes are doing. The attribute levels matter more in the duel with Remy Calder, the rival at the track.
@@ -119,6 +120,8 @@ If a 5K, 10K, or mile against Remy is about to bonk and you have a gel, the game
 Sunday night (you go to bed while the weekday is Sunday) writes a weekly summary: miles, XP per track, average fatigue, average nutrition, average sleep, and whether the week cost you fitness. A kind week with some miles pays a small XP bonus. Several hard weeks in a row raise injury risk.
 
 Detraining does not happen because you took a rest day. One or two days without a run are free. On the third day off, Peak drops. Overall Endurance waits until day 6. A run, a gym session, or a race sets "trained today", and sleep then resets the counter. A shift at the Run Store does not. That is the week's puzzle: train, eat, work for coins, sleep.
+
+Overtraining is the other Peak tax. If Fatigue is still at or above 75 after overnight sleep relief, Peak slips a few percent that morning. Endurance is not touched. Bring Fatigue back under 75 (sleep, naps, soft tissue, shakes) and the overnight Peak cut stops. Peak then rebuilds through training as usual. See **Overtraining** under Random life events.
 
 ## Run Store shifts
 
@@ -806,7 +809,7 @@ Brick City has a clinic east of the upper street, past the track. The sign says 
 | Soft tissue | 10 coins, 0 energy | Clears soreness and takes 12 fatigue off. It does not clear a blister. |
 | Blister care | 8 coins, 0 energy | Clears a blister and the sore flag that came with it. Refuses, and does not take the coins, if there is no blister. It does not use the once-a-day treatment flag. |
 | Sick visit | 200 coins, 0 energy | Only while you are sick (the rare morning illness). Clears it immediately so you can run again, and removes 90% of current Peak Fitness. The menu asks you to confirm before charging. Refuses, and does not take the coins, if you are healthy or broke. The row only appears while sick. |
-| Injury screen | Free | Tells you the injury, whether you are sick or sore, and if hard weeks are stacking up. |
+| Injury screen | Free | Tells you the injury, whether you are sick, overtrained, or sore, and if hard weeks are stacking up. |
 
 Blister care is priced under soft tissue in every town. The coin number is on the city record (`clinic.blister` in `src/lib/constants.js`), not on the save, so an old `brick-city-save-v1` file does not need a new field. Sick visit prices live on the same record (`clinic.sick`). Brick City is 200. Summit Hollow is 360, the highest, matching how treatment and soft tissue already scale.
 
@@ -834,6 +837,28 @@ Most mornings are quiet. A few things can still roll when you wake up, or when y
 | Tall-grass find | Stepping onto a new deep-grass tile | `FIND_CHANCE` / `LOOT` in `src/lib/forage.js` |
 | Sponsor offer | After a strong finish or a letter-quality run | `chanceFor` / `OFFER_GAP_DAYS` in `src/lib/offers.js` |
 | Getting sick | Once per wake, after sleep advances the day | `SICKNESS_*` in `src/lib/sickness.js` |
+| Overtraining | Once per sleep, after overnight Fatigue relief | `OVERTRAIN_*` in `src/lib/overtrain.js` |
+
+### Overtraining
+
+If you go to bed cooked and sleep does not bring Fatigue back under the line, **Peak Fitness slips overnight**. This is not a random roll. Sleep checks Fatigue **after** overnight relief. Only then, if Fatigue is still at or above the threshold, Peak drops by a few percent of its current value (at least 1 point while Peak is above 0). Endurance is not affected. Peak never goes below 0.
+
+Recovery is simple: once Fatigue is under the threshold (a better night, a nap, soft tissue, a protein shake), the overnight Peak cut stops. Peak then rebuilds normally through training. There is no separate "overtrained" flag on the save. The HUD reads current Fatigue.
+
+Feedback:
+
+- While Fatigue is at or above the threshold, the HUD and status sheet show `Overtrained: Peak slipping` (same warn style as SORE / Sick).
+- On a morning Peak actually dropped, sleep dialogue includes a short wake-up line (`Overtrained overnight. Peak slipped from X to Y.`). The usual meter ticker also shows the Peak change.
+- The PT clinic's free Injury screen mentions overtraining when Fatigue is still high.
+
+Sickness can cut Peak on the same morning (natural recovery or a sick visit). That is fine. Both rules may apply. Overtraining does not read the sickness object, so nothing double-books oddly.
+
+| Constant | Default | Meaning |
+|---|---|---|
+| `OVERTRAIN_FATIGUE` | `75` | Fatigue at or above this (after sleep relief) triggers the Peak cut. Matches the in-session Peak blunt in `applyBody`. |
+| `OVERTRAIN_PEAK_FRACTION` | `0.04` | Fraction of current Peak removed each overtrained night (~4%). At Peak 50 that is about −2. |
+
+No new `brick-city-save-v1` fields. Old saves keep working. The version stays 1.
 
 ### Getting sick
 

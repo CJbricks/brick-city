@@ -2,13 +2,14 @@
  * Hud.js
  * The four meters that stay on screen: Endurance, Peak, Fatigue, and
  * Nutrition (labeled FOOD, like the concept). Arrows compare each meter
- * with yesterday. On a narrow phone the card is full width, so the
- * stylesheet under 760px draws a shorter stack: half-size portrait,
- * thinner bars, FOOD on the portrait row, and the trend arrows pinned
- * to 8px. Those triangles are not letters in Press Start 2P. Left
- * unsized they inherit the page's 16px and the row grows a big black
- * triangle. Tap the card for the full breakdown. Desktop sizes are the
- * base CSS and are not changed in this file.
+ * with yesterday. SORE, Sick, and Overtrained are warn flags under the
+ * bars when those conditions are active. On a narrow phone the card is
+ * full width, so the stylesheet under 760px draws a shorter stack:
+ * half-size portrait, thinner bars, FOOD on the portrait row, and the
+ * trend arrows pinned to 8px. Those triangles are not letters in Press
+ * Start 2P. Left unsized they inherit the page's 16px and the row grows
+ * a big black triangle. Tap the card for the full breakdown. Desktop
+ * sizes are the base CSS and are not changed in this file.
  *
  * The food bar is a fraction of the current cap, not of 100. A belt makes
  * the cap 105 and a vest makes it 110, so 85 / 110 fills most of the bar
@@ -27,6 +28,7 @@ import { TREND_ARROW, fatigueColor, trendsFor } from "@/lib/condition";
 import { formatWhen } from "@/lib/calendar";
 import { MAX_ENERGY } from "@/lib/constants";
 import { maxNutritionFromGear } from "@/lib/catalog";
+import { isOvertrained, overtrainingStatusLine } from "@/lib/overtrain";
 import { isSick, sicknessStatusLine } from "@/lib/sickness";
 import { levelProgress } from "@/lib/xp";
 import { drawRunnerSprite, runnerPalette } from "@/game/art";
@@ -208,6 +210,9 @@ export function Hud({ game, onOpen }) {
           {isSick(game) ? (
             <div className="sore-flag" data-testid="hud-sick">{sicknessStatusLine(game)}</div>
           ) : null}
+          {isOvertrained(game) ? (
+            <div className="sore-flag" data-testid="hud-overtrained">{overtrainingStatusLine()}</div>
+          ) : null}
           <div className="hud-meta">
             <span>{when}</span>
             <CoinCount coins={game.coins} />
@@ -244,6 +249,9 @@ export function Hud({ game, onOpen }) {
             {game.condition.sore ? <span className="sore-flag">SORE</span> : null}
             {isSick(game) ? (
               <span className="sore-flag" data-testid="hud-sick-mobile">{sicknessStatusLine(game)}</span>
+            ) : null}
+            {isOvertrained(game) ? (
+              <span className="sore-flag" data-testid="hud-overtrained-mobile">{overtrainingStatusLine()}</span>
             ) : null}
           </div>
         </div>

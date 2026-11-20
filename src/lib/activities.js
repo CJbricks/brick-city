@@ -56,6 +56,12 @@
  * Natural recovery halves Peak. A sick visit cures now and cuts Peak
  * harder (90%). The coin price is on each city's clinic record.
  *
+ * Overtraining is a sleep rule in overtrain.js. When Fatigue is still
+ * at or above OVERTRAIN_FATIGUE after overnight relief, Peak slips a
+ * few percent that morning. Endurance is not touched. A good night
+ * that drops Fatigue under the line stops the decline. Sickness and
+ * overtraining may both cut Peak the same morning.
+ *
  * The Run Store shelf grows when you reach a city. catalog.js decides
  * which models are unlocked. This file only builds the buttons and
  * takes the coins. A locked model is not on the button list. A sponsor
@@ -101,6 +107,7 @@ import {
 } from "@/lib/constants";
 import { clampMeter, formatTicker, meterDelta, readMeters, slotDrain } from "@/lib/condition";
 import { detrainingDelta, detrainingNote } from "@/lib/detrain";
+import { applyOvertraining } from "@/lib/overtrain";
 import {
   HATS,
   SOCKS,
@@ -1077,6 +1084,12 @@ export function applySleep(state, rng = Math.random) {
   next.calendar.weekPeakLost += loss.peak;
   next.calendar.weekEnduranceLost += loss.endurance;
 
+  // Overtraining: Fatigue still high after sleep relief → Peak slips.
+  // Checked after relief so a good night that drops you under the
+  // threshold stops the decline. Endurance is not touched. This does
+  // not go into weekPeakLost (that counter is for detraining copy).
+  const overtrain = applyOvertraining(next);
+
   // Yesterday's arrows compare against the meters you went to bed with,
   // which are still on `before`. Then we store this morning as the new baseline
   // only after the HUD has had a chance... The snapshot is bedtime, so the
@@ -1092,6 +1105,7 @@ export function applySleep(state, rng = Math.random) {
     loss.active ? detrainingNote(next.calendar.daysSinceRun) : "You wake up in Brick City.",
   ];
   lines.push(...sickTick.lines);
+  lines.push(...overtrain.lines);
 
   let summary = null;
   if (wasSunday) {

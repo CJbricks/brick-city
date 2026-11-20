@@ -24,6 +24,7 @@ import { readRaceIq } from "@/lib/cafe";
 import { attributeLevel, levelProgress, trackRank } from "@/lib/xp";
 import { runnerLevel, mountainStatus, describeNeeds } from "@/lib/unlocks";
 import { calendarView, fiveKPbLine } from "@/lib/activities";
+import { isOvertrained, overtrainingStatusLine } from "@/lib/overtrain";
 import { isSick, sicknessStatusLine } from "@/lib/sickness";
 
 function Window({ title, children, testId }) {
@@ -217,6 +218,9 @@ export function StatusView({ game, onClose, onSponsors }) {
       ) : null}
       {isSick(game) ? (
         <p className="warn" data-testid="status-sick">{sicknessStatusLine(game)}</p>
+      ) : null}
+      {isOvertrained(game) ? (
+        <p className="warn" data-testid="status-overtrained">{overtrainingStatusLine()}</p>
       ) : null}
       <div className="stat-grid">
         {ATTRIBUTES.map((attr) => (
