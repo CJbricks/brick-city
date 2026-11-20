@@ -17,19 +17,22 @@
  * their vest, if they do not sell a belt) in the closet and on you.
  *
  * Workouts are the RUNS table. `slots` is the energy cost. A normal run
- * is 2. A heavy run is 3. The strength session stays at 1 because it is
- * not a run. `peak` and `endurance` on a workout are the HUD meters (the
- * orange bolt and the blue heart), not the Speed or Endurance attribute
- * levels. `hard: true` is one strike toward soreness.
+ * is 3. A heavy run is 4. The strength session and the long walk are 2
+ * (they used to be 1; every paid activity went up by 1 so a day fits
+ * fewer runs). `peak` and `endurance` on a workout are the HUD meters
+ * (the orange bolt and the blue heart), not the Speed or Endurance
+ * attribute levels. `hard: true` is one strike toward soreness.
+ * Night runs add `nightRisk` strikes on top (see NIGHT_RISK_*).
  *
  * Home food and rest live here too. Three free meals and two free snacks
  * each day, then coins buy another plate. Two naps put energy back and
  * move the clock one step. Sleep still ends the day, refills the bar to
  * 10, and is the only place those daily counts go back to zero.
  *
- * Run Store work is one board row, "Work a shift", and it still costs
- * 1 energy. The questions are a deck in shifts.js. This file asks which
- * card is up, checks that the answer belongs to that card, then pays it.
+ * Run Store work is one board row, "Work a shift", and it costs
+ * SHIFT_ENERGY. The questions are a deck in shifts.js. This file asks
+ * which card is up, checks that the answer belongs to that card, then
+ * pays it.
  *
  * Socks, hats, protein shakes, BPN gels, and the PT clinic are buttons
  * in this file too. The numbers live in catalog.js and constants.js.
@@ -40,12 +43,13 @@
  * count, the Wi-Fi flag, and any leftover pace note reset on sleep.
  * Race IQ does not. It is the point of studying, and it stays.
  *
- * The town-square activity board is four rows in RUNS. The easy loop
- * and the 5K time trial cost 2 energy. The speed loop costs 3, the
+ * The town-square activity board is five rows in RUNS. The easy loop
+ * and the 5K time trial cost 3 energy. The speed loop costs 4, the
  * same heavy session as a threshold or an interval run. The long walk
- * costs 1 and is not a run. The time trial borrows the 5K clock
- * (fitness, fatigue, gear, coffee, Race IQ) and stores a personal best.
- * An old save has no best.
+ * costs 2 and is not a run. The night city run appears only after dark
+ * (Evening or Night). The time trial borrows the 5K clock (fitness,
+ * fatigue, gear, coffee, Race IQ) and stores a personal best. An old
+ * save has no best.
  *
  * Blister care is a clinic button. The coin price lives on each city's
  * clinic record. It is not a save field.
@@ -72,6 +76,7 @@ import { formatWhen, isSunday, sleepPlan, slotFromEnergy, slotLabel, summarizeWe
 import {
   FREE_HOME_MEALS,
   FREE_HOME_SNACKS,
+  CLINIC_TREATMENT_ENERGY,
   CLINIC_TREATMENT_NIGHTS,
   COFFEE_CUPS_BEFORE_JITTER,
   COFFEE_ENERGY,
@@ -89,10 +94,19 @@ import {
   NAP_FATIGUE_RELIEF,
   NAP_PEAK_LOSS_IF_DETRAINING,
   NAPS_PER_DAY,
+  NIGHT_MENTAL_CITY,
+  NIGHT_MENTAL_PARK,
+  NIGHT_MENTAL_TRAIL,
+  NIGHT_RISK_CITY,
+  NIGHT_RISK_PARK,
+  NIGHT_RISK_TRAIL,
+  NIGHT_RUN_MIN_SLOT,
+  OBLIGATION_ENERGY,
   OVERNIGHT_NUTRITION_DRAIN,
   RECOVERY_WEEK_AVG_FATIGUE,
   RECOVERY_WEEK_BONUS_XP,
   RECOVERY_WEEK_MIN_MILES,
+  SHIFT_ENERGY,
   SNACK_COIN_COST,
   START_COINS,
   START_ENDURANCE,
@@ -271,7 +285,7 @@ const RUNS = {
   "easy-run": {
     id: "easy-run",
     name: "Easy Recovery Run",
-    slots: 2,
+    slots: 3,
     miles: 2,
     fatigue: -10,
     nutrition: -6,
@@ -290,7 +304,7 @@ const RUNS = {
   "long-run": {
     id: "long-run",
     name: "Long Run",
-    slots: 3,
+    slots: 4,
     miles: 8,
     fatigue: 18,
     nutrition: -16,
@@ -312,7 +326,7 @@ const RUNS = {
   "park-trail": {
     id: "park-trail",
     name: "Park Trail Loop",
-    slots: 2,
+    slots: 3,
     miles: 4,
     fatigue: 12,
     nutrition: -10,
@@ -332,7 +346,7 @@ const RUNS = {
   yards: {
     id: "yards",
     name: "Backyard Practice Yards",
-    slots: 2,
+    slots: 3,
     miles: 4.2,
     fatigue: 14,
     nutrition: -12,
@@ -352,7 +366,7 @@ const RUNS = {
   intervals: {
     id: "intervals",
     name: "Track Intervals",
-    slots: 2,
+    slots: 3,
     miles: 3,
     fatigue: 15,
     nutrition: -9,
@@ -369,13 +383,13 @@ const RUNS = {
       "Peak Fitness jumps. That's the sharp stuff.",
     ],
   },
-  // Tempo. Two blocks, like the long run. Peak is the point. Endurance
+  // Tempo. Four blocks, like the long run. Peak is the point. Endurance
   // moves, but by less. Fatigue sits with the other hard sessions, well
   // above an easy jog (that one actually lowers fatigue).
   threshold: {
     id: "threshold",
     name: "Threshold Run",
-    slots: 3,
+    slots: 4,
     miles: 5,
     fatigue: 17,
     nutrition: -12,
@@ -396,7 +410,7 @@ const RUNS = {
   "interval-run": {
     id: "interval-run",
     name: "Interval Run",
-    slots: 3,
+    slots: 4,
     miles: 4,
     fatigue: 20,
     nutrition: -12,
@@ -412,12 +426,12 @@ const RUNS = {
       "Peak jumps. Endurance picks up a little.",
     ],
   },
-  // Easy aerobic. One block, a small fatigue bump, and the two fitness
+  // Easy aerobic. Three blocks, a small fatigue bump, and the two fitness
   // meters move by the same amount. Not a recovery jog: that one rests you.
   "zone-2": {
     id: "zone-2",
     name: "Zone 2 Run",
-    slots: 2,
+    slots: 3,
     miles: 5,
     fatigue: 4,
     nutrition: -8,
@@ -436,7 +450,7 @@ const RUNS = {
   treadmill: {
     id: "treadmill",
     name: "Treadmill Run",
-    slots: 2,
+    slots: 3,
     miles: 5,
     fatigue: 10,
     nutrition: -8,
@@ -456,7 +470,7 @@ const RUNS = {
   strength: {
     id: "strength",
     name: "Strength Session",
-    slots: 1,
+    slots: 2,
     miles: 0,
     fatigue: 8,
     nutrition: -6,
@@ -475,7 +489,7 @@ const RUNS = {
   "ridge-repeats": {
     id: "ridge-repeats",
     name: "Ridge Repeats",
-    slots: 3,
+    slots: 4,
     miles: 6,
     fatigue: 18,
     nutrition: -14,
@@ -500,7 +514,7 @@ const RUNS = {
   "neighborhood-easy": {
     id: "neighborhood-easy",
     name: "Neighborhood Easy Recovery",
-    slots: 2,
+    slots: 3,
     miles: 1.5,
     fatigue: -6,
     nutrition: -4,
@@ -522,7 +536,7 @@ const RUNS = {
   "neighborhood-speed": {
     id: "neighborhood-speed",
     name: "Neighborhood Speed Run",
-    slots: 3,
+    slots: 4,
     miles: 3,
     fatigue: 16,
     nutrition: -10,
@@ -545,7 +559,7 @@ const RUNS = {
   "neighborhood-5k": {
     id: "neighborhood-5k",
     name: "Neighborhood 5K Time Trial",
-    slots: 2,
+    slots: 3,
     miles: 3.1,
     fatigue: 12,
     nutrition: -10,
@@ -562,13 +576,14 @@ const RUNS = {
       "The fountain, Brick Street, and back. Just you and the clock.",
     ],
   },
-  // Not a run, so it stays at 1 block while the runs around it cost 2 or 3.
-  // gentle skips the soreness check: a walk is what you do so a hot spot
-  // does not become a blister. Miles stay 0 so the shoe log is not a walk.
+  // Not a run, so it stays cheaper than the runs around it. Still costs
+  // energy (2 after the +1 bump). gentle skips the soreness check: a
+  // walk is what you do so a hot spot does not become a blister. Miles
+  // stay 0 so the shoe log is not a walk.
   "neighborhood-walk": {
     id: "neighborhood-walk",
     name: "Neighborhood Long Walk",
-    slots: 1,
+    slots: 2,
     miles: 0,
     fatigue: -12,
     nutrition: -3,
@@ -582,6 +597,71 @@ const RUNS = {
     lines: [
       "You walk the blocks. No watch, no pace.",
       "The legs come back a little. It is not a run, and it does not have to be.",
+    ],
+  },
+  // Night runs. Same energy as an easy day run (3). Only after dark
+  // (see isAfterDark). nightRisk adds soreness strikes: city lowest,
+  // park middle, trail highest. Mental Toughness pays a little more
+  // than the day easy so the risk is worth considering.
+  "night-park": {
+    id: "night-park",
+    name: "Night Park Loop",
+    slots: 3,
+    miles: 2.5,
+    fatigue: 8,
+    nutrition: -8,
+    peak: 1,
+    endurance: 2,
+    xp: { overall: 16, versatile: 6 },
+    attributes: { mental: NIGHT_MENTAL_PARK, recovery: 4, endurance: 2 },
+    hard: false,
+    training: true,
+    style: "road",
+    nightRisk: NIGHT_RISK_PARK,
+    lines: [
+      "The pond path is dark. Streetlamps stop at the gate.",
+      "You finish sharper than a daylight jog. Mental Toughness likes the dark.",
+    ],
+  },
+  "night-city": {
+    id: "night-city",
+    name: "Night City Streets",
+    slots: 3,
+    miles: 2,
+    fatigue: 6,
+    nutrition: -6,
+    peak: 1,
+    endurance: 2,
+    xp: { overall: 14, versatile: 4 },
+    attributes: { mental: NIGHT_MENTAL_CITY, recovery: 4, endurance: 2 },
+    hard: false,
+    training: true,
+    style: "road",
+    nightRisk: NIGHT_RISK_CITY,
+    lines: [
+      "Brick Street under the lamps. Fewer cars, longer shadows.",
+      "Low visibility, but the pavement is still pavement.",
+    ],
+  },
+  "night-trail": {
+    id: "night-trail",
+    name: "Night Mountain Trail",
+    slots: 3,
+    miles: 3.5,
+    fatigue: 14,
+    nutrition: -10,
+    peak: 1,
+    endurance: 3,
+    xp: { overall: 24, trail: 20, ultra: 4 },
+    attributes: { mental: NIGHT_MENTAL_TRAIL, strength: 6, endurance: 3 },
+    hard: true,
+    training: true,
+    style: "trail",
+    nightRisk: NIGHT_RISK_TRAIL,
+    progress: "parkTrailRuns",
+    lines: [
+      "The ridge is black. Roots you knew by day hide under the dark.",
+      "Trail XP and Mental Toughness. Watch every step.",
     ],
   },
 };
@@ -916,19 +996,24 @@ function markTraining(state, activity) {
  * Soreness is a warning, not a coin-flip. Two strikes (tired, hungry,
  * worn-out shoes, already sore, or a hard session) light the warning.
  * Training again while sore, with another strike still true, becomes a blister.
+ *
+ * Night runs add nightRisk strikes (NIGHT_RISK_CITY / PARK / TRAIL).
+ * TODO: a future headlamp in the hat slot should cut nightRisk by 1.
  */
 export function nextSoreness(state, activity) {
   // Good socks ignore the worn-out-shoe strike. The other strikes
-  // (tired, hungry, a hard session, a hard week) still count.
+  // (tired, hungry, a hard session, a hard week, night risk) still count.
   const shielded = Boolean(sockById(state.gear?.socks)?.blisterShield);
   const worn = shoeWear(state.gear).label === "worn out" && !shielded;
+  // TODO(headlamp): if gear.hat is a headlamp, subtract 1 from nightRisk.
+  const nightExtra = Math.max(0, Number(activity?.nightRisk) || 0);
   const strikes = [
     state.condition.fatigue >= 70,
     state.condition.nutrition < 30,
     worn,
     Boolean(activity.hard),
     state.calendar.hardWeeks >= 2,
-  ].filter(Boolean).length;
+  ].filter(Boolean).length + nightExtra;
   if (state.condition.sore && strikes >= 2) {
     return {
       sore: true,
@@ -946,6 +1031,16 @@ export function nextSoreness(state, activity) {
   return { sore: state.condition.sore && strikes >= 1, injury: state.condition.injury };
 }
 
+/** Evening (3) or Night (4–5). Night runs refuse and gray out before that. */
+export function isAfterDark(state) {
+  return (state?.calendar?.slot ?? 0) >= NIGHT_RUN_MIN_SLOT;
+}
+
+/** How many extra soreness strikes a night run adds. 0 for day sessions. */
+export function nightRiskOf(activity) {
+  return Math.max(0, Number(activity?.nightRisk) || 0);
+}
+
 function applyBody(state, activity) {
   state.condition.fatigue = clampMeter(state.condition.fatigue + activity.fatigue);
   state.condition.peak = clampMeter(state.condition.peak + (activity.peak || 0));
@@ -961,26 +1056,31 @@ function applyBody(state, activity) {
 const LETTER_STYLES = {
   "park-trail": "trail",
   "ridge-repeats": "trail",
+  "night-trail": "trail",
   yards: "versatile",
 };
 
 export function applyRun(state, runId, rng = Math.random) {
   const activity = RUNS[runId];
   if (!activity) return refuse(state, ["That session isn't on the board."]);
-  if (runId === "ridge-repeats" && !isMountainOpen(state)) {
+  if ((runId === "ridge-repeats" || runId === "night-trail") && !isMountainOpen(state)) {
     return refuse(state, ["The ranger hasn't opened the gate."]);
+  }
+  // Night runs wait for Evening or Night. The menu grays them out
+  // earlier; this refuses a direct perform call the same way.
+  if (activity.nightRisk && !isAfterDark(state)) {
+    return refuse(state, ["Night runs wait until Evening or Night. Low visibility until then."]);
   }
   // A walk (gentle) is still okay while sick. Real runs and gym work wait.
   if (isSick(state) && !activity.gentle) {
     return refuse(state, [SICKNESS_BLOCK_MESSAGE]);
   }
-  // The price is `slots` on the workout. Heavy runs say 2. Listing
-  // ids here used to miss any new one, so a 2-block session cost 1.
+  // The price is `slots` on the workout. Menu and charge both read it.
   const energyCost = runEnergyCost(runId);
   if (readEnergy(state) < energyCost) {
     return refuse(state, [LOW_ENERGY]);
   }
-  if (state.condition.injury && (runId === "intervals" || runId === "ridge-repeats")) {
+  if (state.condition.injury && (runId === "intervals" || runId === "ridge-repeats" || runId === "night-trail")) {
     return refuse(state, [`Your ${state.condition.injury.name.toLowerCase()} says no to that session.`]);
   }
   const before = state;
@@ -1521,14 +1621,14 @@ export function applyShift(state, jobId, choiceId) {
   if (!scenario) return refuse(state, ["That shift isn't on the board."]);
   const choice = scenario.choices.find((item) => item.id === choiceId);
   if (!choice) return refuse(state, ["Pick one of the options."]);
-  if (readEnergy(state) < 1) {
+  if (readEnergy(state) < SHIFT_ENERGY) {
     return refuse(state, [LOW_ENERGY]);
   }
   const before = state;
   const next = clone(state);
   next.coins += choice.coins;
   next.condition.fatigue = clampMeter(next.condition.fatigue + 4);
-  spendEnergy(next, 1, true);
+  spendEnergy(next, SHIFT_ENERGY, true);
   noteShiftWorked(next.calendar);
   sample(next);
   return finish(before, next, [choice.reply, `You earn ${choice.coins} coins.`]);
@@ -2003,7 +2103,7 @@ export function applyObligation(state, choice) {
     if (job.kind === "gear" && job.task === "wear") {
       return refuse(state, ["Wear their belt or vest in your next race. Skipping is the menu choice."]);
     }
-    if (readEnergy(state) < 1) return refuse(state, [LOW_ENERGY]);
+    if (readEnergy(state) < OBLIGATION_ENERGY) return refuse(state, [LOW_ENERGY]);
     const before = state;
     const next = clone(state);
     const standing = clampStanding(standingOf(next, job.sponsorId) + STANDING_ACCEPT);
@@ -2011,7 +2111,7 @@ export function applyObligation(state, choice) {
     next.sponsors.obligation = null;
     next.coins += job.pay;
     next.condition.fatigue = clampMeter(next.condition.fatigue + 3);
-    spendEnergy(next, 1, true);
+    spendEnergy(next, OBLIGATION_ENERGY, true);
     sample(next);
     return finish(before, next, [
       `${job.label} for ${sponsor.name} is done.`,
@@ -2155,13 +2255,13 @@ export function applyClinicTreat(state) {
   if (state.coins < rates.treatment) {
     return refuse(state, [`Treatment costs ${rates.treatment} coins.`]);
   }
-  if (readEnergy(state) < 1) return refuse(state, [LOW_ENERGY]);
+  if (readEnergy(state) < CLINIC_TREATMENT_ENERGY) return refuse(state, [LOW_ENERGY]);
   const before = state;
   const next = clone(state);
   next.coins -= rates.treatment;
-  if (!spendEnergy(next, 1, true)) return refuse(state, [LOW_ENERGY]);
+  if (!spendEnergy(next, CLINIC_TREATMENT_ENERGY, true)) return refuse(state, [LOW_ENERGY]);
   const left = Math.max(0, (next.condition.injury.daysLeft || 0) - CLINIC_TREATMENT_NIGHTS);
-  const lines = [`Treatment session. ${rates.treatment} coins, 1 energy. The chart drops ${CLINIC_TREATMENT_NIGHTS} nights.`];
+  const lines = [`Treatment session. ${rates.treatment} coins, ${CLINIC_TREATMENT_ENERGY} energy. The chart drops ${CLINIC_TREATMENT_NIGHTS} nights.`];
   if (left <= 0) {
     next.condition.injury = null;
     next.condition.sore = false;
@@ -2454,12 +2554,15 @@ function recordTimeTrial(state, raceId) {
 }
 
 function runEnergyCost(runId) {
-  // Runs are 2, heavy runs are 3. The long walk and the strength
-  // session stay at 1. The menu label and applyRun both call this,
-  // so the button and the charge cannot disagree.
+  // slots on the RUNS row is the energy cost. Normal runs are 3,
+  // heavy runs are 4, walk and strength are 2. The menu label and
+  // applyRun both call this, so the button and the charge cannot disagree.
   const slots = RUNS[runId]?.slots;
-  return slots >= 2 ? slots : 1;
+  return typeof slots === "number" && slots > 0 ? slots : 1;
 }
+
+const NIGHT_RUN_WARNING = "Night run: low visibility, higher injury risk";
+const NIGHT_RUN_WAIT = "Only after dark — Evening or Night.";
 
 function runItem(state, runId) {
   const run = RUNS[runId];
@@ -2468,6 +2571,24 @@ function runItem(state, runId) {
   // Walks stay available while sick. Everything else on a run board waits.
   const sickBlocked = isSick(state) && !run.gentle;
   const miles = run.miles > 0 ? `${round1(run.miles)} mi · ` : "";
+  // Night runs show the warning when they are open, and a clear
+  // "wait until Evening" line when the sky is still daylight.
+  if (run.nightRisk) {
+    const dark = isAfterDark(state);
+    const detail = dark
+      ? `${miles}${cost} energy · ${NIGHT_RUN_WARNING}`
+      : NIGHT_RUN_WAIT;
+    let reason = LOW_ENERGY;
+    if (sickBlocked) reason = SICKNESS_BLOCK_MESSAGE;
+    else if (!dark) reason = NIGHT_RUN_WAIT;
+    return item(
+      run.name,
+      detail,
+      { type: "run", id: runId },
+      sickBlocked || !dark || tired,
+      reason,
+    );
+  }
   return item(
     run.name,
     `${miles}${cost} energy`,
@@ -2582,8 +2703,8 @@ export function menuFor(locationId, state) {
           : "Manager Nia is lacing a demo shoe on the stool.",
         items: [
           // One row, every day. The card behind it changes. The label
-          // and the 1 energy cost do not, so the board stays put.
-          item("Work a shift", "1 energy", { type: "open-shift" }, readEnergy(state) < 1, LOW_ENERGY),
+          // and the SHIFT_ENERGY cost do not, so the board stays put.
+          item("Work a shift", `${SHIFT_ENERGY} energy`, { type: "open-shift" }, readEnergy(state) < SHIFT_ENERGY, LOW_ENERGY),
           item("Socks", "The sock wall", { type: "open-socks" }),
           item("Hats", "Ciele, Bandit, Nike ACG, rnnr, BPN", { type: "open-hats" }),
           item(
@@ -2635,6 +2756,7 @@ export function menuFor(locationId, state) {
           runItem(state, "long-run"),
           runItem(state, "park-trail"),
           runItem(state, "yards"),
+          runItem(state, "night-park"),
         ],
       };
     case "track": {
@@ -2704,7 +2826,7 @@ export function menuFor(locationId, state) {
           ? "The gate is swung back. The trail winds east through the rocks. Tall grass up here finds better things than the park."
           : "I'm Ranger Inez Quill. The high trail stays shut until you're ready.",
         items: status.open
-          ? [runItem(state, "ridge-repeats")]
+          ? [runItem(state, "ridge-repeats"), runItem(state, "night-trail")]
           : status.needs.map((need) =>
               item(need.label, need.have, { type: "noop" }, true, need.ok ? "Already done." : `Still need this. ${need.have}.`),
             ),
@@ -2715,7 +2837,7 @@ export function menuFor(locationId, state) {
       const hurt = Boolean(state.condition?.injury);
       const treated = clinicTreated(state);
       const broke = state.coins < rates.treatment;
-      const tired = readEnergy(state) < 1;
+      const tired = readEnergy(state) < CLINIC_TREATMENT_ENERGY;
       const sick = isSick(state);
       let treatReason = "";
       if (!hurt) treatReason = "Nothing to treat. The chart is clear.";
@@ -2728,7 +2850,7 @@ export function menuFor(locationId, state) {
         item(
           "Treatment session",
           hurt
-            ? `${rates.treatment} coins · 1 energy · −${CLINIC_TREATMENT_NIGHTS} nights`
+            ? `${rates.treatment} coins · ${CLINIC_TREATMENT_ENERGY} energy · −${CLINIC_TREATMENT_NIGHTS} nights`
             : "Nothing to treat. The chart is clear.",
           { type: "clinic-treat" },
           !hurt || treated || broke || tired,
@@ -2778,12 +2900,13 @@ export function menuFor(locationId, state) {
         title: "Activity Board",
         speaker: "Activity Board",
         testId: "activity-menu",
-        intro: "Three neighborhood efforts by the fountain. Each one spends energy like any other workout.",
+        intro: "Neighborhood efforts by the fountain. Each one spends energy like any other workout. The night streets wait until Evening.",
         items: [
           runItem(state, "neighborhood-easy"),
           runItem(state, "neighborhood-walk"),
           runItem(state, "neighborhood-speed"),
           runItem(state, "neighborhood-5k"),
+          runItem(state, "night-city"),
         ],
       };
     case "cafe": {
@@ -3589,10 +3712,10 @@ export function sponsorMenuItems(state) {
   } else if (job) {
     const brand = sponsorById(job.kind, job.sponsorId);
     const name = brand ? brand.name : "your sponsor";
-    const tired = readEnergy(state) < 1;
+    const tired = readEnergy(state) < OBLIGATION_ENERGY;
     rows.push(item(
       `Do ${job.label}`,
-      `1 energy · +${job.pay} coins · ${name} standing up`,
+      `${OBLIGATION_ENERGY} energy · +${job.pay} coins · ${name} standing up`,
       { type: "obligation", choice: "accept" },
       tired,
       LOW_ENERGY,

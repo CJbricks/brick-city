@@ -91,7 +91,7 @@ describe("nutrition sponsors", () => {
     const hungry = primed(4);
     const bpn = accept(hungry, "nutrition", "bpn");
     const run = applyRun(bpn.state, "easy-run");
-    expect(run.state.condition.nutrition).toBe(58);
+    expect(run.state.condition.nutrition).toBe(55);
     expect(nutritionTuning(run.state).drainCut).toBe(1);
   });
 
@@ -201,7 +201,7 @@ describe("obligations and standing", () => {
     expect(morning.state.sponsors.obligation.label).toBeTruthy();
     const done = applyObligation(morning.state, "accept");
     expect(done.ok).toBe(true);
-    expect(done.state.energy).toBe(9);
+    expect(done.state.energy).toBe(8);
     expect(done.state.sponsors.obligation).toBeNull();
     expect(done.state.sponsors.standing.brooks).toBe(92);
     expect(done.state.coins).toBe(48 + morning.state.sponsors.obligation.pay);

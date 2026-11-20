@@ -3,7 +3,7 @@
  * The Run Store's question deck. The board has one job, "Work a shift".
  * Which scene you get comes from this list. Nothing here rolls Math.random,
  * reads the clock, or touches localStorage. activities.js asks for the
- * card, checks the answer, pays the coins, and spends 1 energy.
+ * card, checks the answer, pays the coins, and spends SHIFT_ENERGY.
  *
  * The first three cards are the original scenes: shoe advice on the park
  * loop, sorting the gel wall, and the gait check. Their words stay as
@@ -21,7 +21,7 @@ export const SHIFT_POOL = [
   {
     id: "shoes",
     label: "Help a customer",
-    detail: "1 energy · shoe advice",
+    detail: "2 energy · shoe advice",
     speaker: "Customer",
     text: "I'm running the park dirt loop today. What should I buy?",
     choices: [
@@ -42,7 +42,7 @@ export const SHIFT_POOL = [
   {
     id: "stock",
     label: "Stock the gel wall",
-    detail: "1 energy · shelf work",
+    detail: "2 energy · shelf work",
     speaker: "Manager Nia",
     text: "The gel wall is a mess before the lunch crowd. How do you sort it?",
     choices: [
@@ -63,7 +63,7 @@ export const SHIFT_POOL = [
   {
     id: "gait",
     label: "Run a gait check",
-    detail: "1 energy · fitting stool",
+    detail: "2 energy · fitting stool",
     speaker: "Manager Nia",
     text: "A runner wants a gait check. What do you watch first?",
     choices: [

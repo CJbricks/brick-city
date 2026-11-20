@@ -99,13 +99,21 @@ The HUD clock still says Morning, Midday, Afternoon, Evening, or Night. What act
 
 | Action | Blocks |
 |---|---|
-| Neighborhood long walk, strength session, shift | 1 |
-| Easy run, zone 2, park trail, yards, track intervals, treadmill, neighborhood easy, neighborhood 5K, Brick City 5K, Remy | 2 |
-| Long run, ridge repeats, threshold, interval run, neighborhood speed, 10K | 3 |
-| Grocery food, gels, shoes, eating a gel, home kitchen, coffee, Wi-Fi, soft tissue, blister care | 0 |
+| Neighborhood long walk, strength session, shift, clinic treatment, sponsor obligation | 2 |
+| Easy run, zone 2, park trail, yards, track intervals, treadmill, neighborhood easy, neighborhood 5K, Brick City 5K, Remy, night park / city / trail | 3 |
+| Long run, ridge repeats, threshold, interval run, neighborhood speed, 10K | 4 |
+| Brick City Half | 5 |
+| Brick City Marathon | 6 |
+| Grocery food, gels, shoes, eating a gel, home kitchen, coffee, Wi-Fi, soft tissue, blister care, sick visit | 0 |
 | Nap (up to 2 a day) | gives 3 back, never past 10 |
 
-Runs cost one block more than they used to. A normal run is 2. A heavy run is 3. The long walk stays at 1 because it is not a run. Shifts, meals, naps, coffee, Wi-Fi, and the clinic visits that were already free of energy stay where they were. A day is still 10 blocks. Two easy runs are 4, so there is room for a walk, a shift, and a nap. Two heavy runs are 6, and a 5K on top of those is 8. Three heavy runs are 9, which leaves one block: a walk or a shift, not another run, unless a nap or a coffee puts a block back. The sky also moves sooner. Two spent blocks are one step of the day, so an easy run from a full bar now moves Morning to Midday. It used to stay Morning.
+### Energy cost +1 (fewer runs per day)
+
+Every activity that already cost energy went up by **1**. Free things stayed free (meals, snacks, naps, sleep, shopping, soft tissue, blister care, sick visits, coffee). Restoratives are unchanged: nap +3, coffee +1, gel +1 (including the race-bonk gel that gives one block back). There is no separate every-run energy refund in code — the gel / coffee / nap restores are the ones that put blocks back.
+
+Named constants for the non-run spenders live in `src/lib/constants.js`: `SHIFT_ENERGY`, `CLINIC_TREATMENT_ENERGY`, `OBLIGATION_ENERGY`. Run and race costs live on each `RUNS` / `RACES` / `RIVAL` row as `slots` or `energy`.
+
+A full 10-block day used to fit **five** easy runs (2 each). Now it fits **three** (3 each), with 1 block left for a walk, a shift, or a coffee/gel top-up. Two heavy runs used to be 6; now they are 8. A day is still 10 blocks. Two spent blocks are still one step of the sky.
 
 If you don't have enough blocks, the menu says to sleep or eat a gel. The sky moves with the bar: two blocks spent is one step of the day. Zero blocks is a spent night. That slot is what `sleepPlan` still reads, so going to bed with a full bar is a short poor sleep, and going to bed after a real day is the good one.
 
@@ -125,7 +133,7 @@ Overtraining is the other Peak tax. If Fatigue is still at or above 75 after ove
 
 ## Run Store shifts
 
-The Run Store board used to list three jobs: help a customer, stock the gel wall, and run a gait check. It is now **one row**, `Work a shift`, and it still costs **1 energy**. You can work as many as you have energy for. A shift still does not count as training.
+The Run Store board used to list three jobs: help a customer, stock the gel wall, and run a gait check. It is now **one row**, `Work a shift`, and it costs **2 energy** (`SHIFT_ENERGY`). You can work as many as you have energy for. A shift still does not count as training.
 
 The questions are one deck, `SHIFT_POOL`, in `src/lib/shifts.js`. The first three cards are those original scenes, word for word, including the Peakline Luggers line. After them come more shoe, gel, and gait questions, plus six other jobs on the same floor: a first fitting, a 5K shoe rush, a muddy return, the shop run, a hot long run, and the sock wall. Each card has a speaker, one line of dialogue, and two or three answers. One answer pays the most, about **20 to 22 coins**. A weak answer pays about **11 to 16**. When there are three answers, the middle one sits between those bands, and there is still only one top payout.
 
@@ -152,7 +160,7 @@ when it is not. Day 1 is card 0. Day 2, if nobody has written a bookmark yet, is
 
 The old button ids still work. `shoes`, `stock`, and `gait` always mean those three original scenes, so a half-finished shift from before the deck pays the coins it always paid. Any other id has to be the card on the counter right now. The answer is looked up only on that card. A choice from a different question is refused, and the bookmark does not move.
 
-The board row stays `Work a shift` / `1 energy` no matter which card is up. The dialogue is what changes. House gear in the lines (Peakline Luggers, Stride Fuel) is invented for Brick City. Real shoe and sock brands are not named there.
+The board row stays `Work a shift` / `2 energy` no matter which card is up. The dialogue is what changes. House gear in the lines (Peakline Luggers, Stride Fuel) is invented for Brick City. Real shoe and sock brands are not named there.
 
 ## Meals, snacks, and naps
 
@@ -333,7 +341,7 @@ There is no speed penalty on a nutrition deal.
 
 Big brands (Hoka, Brooks, Adidas, Nike, Honey Stinger, BPN) can offer around level 3 to 5 after a 5K or a 10K. Boutique brands (Norda, Speedland, Mount to Coast, Salomon, Satisfy, Maurten, Precision) wait for a higher level plus a trail run or a backyard yard. The locked rows say "not interested yet" and do not have a sign button.
 
-Standing starts at 80. An obligation (photo shoot, store appearance, expo booth, community run) shows up the morning after you accept, then every 4th day. Accepting it spends 1 energy and pays better than a shift, and standing rises. Skipping drops standing by 22. Under 45 the sponsor warns you. Under 25 they drop the deal and wait 14 days before they will offer again. A new offer after that drop starts standing back at 80. Switching away and back keeps the standing you had, as long as it never fell that low.
+Standing starts at 80. An obligation (photo shoot, store appearance, expo booth, community run) shows up the morning after you accept, then every 4th day. Accepting it spends 2 energy (`OBLIGATION_ENERGY`) and pays better than a shift, and standing rises. Skipping drops standing by 22. Under 45 the sponsor warns you. Under 25 they drop the deal and wait 14 days before they will offer again. A new offer after that drop starts standing back at 80. Switching away and back keeps the standing you had, as long as it never fell that low.
 
 Open Sponsors from the Run Store, from the pause menu, from the closet, or from the button on Runner Status. The top of that menu names the three slots (shoe, nutrition, gear) before the longer lists. The list is a normal menu, so the d-pad and A/B buttons work on a phone.
 
@@ -616,14 +624,15 @@ The town square is the dirt plaza between the four roads. The fountain sits in t
 
 The post is solid. You cannot walk through it. The tile south of it, (20, 14), is the gold mat. Stand there and press A, or face the post from a neighbor tile. Both open the same menu. The picture is a cedar post and a plywood board that says RUN, with three stripes (green, orange, blue) for the three efforts. It is drawn in `src/game/art.js`. Nothing in that picture is borrowed from another game.
 
-The menu is `menuFor("activity")` in `src/lib/activities.js`. The three rows are ordinary workouts in the `RUNS` table, so they use the same energy, fatigue, soreness, shoe, and training rules as the park and the track.
+The menu is `menuFor("activity")` in `src/lib/activities.js`. The rows are ordinary workouts in the `RUNS` table, so they use the same energy, fatigue, soreness, shoe, and training rules as the park and the track. Night City Streets is the fifth row; it waits until Evening.
 
 | Effort | Energy | What it does |
 |---|---|---|
-| Neighborhood Easy Recovery | 2 | 1.5 miles. Fatigue goes down by 6. Endurance +1. Peak does not move. Not a hard session, so if you were only sore from stacking hard days, this is enough for the sore flag to clear. It does not heal a blister. That is still the clinic. |
-| Neighborhood Long Walk | 1 | Not a run. No miles, so shoes do not wear. Fatigue goes down by 12. Endurance +1. Overall XP +6. It does not add a soreness strike and it cannot turn a hot spot into a blister. It still counts as moving, so the detrain counter does not tick. |
-| Neighborhood Speed Run | 3 | 3 miles. Peak +10, Endurance +2, fatigue +16. Same energy cost as a Threshold or Interval Run, and the same idea: peak is the point, endurance comes along a little, and `hard: true` counts as a soreness strike. |
-| Neighborhood 5K Time Trial | 2 | 3.1 miles. A solo clock, not the Brick City 5K race. No coins, no sponsor at the line, and it does not check off `fiveKFinished`. |
+| Neighborhood Easy Recovery | 3 | 1.5 miles. Fatigue goes down by 6. Endurance +1. Peak does not move. Not a hard session, so if you were only sore from stacking hard days, this is enough for the sore flag to clear. It does not heal a blister. That is still the clinic. |
+| Neighborhood Long Walk | 2 | Not a run. No miles, so shoes do not wear. Fatigue goes down by 12. Endurance +1. Overall XP +6. It does not add a soreness strike and it cannot turn a hot spot into a blister. It still counts as moving, so the detrain counter does not tick. |
+| Neighborhood Speed Run | 4 | 3 miles. Peak +10, Endurance +2, fatigue +16. Same energy cost as a Threshold or Interval Run, and the same idea: peak is the point, endurance comes along a little, and `hard: true` counts as a soreness strike. |
+| Neighborhood 5K Time Trial | 3 | 3.1 miles. A solo clock, not the Brick City 5K race. No coins, no sponsor at the line, and it does not check off `fiveKFinished`. |
+| Night City Streets | 3 | After dark only. See **Night runs**. |
 
 The time trial calls `finishScore` and `flavorTime` from `src/lib/race.js` before it adds the session's own fatigue. That is the same clock as the track 5K: Endurance, Peak, fatigue, the shoes you are wearing, a vest's short-road tax, a shoe sponsor, the coffee pace note, and the Race IQ lift. A normal workout has no clock, so coffee moves fatigue instead. Here the cup is already in the time, so it is not also subtracted from fatigue. The cup is still spent.
 
@@ -638,7 +647,7 @@ Every session you can start from a menu is one object in `RUNS` inside `src/lib/
 | Field | What it does |
 |---|---|
 | `name` | The row in the menu |
-| `slots` | Energy blocks. A run is 2. A heavy run is 3. The long walk and the strength session are 1. The menu and the charge both read this, so they cannot disagree. |
+| `slots` | Energy blocks. A run is 3. A heavy run is 4. The long walk and the strength session are 2. The menu and the charge both read this, so they cannot disagree. |
 | `miles` | Added to the week and to the shoes you wore |
 | `fatigue` | Added to the fatigue meter. A negative number is a recovery jog. |
 | `nutrition` | Usually negative. Spending blocks also drains a little food on top of this. |
@@ -647,25 +656,46 @@ Every session you can start from a menu is one object in `RUNS` inside `src/lib/
 | `xp` | Overall XP, plus a specialty such as `marathon` |
 | `attributes` | Skill points. Speed, Endurance, Strength, Recovery, Mental. These level up. They do not fall when you rest. |
 | `hard` | `true` counts as a soreness strike. Two strikes (tired, hungry, worn-out shoes, a hard session, a hard week) makes you sore. |
+| `nightRisk` | Extra soreness strikes for night runs only. See **Night runs**. |
 | `lines` | The short pages you tap through after the run. One string is one page. |
 | `style` | Which shoe bonus applies (`road`, `trail`, or `versatile`) |
 
-Balance, compared with what was already on the board:
+Balance, compared with what was already on the board (after the +1 energy bump):
 
-- Easy Recovery Run is 2 blocks, and fatigue goes down. It is rest, not fitness.
-- Track Intervals is 2 blocks, Peak +8, Endurance +1, fatigue +15. Sharp, short.
-- Long Run is 3 blocks, Endurance +7, Peak +1, fatigue +18. The endurance day.
-- Threshold Run is 3 blocks, Peak +10, Endurance +4, fatigue +17. A tempo. Peak is the main gain. Endurance moves less. It is a hard session, so it counts toward soreness the way intervals do.
-- Interval Run is 3 blocks, Peak +14, Endurance +3, fatigue +20. Repeats with a jog between. Sharper than the tempo, and the legs pay more.
-- Zone 2 Run is 2 blocks, Peak +3, Endurance +3, fatigue +4. Easy aerobic. Both meters grow, and by about the same amount. Fatigue stays low. It is not `hard`.
-- Neighborhood Easy Recovery is 2 blocks, fatigue −6, Endurance +1, Peak +0. Gentler than the park easy run.
-- Neighborhood Long Walk is 1 block. It is not a run. Fatigue −12, Endurance +1, 6 overall XP.
-- Neighborhood Speed Run is 3 blocks, Peak +10, Endurance +2, fatigue +16. A short version of the tempo.
-- Neighborhood 5K Time Trial is 2 blocks and a clock. The numbers are in "The activity board" above.
+- Easy Recovery Run is 3 blocks, and fatigue goes down. It is rest, not fitness.
+- Track Intervals is 3 blocks, Peak +8, Endurance +1, fatigue +15. Sharp, short.
+- Long Run is 4 blocks, Endurance +7, Peak +1, fatigue +18. The endurance day.
+- Threshold Run is 4 blocks, Peak +10, Endurance +4, fatigue +17. A tempo. Peak is the main gain. Endurance moves less. It is a hard session, so it counts toward soreness the way intervals do.
+- Interval Run is 4 blocks, Peak +14, Endurance +3, fatigue +20. Repeats with a jog between. Sharper than the tempo, and the legs pay more.
+- Zone 2 Run is 3 blocks, Peak +3, Endurance +3, fatigue +4. Easy aerobic. Both meters grow, and by about the same amount. Fatigue stays low. It is not `hard`.
+- Neighborhood Easy Recovery is 3 blocks, fatigue −6, Endurance +1, Peak +0. Gentler than the park easy run.
+- Neighborhood Long Walk is 2 blocks. It is not a run. Fatigue −12, Endurance +1, 6 overall XP.
+- Neighborhood Speed Run is 4 blocks, Peak +10, Endurance +2, fatigue +16. A short version of the tempo.
+- Neighborhood 5K Time Trial is 3 blocks and a clock. The numbers are in "The activity board" above.
 
 Threshold and Interval Run are on the track menu and the gym treadmill menu. Zone 2 is on the park menu, next to the easy run. The old Track Intervals row is still there, and it still ticks `trackRuns` for training history. Treadmill runs tick `treadmillRuns` the same way. Those counters are not a separate road-readiness score and they do not gate the Half or Marathon. The new sessions do not add a save field. An old `brick-city-save-v1` blob loads unchanged.
 
-The 5K is not a `RUNS` row. It is a race (`open-race` / `applyRace`). It stays on the track menu and costs 2 blocks. The 10K costs 3. The Half costs 4. The Marathon costs 5. Remy's mile costs 2. The menu rows say the number.
+The 5K is not a `RUNS` row. It is a race (`open-race` / `applyRace`). It stays on the track menu and costs 3 blocks. The 10K costs 4. The Half costs 5. The Marathon costs 6. Remy's mile costs 3. The menu rows say the number.
+
+## Night runs
+
+Three after-dark sessions sit next to the day versions: **Night Park Loop** (park menu), **Night City Streets** (activity board), and **Night Mountain Trail** (mountain gate, once the ranger opens it).
+
+They only unlock when `calendar.slot` is Evening or later (`NIGHT_RUN_MIN_SLOT = 3`). Morning, Midday, and Afternoon gray the row out with "Only after dark — Evening or Night." The open row warns: **Night run: low visibility, higher injury risk**.
+
+Poor visibility means extra soreness strikes on top of the usual tired / hungry / worn / hard / hard-week checks (`nightRisk` on the RUNS row):
+
+| Run | Extra strikes | Constant | Mental Toughness |
+|---|---|---|---|
+| Night City Streets | 1 | `NIGHT_RISK_CITY` | `NIGHT_MENTAL_CITY` (2) |
+| Night Park Loop | 2 | `NIGHT_RISK_PARK` | `NIGHT_MENTAL_PARK` (3) |
+| Night Mountain Trail | 3 | `NIGHT_RISK_TRAIL` | `NIGHT_MENTAL_TRAIL` (4) |
+
+Trail is riskiest (roots and rocks), park middling, city streets under lamps the safest of the three. Each also pays a little more overall / trail XP than a daylight easy jog so the risk is worth considering. Energy cost is 3, same as an easy day run after the +1 bump.
+
+**TODO (not built yet):** a headlamp in the hat / headlamp gear slot should cut `nightRisk` by 1. The hat slot already exists for sun/heat hats; do not add new gear in this change — leave the hook comment in `nextSoreness`.
+
+No new save fields. An old `brick-city-save-v1` loads as-is; the night rows appear on the menus when the clock reaches Evening.
 
 ## Half Marathon & Marathon
 
@@ -684,7 +714,7 @@ The why-comments sit next to those constants in `src/lib/constants.js`. Change t
 
 | | 5K | 10K | Half | Marathon |
 |---|---|---|---|---|
-| Energy | 2 | 3 | **4** | **5** |
+| Energy | 3 | 4 | **5** | **6** |
 | Ideal form | 35% End / 65% Peak | 45 / 55 | **55 / 45** | **65 / 35** |
 | Fatigue | 16 | 22 | **32** | **44** |
 | Nutrition | −14 | −18 | **−28** | **−40** |
@@ -805,7 +835,7 @@ Brick City has a clinic east of the upper street, past the track. The sign says 
 
 | Visit | Cost in Brick City | What it does |
 |---|---|---|
-| Treatment | 22 coins and 1 energy | Only if you are injured. Cuts 2 nights off the injury. At 0 nights the injury and the sore flag clear. Refuses, and does not take the coins, if the chart is clear. Once a day. |
+| Treatment | 22 coins and 2 energy | Only if you are injured. Cuts 2 nights off the injury. At 0 nights the injury and the sore flag clear. Refuses, and does not take the coins, if the chart is clear. Once a day. |
 | Soft tissue | 10 coins, 0 energy | Clears soreness and takes 12 fatigue off. It does not clear a blister. |
 | Blister care | 8 coins, 0 energy | Clears a blister and the sore flag that came with it. Refuses, and does not take the coins, if there is no blister. It does not use the once-a-day treatment flag. |
 | Sick visit | 200 coins, 0 energy | Only while you are sick (the rare morning illness). Clears it immediately so you can run again, and removes 90% of current Peak Fitness. The menu asks you to confirm before charging. Refuses, and does not take the coins, if you are healthy or broke. The row only appears while sick. |
