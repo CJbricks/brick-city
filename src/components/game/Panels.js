@@ -24,6 +24,7 @@ import { readRaceIq } from "@/lib/cafe";
 import { attributeLevel, levelProgress, trackRank } from "@/lib/xp";
 import { runnerLevel, mountainStatus, describeNeeds } from "@/lib/unlocks";
 import { calendarView, fiveKPbLine } from "@/lib/activities";
+import { isSick, sicknessStatusLine } from "@/lib/sickness";
 
 function Window({ title, children, testId }) {
   return (
@@ -213,6 +214,9 @@ export function StatusView({ game, onClose, onSponsors }) {
       {game.condition.sore ? <p className="warn">Sore. An easy day now beats a week off later.</p> : null}
       {game.condition.injury ? (
         <p className="warn">{`${game.condition.injury.name}. ${game.condition.injury.note} ${game.condition.injury.daysLeft} night(s) left.`}</p>
+      ) : null}
+      {isSick(game) ? (
+        <p className="warn" data-testid="status-sick">{sicknessStatusLine(game)}</p>
       ) : null}
       <div className="stat-grid">
         {ATTRIBUTES.map((attr) => (

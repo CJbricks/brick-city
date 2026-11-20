@@ -27,6 +27,7 @@ import { TREND_ARROW, fatigueColor, trendsFor } from "@/lib/condition";
 import { formatWhen } from "@/lib/calendar";
 import { MAX_ENERGY } from "@/lib/constants";
 import { maxNutritionFromGear } from "@/lib/catalog";
+import { isSick, sicknessStatusLine } from "@/lib/sickness";
 import { levelProgress } from "@/lib/xp";
 import { drawRunnerSprite, runnerPalette } from "@/game/art";
 import { gearTint } from "@/game/brandColors";
@@ -204,6 +205,9 @@ export function Hud({ game, onOpen }) {
             />
           ))}
           {game.condition.sore ? <div className="sore-flag">SORE</div> : null}
+          {isSick(game) ? (
+            <div className="sore-flag" data-testid="hud-sick">{sicknessStatusLine(game)}</div>
+          ) : null}
           <div className="hud-meta">
             <span>{when}</span>
             <CoinCount coins={game.coins} />
@@ -238,6 +242,9 @@ export function Hud({ game, onOpen }) {
             <span>{when}</span>
             <CoinCount coins={game.coins} />
             {game.condition.sore ? <span className="sore-flag">SORE</span> : null}
+            {isSick(game) ? (
+              <span className="sore-flag" data-testid="hud-sick-mobile">{sicknessStatusLine(game)}</span>
+            ) : null}
           </div>
         </div>
       </button>

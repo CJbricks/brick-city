@@ -61,6 +61,7 @@ import {
 } from "@/lib/activities";
 import { describeNeeds, isMountainOpen, mountainStatus } from "@/lib/unlocks";
 import { applyForage, forageArea } from "@/lib/forage";
+import { ratesFor } from "@/lib/clinic";
 import { writeSave } from "@/lib/save";
 import { CONFETTI_MS } from "@/game/confetti";
 
@@ -217,6 +218,26 @@ export function PlayScreen({ game, setGame, onTitle }) {
       return;
     }
     const action = item.action || {};
+    // Sick visit costs Peak as well as coins. Confirm before charging
+    // so a mis-tap does not wipe sharpness. The rule function still
+    // refuses (and keeps the coins) if you are healthy or broke.
+    if (action.type === "clinic-sick") {
+      const rates = ratesFor(currentState());
+      setPanel({
+        type: "dialogue",
+        speaker: "PT Clinic",
+        pages: [
+          `Sick visit. ${rates.sick} coins. Clears the sickness so you can run, but Peak Fitness drops hard (65%). Proceed?`,
+        ],
+        index: 0,
+        choices: [
+          { id: "clinic-sick-yes", label: "Yes" },
+          { id: "clinic-sick-no", label: "Not now" },
+        ],
+        choiceIndex: 0,
+      });
+      return;
+    }
     if (action.type === "open-status") {
       setPanel({ type: "status" });
       return;
@@ -346,6 +367,10 @@ export function PlayScreen({ game, setGame, onTitle }) {
     if (!choice) return;
     if (current.jobId) {
       run({ type: "shift", job: current.jobId, choice: choice.id });
+      return;
+    }
+    if (choice.id === "clinic-sick-yes") {
+      run({ type: "clinic-sick" });
       return;
     }
     if (choice.id === "race") {
