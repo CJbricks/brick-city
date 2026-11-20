@@ -260,14 +260,37 @@ Stats stay inside the ranges the original models already used. A later shoe can 
 
 On a phone the racks are brands, then models, then a detail screen. Trail, Marathon, and Backyard are tabs. Belts and vests are tabs. Gels, shakes, and flasks are tabs. Left and right move the tabs. Up and down move the list. A long sock wall or gel case is five rows and a Next page button. B goes back one menu.
 
-### How to add a product
+### How the shoe catalog is organized
 
-1. Use a brand the game already sells. Do not add a brand. Shoes go in `EXTRA_SHOES` in `src/lib/catalogModels.js` (or the original tables in `src/lib/catalog.js` if it should be Brick City stock with no `unlock` field). Belts and vests go in `EXTRA_CARRY`, and only in a kind that brand already sells. Hats, socks, and fuel have their own tables in the same file.
+Shoes live in two files on purpose:
+
+| File | What it holds |
+|---|---|
+| `src/lib/catalog.js` | House pairs, the first brand models (Brick City stock with no `unlock` field), belts, socks, hats, fuel rules, and helpers like `citiesReached`, `isUnlocked`, `resolveShoeId` |
+| `src/lib/catalogModels.js` | Extra models only. Same brands, later cities, same stat ranges. Merged into `SHOES` / `CARRY` / `SOCKS` / `HATS` / `FUEL` at the bottom of `catalog.js` |
+
+Each shoe row has: `id`, `name`, `brand`, `style` (`trail` / `road` / `versatile`), `price`, `maxMiles` (durability), optional `unlock` (city id), `blurb`, and `mods` (pace trade-offs). There is no separate cushion or weight field. Cushion, speed, weight, and durability show up as the mix of `mods`, `maxMiles`, `price`, and the blurb.
+
+Styles map to Run Store tabs: Trail, Marathon (`road`), Backyard Ultra (`versatile`). Every real brand on a tab should have at least five models. Mount to Coast is special: the H1 name appears once as trail (`mtc-h1`) and once as backyard (`mtc-h1-yard`), and the C1 (`mtc-c1`) is the brand's first marathon shoe. All three are Brick City stock.
+
+### How to add a shoe
+
+1. Prefer a brand that already sells that style. Day-one stock (no city lock) goes in `BRAND_SHOES` inside `src/lib/catalog.js`. Later unlocks go in `EXTRA_SHOES` in `src/lib/catalogModels.js`.
+2. Pick a new `id` that is not already a key. Never rename an old id. Old saves must still resolve.
+3. Set `unlock` to a city from `CITIES` in `src/lib/constants.js`: `brick-city`, `ridgeview`, `lakeport`, `mesa-verde-flats`, `flatland`, or `summit-hollow`. Omit `unlock` only for day-one Brick City stock.
+4. Keep `mods` and `maxMiles` inside the original range for that style. Summit Hollow can cost more than the old max price. Spread new models across cities so Brick City gets a few and later towns get more.
+5. Use a real product name only when you are sure it is that product. Otherwise use a plain name like "Yard Day". Brand colors only. No logos. Original pixel art only (the sprite still uses `brandColors.js`).
+6. If the brand now covers all three styles, update its shoe sponsor in `src/lib/sponsors.js` the same way Hoka and Adidas do (boost on every style, small `shortRoad` tax).
+7. Run `npm test`. Catalog tests check unique ids, at least five models per brand per style, H1 on Trail and Backyard, C1 on Marathon, city unlocks, and old ids still resolving.
+
+### How to add another product (belt, vest, sock, hat, fuel)
+
+1. Use a brand the game already sells. Belts and vests go in `EXTRA_CARRY`, and only in a kind that brand already sells. Hats, socks, and fuel have their own tables in `catalogModels.js`.
 2. Give it a new `id` that is not already a key. Old ids must keep their old names.
-3. Set `unlock` to a city id from `CITIES` in `src/lib/constants.js`: `brick-city`, `ridgeview`, `lakeport`, `mesa-verde-flats`, `flatland`, or `summit-hollow`. Leave it off only for a day-one item.
-4. Keep the numbers inside the original range for that style. Pace, climb, miles, fatigue, and the vest's short-road penalty should not exceed what an original model already does. Summit Hollow can cost more than the old price. Put new belts and vests after the originals. `starterCarryId` gives the first belt it finds, and that gift should stay the original one.
-5. Use a real product name only when you are sure it is that product. Otherwise use a plain name like "Yard Day" or "Summit Belt". Colors only. No logos.
-6. Run `npm test`. The catalog tests check that the id is real, the city exists, the unlocked set grows town by town, and the old ids still resolve.
+3. Set `unlock` to a city id. Leave it off only for a day-one item.
+4. Keep the numbers inside the original range. Put new belts and vests after the originals. `starterCarryId` gives the first belt it finds, and that gift should stay the original one.
+5. Use a real product name only when you are sure. Colors only. No logos.
+6. Run `npm test`.
 
 ## Belts, vests, and the nutrition cap
 

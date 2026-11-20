@@ -122,23 +122,41 @@ describe("the city shelf", () => {
     }
   });
 
-  it("stocks 2 to 4 models of each brand in each style it already sells", () => {
+  it("stocks at least 5 models of each brand in each style it sells", () => {
     const expected = {
       trail: ["Nike", "Norda", "Speedland", "Hoka", "Mount to Coast", "Adidas", "Salomon", "Satisfy"],
-      road: ["Hoka", "Adidas", "Nike", "Brooks"],
+      road: ["Hoka", "Adidas", "Nike", "Brooks", "Mount to Coast"],
       versatile: ["Norda", "Speedland", "Mount to Coast", "Adidas", "Hoka", "Salomon"],
     };
     for (const [style, brands] of Object.entries(expected)) {
       const found = new Set();
       for (const brand of brands) {
         const models = Object.values(SHOES).filter((shoe) => shoe.style === style && shoe.brand === brand);
-        expect(models.length, `${brand} ${style}`).toBeGreaterThanOrEqual(2);
-        expect(models.length, `${brand} ${style}`).toBeLessThanOrEqual(4);
+        expect(models.length, `${brand} ${style}`).toBeGreaterThanOrEqual(5);
         found.add(brand);
       }
       const extras = Object.values(SHOES).filter((shoe) => shoe.style === style && !HOUSE.has(shoe.brand));
       for (const shoe of extras) expect(found.has(shoe.brand), shoe.id).toBe(true);
     }
+  });
+
+  it("puts Mount to Coast H1 on Trail and Backyard, and C1 on Marathon, from Brick City", () => {
+    const trailH1 = Object.values(SHOES).filter((shoe) => shoe.name === "Mount to Coast H1" && shoe.style === "trail");
+    const yardH1 = Object.values(SHOES).filter((shoe) => shoe.name === "Mount to Coast H1" && shoe.style === "versatile");
+    const c1 = Object.values(SHOES).filter((shoe) => shoe.name === "Mount to Coast C1" && shoe.style === "road");
+    expect(trailH1).toHaveLength(1);
+    expect(yardH1).toHaveLength(1);
+    expect(c1).toHaveLength(1);
+    expect(trailH1[0].id).toBe("mtc-h1");
+    expect(yardH1[0].id).toBe("mtc-h1-yard");
+    expect(c1[0].id).toBe("mtc-c1");
+    expect(unlockCityOf(trailH1[0])).toBe("brick-city");
+    expect(unlockCityOf(yardH1[0])).toBe("brick-city");
+    expect(unlockCityOf(c1[0])).toBe("brick-city");
+    const freshState = fresh();
+    expect(isUnlocked(trailH1[0], freshState)).toBe(true);
+    expect(isUnlocked(yardH1[0], freshState)).toBe(true);
+    expect(isUnlocked(c1[0], freshState)).toBe(true);
   });
 
   it("keeps later models inside the original stat ranges and prices Summit Hollow higher", () => {

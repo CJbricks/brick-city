@@ -184,12 +184,15 @@ const SHOE_DEAL_LIST = [
     id: "mount-to-coast",
     name: "Mount to Coast",
     brands: ["Mount to Coast"],
-    styles: ["trail", "versatile"],
-    shoes: ["Mount to Coast T1", "Mount to Coast R1"],
+    // H1 (trail + backyard) and C1 (marathon) put this brand on all three
+    // racks, same idea as Hoka and Adidas. The short-road tax is the
+    // trade for covering every style instead of a style penalty.
+    styles: ["road", "trail", "versatile"],
+    shoes: ["Mount to Coast T1", "Mount to Coast R1", "Mount to Coast H1", "Mount to Coast C1"],
     discount: 0.3,
     boost: 0.06,
-    penalty: -0.03,
-    shortRoad: 0,
+    penalty: 0,
+    shortRoad: -0.02,
     raceCoins: 12,
     minLevel: 7,
     gates: dirtGates(7),
