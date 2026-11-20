@@ -774,7 +774,7 @@ Brick City has a clinic east of the upper street, past the track. The sign says 
 | Treatment | 22 coins and 1 energy | Only if you are injured. Cuts 2 nights off the injury. At 0 nights the injury and the sore flag clear. Refuses, and does not take the coins, if the chart is clear. Once a day. |
 | Soft tissue | 10 coins, 0 energy | Clears soreness and takes 12 fatigue off. It does not clear a blister. |
 | Blister care | 8 coins, 0 energy | Clears a blister and the sore flag that came with it. Refuses, and does not take the coins, if there is no blister. It does not use the once-a-day treatment flag. |
-| Sick visit | 200 coins, 0 energy | Only while you are sick (the rare morning illness). Clears it immediately so you can run again, and removes 65% of current Peak Fitness. The menu asks you to confirm before charging. Refuses, and does not take the coins, if you are healthy or broke. The row only appears while sick. |
+| Sick visit | 200 coins, 0 energy | Only while you are sick (the rare morning illness). Clears it immediately so you can run again, and removes 90% of current Peak Fitness. The menu asks you to confirm before charging. Refuses, and does not take the coins, if you are healthy or broke. The row only appears while sick. |
 | Injury screen | Free | Tells you the injury, whether you are sick or sore, and if hard weeks are stacking up. |
 
 Blister care is priced under soft tissue in every town. The coin number is on the city record (`clinic.blister` in `src/lib/constants.js`), not on the save, so an old `brick-city-save-v1` file does not need a new field. Sick visit prices live on the same record (`clinic.sick`). Brick City is 200. Summit Hollow is 360, the highest, matching how treatment and soft tissue already scale.
@@ -812,7 +812,7 @@ About once every few in-game weeks to a few months, sleep can wake you sick. The
 - Walking (the neighborhood long walk), eating, napping, shopping, and the clinic still work.
 - The status sheet and the HUD show `Sick: N day(s) left`.
 
-When it ends on its own, **Peak Fitness is cut in half** (50% of the current Peak is removed). A **Sick visit** at any town's PT clinic cures it now so you can run again, but removes **65%** of current Peak instead, and costs coins (200 in Brick City; other towns scale).
+When it ends on its own, **Peak Fitness is cut in half** (50% of the current Peak is removed). A **Sick visit** at any town's PT clinic cures it now so you can run again, but removes **90%** of current Peak instead, and costs coins (200 in Brick City; other towns scale).
 
 The roll is deliberately rare. All the knobs are named constants in `src/lib/sickness.js` so CJ can retune without reading the sleep code:
 
@@ -823,7 +823,7 @@ The roll is deliberately rare. All the knobs are named constants in `src/lib/sic
 | `SICKNESS_SAFE_DAYS` | `7` | No sickness in the first in-game week of a new save |
 | `SICKNESS_DURATION_DAYS` | `2` | How many full days you stay sick |
 | `SICKNESS_NATURAL_PEAK_LOSS` | `0.5` | Peak fraction removed on natural recovery |
-| `SICKNESS_CLINIC_PEAK_LOSS` | `0.65` | Peak fraction removed by a sick visit |
+| `SICKNESS_CLINIC_PEAK_LOSS` | `0.9` | Peak fraction removed by a sick visit |
 
 With the 21-day gap and a 1/28 daily chance, the average gap is about `21 + 28 = 49` days (~7 weeks), inside the 6–8 week aim. The roll also refuses if you just recovered on that same wake (never twice in a row) or if you are already sick.
 

@@ -39,8 +39,13 @@ export const SICKNESS_DURATION_DAYS = 2;
 /** Natural recovery removes this fraction of current Peak Fitness. */
 export const SICKNESS_NATURAL_PEAK_LOSS = 0.5;
 
-/** A sick visit at the clinic removes this fraction instead. */
-export const SICKNESS_CLINIC_PEAK_LOSS = 0.65;
+/**
+ * A sick visit at the clinic removes this fraction instead.
+ * Why 90%: paying to clear sickness now should cost more Peak than
+ * riding it out (50%). The visit is for race week or when you cannot
+ * wait two days — not a cheap shortcut around the fitness hit.
+ */
+export const SICKNESS_CLINIC_PEAK_LOSS = 0.9;
 
 export const SICKNESS_WAKE_LINE = "You wake up feeling sick...";
 
@@ -68,7 +73,7 @@ export function sicknessStatusLine(state) {
 /**
  * Cut Peak by a fraction of whatever it is right now.
  * 0.5 means "half of current peak is removed" (peak becomes half).
- * 0.65 means peak keeps 35%.
+ * 0.9 means peak keeps 10%.
  */
 export function cutPeakFraction(state, fraction) {
   const peak = state?.condition?.peak;

@@ -1,7 +1,7 @@
 /**
  * sickness.test.js
  * Rare morning illness: trigger rarity and gap, blocked runs, natural
- * Peak cut, clinic sick visit (65% Peak + coins), and old-save load.
+ * Peak cut, clinic sick visit (90% Peak + coins), and old-save load.
  */
 
 import { describe, expect, it } from "vitest";
@@ -64,7 +64,7 @@ describe("sickness tuning", () => {
     expect(SICKNESS_SAFE_DAYS).toBe(7);
     expect(SICKNESS_DURATION_DAYS).toBe(2);
     expect(SICKNESS_NATURAL_PEAK_LOSS).toBe(0.5);
-    expect(SICKNESS_CLINIC_PEAK_LOSS).toBe(0.65);
+    expect(SICKNESS_CLINIC_PEAK_LOSS).toBe(0.9);
   });
 });
 
@@ -207,11 +207,11 @@ describe("sickness recovery and clinic", () => {
     state.condition.peak = 80;
     cutPeakFraction(state, 0.5);
     expect(state.condition.peak).toBe(40);
-    cutPeakFraction(state, 0.65);
-    expect(state.condition.peak).toBe(14);
+    cutPeakFraction(state, 0.9);
+    expect(state.condition.peak).toBe(4);
   });
 
-  it("sick visit cures immediately, removes 65% peak, and charges coins", () => {
+  it("sick visit cures immediately, removes 90% peak, and charges coins", () => {
     const state = makeSick(fresh());
     state.condition.peak = 40;
     state.coins = 250;
@@ -221,7 +221,8 @@ describe("sickness recovery and clinic", () => {
     const done = applyClinicSick(state);
     expect(done.ok).toBe(true);
     expect(isSick(done.state)).toBe(false);
-    expect(done.state.condition.peak).toBe(14);
+    expect(done.state.condition.peak).toBe(4);
+    expect(SICKNESS_CLINIC_PEAK_LOSS).toBe(0.9);
     expect(done.state.coins).toBe(250 - price);
 
     const run = applyRun(done.state, "easy-run");
@@ -255,8 +256,11 @@ describe("sickness recovery and clinic", () => {
 
     const sickMenu = menuFor("clinic", makeSick(fresh()));
     expect(sickMenu.items.map((row) => row.label)).toContain("Sick visit");
-    expect(sickMenu.items.find((row) => row.action.type === "clinic-sick").detail).toMatch(/200/);
+    expect(sickMenu.items.find((row) => row.action.type === "clinic-sick").detail).toMatch(
+      /200 coins · clears sickness · −90% Peak/,
+    );
 
+    expect(clinicRates("summit-hollow").sick).toBe(360);
     expect(clinicRates("summit-hollow").sick).toBeGreaterThan(clinicRates("brick-city").sick);
     const summit = makeSick(fresh());
     summit.city = "summit-hollow";

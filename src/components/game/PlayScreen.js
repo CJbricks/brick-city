@@ -227,7 +227,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
         type: "dialogue",
         speaker: "PT Clinic",
         pages: [
-          `Sick visit. ${rates.sick} coins. Clears the sickness so you can run, but Peak Fitness drops hard (65%). Proceed?`,
+          `Sick visit. ${rates.sick} coins. Clears the sickness so you can run, but Peak Fitness drops hard (90%). Proceed?`,
         ],
         index: 0,
         choices: [
