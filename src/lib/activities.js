@@ -54,7 +54,7 @@
  * (sickness.js). While sick, runs, workouts, and races refuse. A walk,
  * a meal, a nap, a shop, and a sick visit at the clinic still work.
  * Natural recovery halves Peak. A sick visit cures now and cuts Peak
- * harder (65%). The coin price is on each city's clinic record.
+ * harder (90%). The coin price is on each city's clinic record.
  *
  * The Run Store shelf grows when you reach a city. catalog.js decides
  * which models are unlocked. This file only builds the buttons and
@@ -2690,7 +2690,7 @@ export function menuFor(locationId, state) {
         items.push(
           item(
             "Sick visit",
-            `${rates.sick} coins · clears sickness · −65% Peak`,
+            `${rates.sick} coins · clears sickness · −90% Peak`,
             { type: "clinic-sick" },
             state.coins < rates.sick,
             `Need ${rates.sick} coins.`,
