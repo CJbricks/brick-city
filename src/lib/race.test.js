@@ -1,11 +1,13 @@
 /**
  * race.test.js
- * Bonk / DNF, the readiness warning, gear trade-offs, and Remy's score.
+ * Bonk / DNF, the readiness warning, gear trade-offs, Remy's score, and
+ * half / marathon distance scaling (energy, XP, coins, fatigue, form).
  * Rolls are passed in so none of this depends on luck.
  */
 
 import { describe, expect, it } from "vitest";
 import {
+  RACES,
   flavorTime,
   fuelWarning,
   gearLine,
@@ -127,5 +129,76 @@ describe("gear and rivals", () => {
     expect(rivalScores(fresh, 0.8).win).toBe(true);
     expect(flavorTime({ id: "5k" }, 60, false)).toBe("21:10");
     expect(flavorTime({ id: "5k" }, 10, true)).toBe("31:40");
+    expect(flavorTime({ id: "half" }, 60, false)).toBe("1:28:00");
+    expect(flavorTime({ id: "marathon" }, 10, true)).toBe("5:40:00");
   });
 });
+
+describe("half and marathon race design", () => {
+  it("scales energy, XP, coins, fatigue, and FOOD past the 10K", () => {
+    const five = RACES["5k"];
+    const ten = RACES["10k"];
+    const half = RACES.half;
+    const marathon = RACES.marathon;
+
+    expect(half.miles).toBe(13.1);
+    expect(marathon.miles).toBe(26.2);
+    expect(half.energy).toBeGreaterThan(ten.energy);
+    expect(marathon.energy).toBeGreaterThan(half.energy);
+    expect(half.fatigue).toBeGreaterThan(ten.fatigue);
+    expect(marathon.fatigue).toBeGreaterThan(half.fatigue);
+    expect(half.nutrition).toBeLessThan(ten.nutrition);
+    expect(marathon.nutrition).toBeLessThan(half.nutrition);
+    expect(half.xp.overall).toBeGreaterThan(ten.xp.overall);
+    expect(marathon.xp.overall).toBeGreaterThan(half.xp.overall);
+    expect(half.xp.marathon).toBeGreaterThan(ten.xp.marathon);
+    expect(marathon.xp.marathon).toBeGreaterThan(half.xp.marathon);
+    expect(half.coins).toBeGreaterThan(ten.coins);
+    expect(marathon.coins).toBeGreaterThan(half.coins);
+    expect(half.energy).toBe(4);
+    expect(marathon.energy).toBe(5);
+    expect(half.fatigue).toBe(32);
+    expect(marathon.fatigue).toBe(44);
+    expect(half.coins).toBe(72);
+    expect(marathon.coins).toBe(120);
+    expect(five.energy).toBe(2);
+  });
+
+  it("weights form toward Endurance more as distance grows", () => {
+    expect(RACES["5k"].ideal.endurance).toBeLessThan(RACES["10k"].ideal.endurance);
+    expect(RACES["10k"].ideal.endurance).toBeLessThan(RACES.half.ideal.endurance);
+    expect(RACES.half.ideal.endurance).toBeLessThan(RACES.marathon.ideal.endurance);
+    expect(RACES.half.ideal).toEqual({ endurance: 0.55, peak: 0.45 });
+    expect(RACES.marathon.ideal).toEqual({ endurance: 0.65, peak: 0.35 });
+  });
+
+  it("DNFs a half or marathon on a chance bonk the way a 10K does", () => {
+    const half = judgeBonk({
+      nutrition: 20,
+      sleepQuality: "good",
+      fatigue: 10,
+      roll: 0.1,
+      km: RACES.half.km,
+    });
+    expect(half).toMatchObject({ bonk: true, dnf: true, slowFinish: false });
+    const marathon = judgeBonk({
+      nutrition: 70,
+      sleepQuality: "poor",
+      fatigue: 10,
+      roll: 0.1,
+      km: RACES.marathon.km,
+    });
+    expect(marathon.dnf).toBe(true);
+  });
+
+  it("skips the short-road vest tax on half and marathon readiness", () => {
+    const state = createNewGame({ name: "Ada", gender: "female" });
+    state.gear.carry = "camelbak-vest";
+    state.gear.ownedCarry = ["camelbak-vest"];
+    expect(readiness(state, RACES["5k"]).gearMod).toBeCloseTo(-0.04);
+    expect(readiness(state, RACES.half).gearMod).toBeCloseTo(0);
+    expect(readiness(state, RACES.marathon).gearMod).toBeCloseTo(0);
+  });
+});
+
+

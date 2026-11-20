@@ -44,7 +44,19 @@ import {
 import { slotFromEnergy } from "@/lib/calendar";
 import { SHIFT_POOL, currentShift } from "@/lib/shifts";
 import { deserialize, serialize } from "@/lib/save";
-import { isMountainOpen, isTenKOpen, mountainStatus } from "@/lib/unlocks";
+import { RACES } from "@/lib/race";
+import {
+  HALF_UNLOCK_LEVEL,
+  MARATHON_UNLOCK_LEVEL,
+  START_COINS,
+} from "@/lib/constants";
+import {
+  isHalfOpen,
+  isMarathonOpen,
+  isMountainOpen,
+  isTenKOpen,
+  mountainStatus,
+} from "@/lib/unlocks";
 import { xpToReachLevel } from "@/lib/xp";
 
 function fresh() {
@@ -472,6 +484,60 @@ describe("races, rivals, and unlocks", () => {
     expect(blocked.ok).toBe(false);
   });
 
+  it("refuses the half and marathon until unlock, then pays scaled rewards", () => {
+    expect(applyRace(fresh(), "half", 0.8).ok).toBe(false);
+    expect(applyRace(fresh(), "marathon", 0.8).ok).toBe(false);
+
+    const halfReady = fresh();
+    halfReady.xp.overall = xpToReachLevel(HALF_UNLOCK_LEVEL);
+    halfReady.progress.fiveKFinished = true;
+    halfReady.progress.tenKFinished = true;
+    halfReady.condition.nutrition = 90;
+    halfReady.condition.sleepQuality = "good";
+    halfReady.condition.fatigue = 10;
+    halfReady.energy = 10;
+    expect(isHalfOpen(halfReady)).toBe(true);
+    const half = applyRace(halfReady, "half", 0.8);
+    expect(half.ok).toBe(true);
+    expect(half.state.progress.halfFinished).toBe(true);
+    expect(half.state.coins).toBe(START_COINS + RACES.half.coins);
+    expect(half.state.xp.overall).toBe(halfReady.xp.overall + RACES.half.xp.overall);
+    expect(half.state.xp.marathon).toBe(RACES.half.xp.marathon);
+    expect(half.state.energy).toBe(10 - RACES.half.energy);
+    expect(half.state.condition.fatigue).toBe(10 + RACES.half.fatigue);
+    expect(half.lines.join(" ")).toMatch(/Brick City Half/);
+    expect(half.lines.join(" ")).not.toMatch(/later season|later build/i);
+
+    const marathonReady = fresh();
+    marathonReady.xp.overall = xpToReachLevel(MARATHON_UNLOCK_LEVEL);
+    marathonReady.progress.halfFinished = true;
+    marathonReady.condition.nutrition = 95;
+    marathonReady.condition.sleepQuality = "good";
+    marathonReady.condition.fatigue = 8;
+    marathonReady.condition.endurance = 55;
+    marathonReady.condition.peak = 35;
+    marathonReady.energy = 10;
+    expect(isMarathonOpen(marathonReady)).toBe(true);
+    const marathon = applyRace(marathonReady, "marathon", 0.85);
+    expect(marathon.ok).toBe(true);
+    expect(marathon.state.progress.marathonFinished).toBe(true);
+    expect(marathon.state.coins).toBe(START_COINS + RACES.marathon.coins);
+    expect(marathon.state.xp.marathon).toBe(RACES.marathon.xp.marathon);
+    expect(marathon.state.energy).toBe(10 - RACES.marathon.energy);
+    expect(marathon.state.condition.fatigue).toBe(8 + RACES.marathon.fatigue);
+    expect(marathon.celebrate).toBe(true);
+    expect(marathon.lines.join(" ")).toMatch(/brick-red ribbon|Marathon Running track/i);
+
+    // Energy and FOOD were spent; refill and confirm the first-finish line does not repeat.
+    const nextStart = structuredClone(marathon.state);
+    nextStart.energy = 10;
+    nextStart.condition.nutrition = 95;
+    nextStart.condition.fatigue = 8;
+    const second = applyRace(nextStart, "marathon", 0.85);
+    expect(second.ok).toBe(true);
+    expect(second.lines.join(" ")).not.toMatch(/brick-red ribbon/);
+  });
+
   it("pauses a bonk when a gel is pocketed, then saves the race only if you eat it", () => {
     const doomed = fresh();
     doomed.condition.nutrition = 15;
@@ -653,7 +719,9 @@ function menuIds(locationId) {
 
 describe("track, treadmill, and park workouts", () => {
   it("puts threshold and interval runs on the track and the treadmill, and zone 2 on the park", () => {
-    expect(menuIds("track")).toEqual(expect.arrayContaining(["intervals", "threshold", "interval-run", "5k"]));
+    expect(menuIds("track")).toEqual(
+      expect.arrayContaining(["intervals", "threshold", "interval-run", "5k", "half", "marathon"]),
+    );
     expect(menuIds("gym")).toEqual(expect.arrayContaining(["treadmill", "threshold", "interval-run"]));
     expect(menuIds("park")).toContain("zone-2");
     expect(menuIds("gym")).not.toContain("zone-2");
@@ -664,6 +732,11 @@ describe("track, treadmill, and park workouts", () => {
     expect(track.items.find((entry) => entry.action.id === "threshold").label).toBe("Threshold Run");
     expect(track.items.find((entry) => entry.action.id === "interval-run").label).toBe("Interval Run");
     expect(menuFor("park", fresh()).items.find((entry) => entry.action.id === "zone-2").label).toBe("Zone 2 Run");
+    const halfRow = track.items.find((entry) => entry.action.id === "half");
+    expect(halfRow.disabled).toBe(true);
+    expect(halfRow.detail).toMatch(/to enter/i);
+    expect(halfRow.detail).not.toMatch(/later season|later build/i);
+    expect(track.items.find((entry) => entry.action.id === "marathon").detail).not.toMatch(/later season|later build/i);
   });
 
   it("runs every track workout to the end, including the 5K", () => {

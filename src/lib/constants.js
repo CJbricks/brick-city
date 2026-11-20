@@ -261,6 +261,15 @@ export const POOR_SLEEP_FATIGUE = 80;
 /** When only one of fuel/sleep is bad, a roll under this bonks (unless you packed a gel). */
 export const BONK_CHANCE = 0.45;
 
+/**
+ * Race unlock levels. Easy to retune without hunting through unlocks.js.
+ * Half at 15: after the 5K and 10K, you still need a real training block
+ * before 13.1 miles. Marathon at 20: the big milestone after the half,
+ * not something you stumble into the week you unlock it.
+ */
+export const HALF_UNLOCK_LEVEL = 15;
+export const MARATHON_UNLOCK_LEVEL = 20;
+
 /** Detraining stays off for the first two days without a run. */
 export const DETRAIN_FREE_DAYS = 2;
 export const ENDURANCE_DETRAIN_DAY = 6;

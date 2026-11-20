@@ -175,6 +175,29 @@ describe("save serialization", () => {
     expect(cleaned.sponsors.lastOfferDay).toBeNull();
   });
 
+  it("loads an old save from before half and marathon finish flags", () => {
+    const legacy = createNewGame({ name: "Ada", gender: "female" });
+    delete legacy.progress.halfFinished;
+    delete legacy.progress.marathonFinished;
+    // Mimic a blob that never knew those races existed.
+    const raw = JSON.parse(serialize(legacy));
+    delete raw.progress.halfFinished;
+    delete raw.progress.marathonFinished;
+    const loaded = deserialize(JSON.stringify(raw));
+    expect(loaded).not.toBeNull();
+    expect(loaded.version).toBe(1);
+    expect(loaded.progress.halfFinished).toBe(false);
+    expect(loaded.progress.marathonFinished).toBe(false);
+    expect(loaded.progress.fiveKFinished).toBe(false);
+
+    const finished = createNewGame({ name: "Ada", gender: "male" });
+    finished.progress.halfFinished = true;
+    finished.progress.marathonFinished = true;
+    const round = deserialize(serialize(finished));
+    expect(round.progress.halfFinished).toBe(true);
+    expect(round.progress.marathonFinished).toBe(true);
+  });
+
   it("rejects junk instead of loading a half save", () => {
     expect(deserialize("")).toBeNull();
     expect(deserialize("not json")).toBeNull();

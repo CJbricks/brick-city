@@ -10,20 +10,22 @@
  * save the day.
  *
  * A 5K that only *chances* a bonk becomes a slow finish (you do cross the
- * line, for half credit). A 10K that chances a bonk is a DNF. The sure
- * bonk is a DNF at either distance. That matches the design note that a
- * short race can be "just slow" while an under-fueled, under-slept start
- * ends the race.
+ * line, for half credit). A 10K or longer that chances a bonk is a DNF.
+ * The sure bonk is a DNF at any distance. That matches the design note
+ * that a short race can be "just slow" while an under-fueled, under-slept
+ * start ends the race. Half and marathon drain more FOOD and add more
+ * fatigue, so gels and tapering matter more the longer the course.
  *
  * A race spends energy the same way a run does. The 5K and Remy's mile
- * cost 2. The 10K costs 3. That is one block more than the old prices,
- * in line with every other run. Eating a gel still gives one block back.
- * It does not refund the whole race.
+ * cost 2. The 10K costs 3. The Half costs 4. The Marathon costs 5. Eating
+ * a gel still gives one block back. It does not refund the whole race.
  *
  * Shoe stats live in catalog.js. This file turns them into a pace percent
  * for the race in front of you, then adds the sponsor and the vest.
  * finishQuality uses the same score bands as the clock, so a fast time
- * and a win are the same result.
+ * and a win are the same result. Road / marathon shoes help here; trail
+ * and backyard pairs trade away road pace. shortRoad vest tax only hits
+ * races at or under about 5.5 km, so a half or marathon does not get it.
  *
  * A coffee note and Race IQ join that same percent. The coffee note is
  * one run or race, then it is gone. Race IQ's help is capped in cafe.js
@@ -93,6 +95,50 @@ export const RACES = {
     nutrition: -18,
     dnfXp: { overall: 12, marathon: 6 },
     dnfFatigue: 16,
+  },
+  // Half: ~2× the 10K in miles. One more energy block, endurance-leaning
+  // form, bigger FOOD drain so a gel (or two) is real insurance.
+  half: {
+    id: "half",
+    name: "Brick City Half",
+    km: 21.1,
+    miles: 13.1,
+    slots: 4,
+    style: "road",
+    ideal: { endurance: 0.55, peak: 0.45 },
+    idealLabel: "55% Endurance / 45% Peak",
+    xp: { overall: 110, marathon: 80, ultra: 14, versatile: 10 },
+    attributes: { speed: 6, endurance: 16, mental: 6 },
+    coins: 72,
+    energy: 4,
+    peak: 4,
+    endurance: 8,
+    fatigue: 32,
+    nutrition: -28,
+    dnfXp: { overall: 18, marathon: 10 },
+    dnfFatigue: 22,
+  },
+  // Marathon: the milestone. Heavier endurance mix than the half, five
+  // energy blocks, the biggest FOOD and fatigue hit on the calendar.
+  marathon: {
+    id: "marathon",
+    name: "Brick City Marathon",
+    km: 42.2,
+    miles: 26.2,
+    slots: 5,
+    style: "road",
+    ideal: { endurance: 0.65, peak: 0.35 },
+    idealLabel: "65% Endurance / 35% Peak",
+    xp: { overall: 170, marathon: 130, ultra: 20, versatile: 12 },
+    attributes: { speed: 4, endurance: 24, mental: 10 },
+    coins: 120,
+    energy: 5,
+    peak: 3,
+    endurance: 12,
+    fatigue: 44,
+    nutrition: -40,
+    dnfXp: { overall: 28, marathon: 16 },
+    dnfFatigue: 30,
   },
 };
 
@@ -321,12 +367,26 @@ export function rivalScores(state, roll) {
   return { player, rival, win: player >= rival };
 }
 
+/**
+ * Flavor clocks by distance. Same score bands as finishQuality, so a
+ * "win" score and a fast printed time stay the same result. Unknown ids
+ * fall through to the 10K column so an old test that only set id "5k"
+ * or left a plain 10K still reads the same.
+ */
+const FLAVOR_CLOCKS = {
+  "5k": { slow: "31:40", win: "21:10", podium: "23:55", solid: "26:40", finish: "29:05" },
+  "10k": { slow: "1:18:00", win: "45:30", podium: "51:20", solid: "57:10", finish: "1:04:00" },
+  half: { slow: "2:42:00", win: "1:28:00", podium: "1:38:00", solid: "1:48:00", finish: "2:02:00" },
+  marathon: { slow: "5:40:00", win: "3:05:00", podium: "3:25:00", solid: "3:48:00", finish: "4:20:00" },
+};
+
 export function flavorTime(race, score, slow) {
-  if (slow) return race.id === "5k" ? "31:40" : "1:18:00";
-  if (score >= 55) return race.id === "5k" ? "21:10" : "45:30";
-  if (score >= 40) return race.id === "5k" ? "23:55" : "51:20";
-  if (score >= 28) return race.id === "5k" ? "26:40" : "57:10";
-  return race.id === "5k" ? "29:05" : "1:04:00";
+  const clocks = FLAVOR_CLOCKS[race?.id] || FLAVOR_CLOCKS["10k"];
+  if (slow) return clocks.slow;
+  if (score >= 55) return clocks.win;
+  if (score >= 40) return clocks.podium;
+  if (score >= 28) return clocks.solid;
+  return clocks.finish;
 }
 
 /**
