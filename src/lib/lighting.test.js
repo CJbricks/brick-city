@@ -26,7 +26,8 @@ describe("time of day lighting", () => {
   it("keeps windows and streetlamps inside the 32px town", () => {
     const lights = townLights();
     expect(lights.windows.length).toBeGreaterThanOrEqual(8);
-    expect(lights.lamps).toHaveLength(8);
+    // Core plaza lamps plus the east-expansion posts (garden / club / kiln).
+    expect(lights.lamps.length).toBeGreaterThanOrEqual(8);
     const width = COLS * TILE;
     const height = ROWS * TILE;
     for (const pane of lights.windows) {

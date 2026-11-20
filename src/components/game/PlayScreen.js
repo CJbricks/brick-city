@@ -58,6 +58,7 @@ import {
   perform,
   presentShop,
   sponsorMenuItems,
+  streetRaceChat,
 } from "@/lib/activities";
 import { describeNeeds, isMountainOpen, mountainStatus } from "@/lib/unlocks";
 import { applyForage, forageArea } from "@/lib/forage";
@@ -343,6 +344,21 @@ export function PlayScreen({ game, setGame, onTitle }) {
       });
       return;
     }
+    // Tess / Kit / Otto / Mara: optional street races + rematch timer.
+    const street = streetRaceChat(id, currentState());
+    if (street) {
+      setPanel({
+        type: "dialogue",
+        speaker: street.speaker,
+        pages: street.lines,
+        index: 0,
+        choices: street.choices,
+        choiceIndex: 0,
+        opponentId: street.opponentId,
+        music: street.canRace ? "battle" : null,
+      });
+      return;
+    }
     const menu = menuFor(id, currentState());
     if (menu) {
       setPanel({
@@ -356,7 +372,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
       });
       return;
     }
-    const chat = chatLines(id);
+    const chat = chatLines(id, currentState());
     if (chat) {
       setPanel({ type: "dialogue", speaker: chat.speaker, pages: chat.lines, index: 0 });
     }
@@ -375,6 +391,10 @@ export function PlayScreen({ game, setGame, onTitle }) {
     }
     if (choice.id === "race") {
       setPanel({ type: "race", id: "rival" });
+      return;
+    }
+    if (choice.id === "street-race" && current.opponentId) {
+      run({ type: "street-race", id: current.opponentId });
       return;
     }
     setPanel(null);

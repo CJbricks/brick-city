@@ -978,6 +978,60 @@ An old `brick-city-save-v1` file has no Race IQ, no cup count, and no Wi-Fi flag
 
 The shop's name is not in the save. The door on the map is the id `cafe`. Resume rebuilds the sign from this file, so a renamed shop does not need a second key or a lookup from an older name.
 
+Each Wi-Fi hour also adds 1 to a lifetime counter, `wifiTurns`. Sleep does **not** clear it. That total is what the Cornerstone Pace Club invite checks. An old save has no `wifiTurns`. Resume fills 0. We do not invent past study hours.
+
+## Bigger Brick City map (beginner)
+
+The overworld used to be **48×46** tiles (2208). It is now **72×66** (4752), about **2.15×** the old area. `TOWN_MAP_COLS` and `TOWN_MAP_ROWS` in `src/game/town.js` are the standard size. Future towns should use the same footprint so camera bounds and tests stay comparable.
+
+What stayed put: every old building, door, trail gate, Remy, Coach Bram, Juniper, and the ranger. Their tile coordinates did not move. What grew: more streets east and south, a longer park trail, and four new landmarks:
+
+| Place | What it is |
+|---|---|
+| Community Garden | East of the clinic spine. Pia Moss's park-trail chore. |
+| Branch Nook | Tiny shelf. Flavor only. Real study is still cafe Wi-Fi. |
+| Brick Kiln Overlook | Old chimney view. Harlan Voss talks bricks. |
+| Cornerstone Pace Club gazebo | Invite-only run club meeting spot. |
+
+If a saved pixel lands out of bounds or inside a wall (map grew, or an old 16px position went wrong), Resume moves you to the **town square** dirt east of the fountain (`TOWN_SQUARE` / `safePlayerPosition`). Home is still the new-game spawn.
+
+## NPC rematches (beginner)
+
+Remy Calder is still the story rival at the track. Four **optional** street / trail opponents live on the bigger map:
+
+| Who | Where |
+|---|---|
+| Tess Quay | Grocery-block sidewalk |
+| Kit Solano | Plaza near the fountain |
+| Otto Venn | Park trail south |
+| Mara Flint | Mountain path (after the gate opens) |
+
+Race one of them once. About **10 in-game days** later (`REMATCH_COOLDOWN_DAYS` in `src/lib/streetRaces.js`, roughly 1–2 weeks) they offer a **just-for-fun rematch**. Rematches never unlock the mountain, the 10K, or the club. The timers live in `state.rematches`. An old save has none. Resume fills `{}`.
+
+Other new NPCs (Ned, Pia, Harlan, Lina, Drew, Sable) give tips, side quests, or club talk. Names are original.
+
+## Cornerstone Pace Club (beginner)
+
+**Invite rule (all three):**
+
+1. Finished the Brick City 5K (`progress.fiveKFinished`)
+2. Finished the Community 10K (`progress.tenKFinished`)
+3. Spent **5** total Wi-Fi hours at Tangentline (`wifiTurns >= 5`). Hours do **not** need to be consecutive.
+
+When the third piece lands, a note delivers the invite (`maybeDeliverRunClubInvite`). Lina Shore at the east gazebo also knows. Stand on the **club** mat to join.
+
+**Once joined:**
+
+- **Weekly group run** — once per `calendar.weekIndex`, costs **3** energy (same as a normal easy run under the +1 energy costs), logs miles, bonus XP, and a short pace bump for a few days.
+- **Member tips** from Drew and Sable.
+- **Side quests:** Pia's garden park-trail loops; Lina's night-city homework.
+
+All bonus numbers live in `src/lib/runclub.js` as `RUN_CLUB_*` constants so CJ can retune without hunting menus.
+
+**TODO (not built):** Strava-style segments and local-legend status need a running watch. The hook string is `RUN_CLUB_SEGMENT_HOOK`.
+
+Save fields: `wifiTurns`, `runClub`, `rematches`. Missing means 0 / not a member / empty timers. Version stays **1**.
+
 ## What this build does not do yet
 
-Backyard race events, the other cities, and real-life run logging are in the design and not in this build. The Half Marathon and Marathon are playable from the Local Track once unlocked. Shoe sponsors and nutrition sponsors are in this private prototype. The fictional brand ladder in the README is the public-release plan.
+Backyard race events, the other cities, real-life run logging, and running-watch segments are in the design and not in this build. The Half Marathon and Marathon are playable from the Local Track once unlocked. Shoe sponsors and nutrition sponsors are in this private prototype. The fictional brand ladder in the README is the public-release plan.

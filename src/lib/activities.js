@@ -41,7 +41,11 @@
  *
  * The coffee shop is three buttons: a cup, a pastry, and Wi-Fi. The cup
  * count, the Wi-Fi flag, and any leftover pace note reset on sleep.
- * Race IQ does not. It is the point of studying, and it stays.
+ * Race IQ does not. It is the point of studying, and it stays. Each
+ * Wi-Fi hour also adds to wifiTurns (lifetime) for the run-club invite.
+ *
+ * Street races (Tess, Kit, Otto, Mara) and Cornerstone Pace Club live
+ * here too. Numbers are in streetRaces.js and runclub.js.
  *
  * The town-square activity board is five rows in RUNS. The easy loop
  * and the 5K time trial cost 3 energy. The speed loop costs 4, the
@@ -234,8 +238,51 @@ import {
   readRaceIq,
   wifiGain,
 } from "@/lib/cafe";
+import {
+  RUN_CLUB_GARDEN_COIN_REWARD,
+  RUN_CLUB_GARDEN_PARK_RUNS,
+  RUN_CLUB_GROUP_ATTRIBUTES,
+  RUN_CLUB_GROUP_ENERGY,
+  RUN_CLUB_GROUP_FATIGUE,
+  RUN_CLUB_GROUP_MILES,
+  RUN_CLUB_GROUP_NUTRITION,
+  RUN_CLUB_GROUP_PACE_DAYS,
+  RUN_CLUB_GROUP_XP,
+  RUN_CLUB_NAME,
+  RUN_CLUB_NIGHT_CITY_COIN_REWARD,
+  RUN_CLUB_SEGMENT_HOOK,
+  RUN_CLUB_WIFI_TURNS,
+  groupRunAvailable,
+  isRunClubMember,
+  readWifiTurns,
+  runClubInviteReady,
+} from "@/lib/runclub";
+import {
+  STREET_RACE,
+  STREET_RACE_ENERGY,
+  hasRacedBefore,
+  noteStreetRace,
+  rematchReady,
+  streetOpponentById,
+  streetOpponentByLocation,
+  streetRaceScores,
+} from "@/lib/streetRaces";
 
 export { JOBS, SHIFT_POOL, currentShift } from "@/lib/shifts";
+export {
+  RUN_CLUB_NAME,
+  RUN_CLUB_WIFI_TURNS,
+  runClubInviteReady,
+  isRunClubMember,
+  groupRunAvailable,
+  readWifiTurns,
+} from "@/lib/runclub";
+export {
+  STREET_OPPONENTS,
+  rematchReady,
+  hasRacedBefore,
+  streetOpponentByLocation,
+} from "@/lib/streetRaces";
 
 const XP_KEYS = ["overall", "trail", "marathon", "ultra", "versatile"];
 
@@ -773,6 +820,9 @@ export function createNewGame({ name, gender }) {
     flaskReady: 0,
     // Study points from the shop Wi-Fi. 0 on a new game and on an old save.
     raceIq: 0,
+    // Lifetime Wi-Fi hours at Tangentline (and later town shops). The
+    // run-club invite counts these. An old save loads as 0.
+    wifiTurns: 0,
     // Neighborhood 5K personal best, "m:ss", or null if you have not
     // run the time trial. An old save is missing this and loads as null.
     records: { fiveK: null },
@@ -797,6 +847,19 @@ export function createNewGame({ name, gender }) {
       rivalWins: 0,
       rivalLosses: 0,
       totalMiles: 0,
+    },
+    // Street-race rematch timers. Empty until you race Tess, Kit, Otto, or Mara.
+    rematches: {},
+    // Cornerstone Pace Club. Not a member until the invite is accepted.
+    runClub: {
+      member: false,
+      invited: false,
+      lastGroupWeek: null,
+      groupPaceUntilDay: null,
+      gardenQuest: null,
+      gardenStartParks: null,
+      nightQuest: null,
+      nightCityDone: false,
     },
     milestones: [],
     weeklyHistory: [],
@@ -1139,6 +1202,12 @@ export function applyRun(state, runId, rng = Math.random) {
   if (letterStyle) {
     rollOffers(next, { style: letterStyle, quality: "finish", channel: "letter" }, rng);
   }
+  // Club night-city side quest watches this flag.
+  if (runId === "night-city") {
+    ensureRunClub(next);
+    next.runClub.nightCityDone = true;
+  }
+  lines.push(...maybeDeliverRunClubInvite(next));
   return finish(before, next, lines);
 }
 
@@ -1794,6 +1863,7 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
   spendEnergy(next, energyCost, true);
   if (rescued) applyRescueGel(next);
   sample(next);
+  lines.push(...maybeDeliverRunClubInvite(next));
   return withNotice(finish(before, next, lines), celebrate, speaker);
 }
 
@@ -1910,6 +1980,237 @@ export function applyRival(state, roll = 0.5, choice, rng = Math.random) {
     speaker = noticeBrands(next, lines, { style: "road", quality: "win", channel: "finish" }, rng).speaker;
   }
   return withNotice(finish(before, next, lines), win, speaker);
+}
+
+/**
+ * Optional street / trail duel. Soft XP, rematch timer, never a story gate.
+ */
+export function applyStreetRace(state, opponentId, roll = 0.5, choice) {
+  const opponent = streetOpponentById(opponentId);
+  if (!opponent) return refuse(state, ["Nobody is lined up."]);
+  if (isSick(state)) return refuse(state, [SICKNESS_BLOCK_MESSAGE]);
+  if (readEnergy(state) < STREET_RACE_ENERGY) return refuse(state, [LOW_ENERGY]);
+  const threat = judgeBonk({
+    nutrition: raceStartNutrition(state),
+    sleepQuality: state.condition.sleepQuality,
+    fatigue: state.condition.fatigue,
+    roll,
+    km: 5,
+    chance: bonkThreshold(readRaceIq(state)),
+  });
+  if (gelChoicePending(state, threat, choice)) {
+    return { ok: true, needsChoice: true, state, lines: [BONK_PROMPT], ticker: "", summary: null };
+  }
+  const rescued = Boolean(threat.bonk && choice === "eat" && (state.gels || 0) > 0);
+  const before = state;
+  const next = clone(state);
+  const rematch = hasRacedBefore(next, opponent.id);
+  const lines = [
+    rematch
+      ? `${opponent.name} grins. "Rematch. Just for fun."`
+      : `${opponent.name}, ${opponent.title}, toes a short line with you.`,
+  ];
+  let win = false;
+  if (threat.bonk && !rescued && threat.dnf) {
+    lines.push(`You bonk early. ${opponent.name} jogs it in and waits.`);
+    addXp(next, STREET_RACE.loseXp);
+  } else if (threat.bonk && !rescued) {
+    lines.push(`You fade. ${opponent.name} takes it at the line.`);
+    addXp(next, STREET_RACE.loseXp);
+  } else {
+    const scores = streetRaceScores(next, opponent, roll);
+    win = scores.win;
+    if (rescued) lines.push("The gel lands. The short race is a race again.");
+    if (win) {
+      lines.push(`You hold form and edge ${opponent.name}.`);
+      grantXp(next, STREET_RACE.winXp, opponent.style === "trail" ? "trail" : "road");
+      addAttributes(next, STREET_RACE.winAttributes);
+      next.coins += STREET_RACE.coins;
+      payRaceCoins(next, lines);
+    } else {
+      lines.push(`${opponent.name} kicks late. You learn something anyway.`);
+      addXp(next, STREET_RACE.loseXp);
+      addAttributes(next, STREET_RACE.loseAttributes);
+    }
+  }
+  next.condition.fatigue = clampMeter(next.condition.fatigue + STREET_RACE.fatigue);
+  next.condition.nutrition = clampFood(next, next.condition.nutrition + STREET_RACE.nutrition);
+  next.condition.peak = clampMeter(next.condition.peak + (win ? STREET_RACE.peak : 1));
+  addMiles(next, STREET_RACE.miles);
+  next.calendar.trainedToday = true;
+  const coffeeLine = coffeeEffectLine(next);
+  if (coffeeLine) lines.push(coffeeLine);
+  clearCoffee(next);
+  spendEnergy(next, STREET_RACE_ENERGY, true);
+  if (rescued) applyRescueGel(next);
+  noteStreetRace(next, opponent.id);
+  lines.push("They'll offer an optional rematch in about 1–2 in-game weeks. Never required.");
+  sample(next);
+  return withNotice(finish(before, next, lines), win, null);
+}
+
+function ensureRunClub(state) {
+  if (!state.runClub || typeof state.runClub !== "object") {
+    state.runClub = {
+      member: false,
+      invited: false,
+      lastGroupWeek: null,
+      groupPaceUntilDay: null,
+      gardenQuest: null,
+      gardenStartParks: null,
+      nightQuest: null,
+      nightCityDone: false,
+    };
+  }
+  return state.runClub;
+}
+
+/**
+ * When the three invite rules are newly met, stamp invited and return
+ * dialogue lines. Idempotent: already invited means silence.
+ */
+export function maybeDeliverRunClubInvite(state) {
+  ensureRunClub(state);
+  if (state.runClub.invited || state.runClub.member) return [];
+  if (!runClubInviteReady(state)) return [];
+  state.runClub.invited = true;
+  return [
+    `A note finds you from ${RUN_CLUB_NAME}.`,
+    "Lina Shore at the east gazebo: you've finished the Brick City 5K and 10K, and you've put in five Wi-Fi hours at Tangentline. The club is invite-only. Come by when you want in.",
+  ];
+}
+
+export function applyRunClubJoin(state) {
+  ensureRunClub(state);
+  if (state.runClub.member) {
+    return refuse(state, [`You're already in ${RUN_CLUB_NAME}.`]);
+  }
+  if (!runClubInviteReady(state) && !state.runClub.invited) {
+    return refuse(state, [
+      `${RUN_CLUB_NAME} is invite-only.`,
+      `Finish the Brick City 5K and 10K, and spend ${RUN_CLUB_WIFI_TURNS} Wi-Fi hours at Tangentline Roasters (total, not consecutive).`,
+    ]);
+  }
+  const before = state;
+  const next = clone(state);
+  ensureRunClub(next);
+  next.runClub.member = true;
+  next.runClub.invited = true;
+  next.runClub.nightQuest = "started";
+  return finish(before, next, [
+    `Lina Shore stamps your name into ${RUN_CLUB_NAME}.`,
+    "Weekly group runs meet here. Tips from Drew and Sable. Optional side work if you want it.",
+    RUN_CLUB_SEGMENT_HOOK,
+  ]);
+}
+
+export function applyRunClubGroup(state) {
+  if (!isRunClubMember(state)) {
+    return refuse(state, [`Join ${RUN_CLUB_NAME} first.`]);
+  }
+  if (!groupRunAvailable(state)) {
+    return refuse(state, ["The group already ran this week. Come back next week."]);
+  }
+  if (isSick(state)) return refuse(state, [SICKNESS_BLOCK_MESSAGE]);
+  if (readEnergy(state) < RUN_CLUB_GROUP_ENERGY) return refuse(state, [LOW_ENERGY]);
+  const before = state;
+  const next = clone(state);
+  ensureRunClub(next);
+  next.runClub.lastGroupWeek = next.calendar.weekIndex;
+  next.runClub.groupPaceUntilDay = next.calendar.day + RUN_CLUB_GROUP_PACE_DAYS;
+  grantXp(next, RUN_CLUB_GROUP_XP, "road");
+  addAttributes(next, RUN_CLUB_GROUP_ATTRIBUTES);
+  addMiles(next, RUN_CLUB_GROUP_MILES);
+  next.condition.fatigue = clampMeter(next.condition.fatigue + RUN_CLUB_GROUP_FATIGUE);
+  next.condition.nutrition = clampFood(next, next.condition.nutrition + RUN_CLUB_GROUP_NUTRITION);
+  next.condition.peak = clampMeter(next.condition.peak + 2);
+  next.condition.endurance = clampMeter(next.condition.endurance + 1);
+  next.calendar.trainedToday = true;
+  spendEnergy(next, RUN_CLUB_GROUP_ENERGY, true);
+  sample(next);
+  return finish(before, next, [
+    `${RUN_CLUB_NAME} group run. Easy miles, real talk.`,
+    `+${RUN_CLUB_GROUP_XP.overall} XP. A small pace bump holds for ${RUN_CLUB_GROUP_PACE_DAYS} days.`,
+  ]);
+}
+
+export function applyGardenQuestStart(state) {
+  const before = state;
+  const next = clone(state);
+  ensureRunClub(next);
+  if (next.runClub.gardenQuest === "done") {
+    return refuse(state, ["Pia already thanked you for the garden loops."]);
+  }
+  if (next.runClub.gardenQuest === "started") {
+    return refuse(state, [
+      `Still need ${RUN_CLUB_GARDEN_PARK_RUNS} park trail loops after you took the ask. Check in when you're done.`,
+    ]);
+  }
+  next.runClub.gardenQuest = "started";
+  next.runClub.gardenStartParks = next.progress.parkTrailRuns || 0;
+  return finish(before, next, [
+    "Pia Moss: the community garden wants foot traffic on the park trail.",
+    `Run the park trail ${RUN_CLUB_GARDEN_PARK_RUNS} more times, then come back.`,
+  ]);
+}
+
+export function applyGardenQuestTurnIn(state) {
+  ensureRunClub(state);
+  if (state.runClub.gardenQuest !== "started") {
+    return refuse(state, ["Pia doesn't have a chore open for you."]);
+  }
+  const start = typeof state.runClub.gardenStartParks === "number" ? state.runClub.gardenStartParks : 0;
+  const done = (state.progress.parkTrailRuns || 0) - start;
+  if (done < RUN_CLUB_GARDEN_PARK_RUNS) {
+    return refuse(state, [
+      `Park trail progress: ${Math.max(0, done)}/${RUN_CLUB_GARDEN_PARK_RUNS}. Keep looping.`,
+    ]);
+  }
+  const before = state;
+  const next = clone(state);
+  ensureRunClub(next);
+  next.runClub.gardenQuest = "done";
+  next.coins += RUN_CLUB_GARDEN_COIN_REWARD;
+  return finish(before, next, [
+    `Pia counts your loops and presses ${RUN_CLUB_GARDEN_COIN_REWARD} coins into your hand.`,
+    "The garden beds look less lonely.",
+  ]);
+}
+
+export function applyNightQuestStart(state) {
+  if (!isRunClubMember(state)) {
+    return refuse(state, ["Lina only hands night homework to members."]);
+  }
+  const before = state;
+  const next = clone(state);
+  ensureRunClub(next);
+  if (next.runClub.nightQuest === "done") {
+    return refuse(state, ["You already filed the night-city report with Lina."]);
+  }
+  next.runClub.nightQuest = "started";
+  next.runClub.nightCityDone = Boolean(next.runClub.nightCityDone);
+  return finish(before, next, [
+    "Lina: take one night city run when Evening hits, then tell me how the lamps felt.",
+  ]);
+}
+
+export function applyNightQuestTurnIn(state) {
+  ensureRunClub(state);
+  if (!isRunClubMember(state)) return refuse(state, ["Members only."]);
+  if (state.runClub.nightQuest === "done") {
+    return refuse(state, ["Already turned in."]);
+  }
+  if (!state.runClub.nightCityDone) {
+    return refuse(state, ["Finish a night city run first (Evening or later on the activity board / town)."]);
+  }
+  const before = state;
+  const next = clone(state);
+  ensureRunClub(next);
+  next.runClub.nightQuest = "done";
+  next.coins += RUN_CLUB_NIGHT_CITY_COIN_REWARD;
+  return finish(before, next, [
+    `Lina nods. "Lamp light counts." +${RUN_CLUB_NIGHT_CITY_COIN_REWARD} coins.`,
+  ]);
 }
 
 function sponsorField(kind) {
@@ -2409,6 +2710,8 @@ export function applyCafeWifi(state) {
   const gain = wifiGain(readRaceIq(next));
   next.raceIq = readRaceIq(next) + gain;
   next.calendar.wifiToday = true;
+  // Lifetime counter for Cornerstone Pace Club. Does not reset on sleep.
+  next.wifiTurns = readWifiTurns(next) + 1;
   const had = readEnergy(next);
   const fromSlot = typeof next.calendar.slot === "number" ? next.calendar.slot : slotFromEnergy(had);
   // One step of the day, like a nap, but energy does not move. The
@@ -2421,9 +2724,11 @@ export function applyCafeWifi(state) {
     ? "The day is already at night."
     : `The day moves from ${fromLabel} to ${toLabel}.`;
   const familiar = gain < wifiGain(0) ? "The notes are getting familiar. " : "";
+  const inviteLines = maybeDeliverRunClubInvite(next);
   sample(next);
   return finish(before, next, [
     `${familiar}You study the reports for an hour. Race IQ +${gain}. ${clock} 0 energy.`,
+    ...inviteLines,
   ]);
 }
 
@@ -2463,6 +2768,20 @@ export function perform(state, action, roll = 0.5, rng = Math.random) {
       return applyRace(state, action.id, roll, action.choice, rng);
     case "rival":
       return applyRival(state, roll, action.choice, rng);
+    case "street-race":
+      return applyStreetRace(state, action.id, roll, action.choice);
+    case "run-club-join":
+      return applyRunClubJoin(state);
+    case "run-club-group":
+      return applyRunClubGroup(state);
+    case "run-club-garden-start":
+      return applyGardenQuestStart(state);
+    case "run-club-garden-turnin":
+      return applyGardenQuestTurnIn(state);
+    case "run-club-night-start":
+      return applyNightQuestStart(state);
+    case "run-club-night-turnin":
+      return applyNightQuestTurnIn(state);
     case "eat-gel":
       return applyEatGel(state);
     case "use-shake":
@@ -2938,12 +3257,94 @@ export function menuFor(locationId, state) {
           ),
           item(
             "Use the Wi-Fi",
-            studied ? "Already studied today. Sleep opens another hour." : "1 time slot · 0 energy · Race IQ",
+            studied
+              ? "Already studied today. Sleep opens another hour."
+              : `1 time slot · 0 energy · Race IQ · Wi-Fi hours ${readWifiTurns(state)}/${RUN_CLUB_WIFI_TURNS} toward ${RUN_CLUB_NAME}`,
             { type: "cafe-wifi" },
             studied,
             "You've already used the Wi-Fi today. Sleep opens another hour.",
           ),
         ],
+      };
+    }
+    case "club": {
+      const member = isRunClubMember(state);
+      const invited = Boolean(state.runClub?.invited) || runClubInviteReady(state);
+      const items = [];
+      if (!member && invited) {
+        items.push(item(`Join ${RUN_CLUB_NAME}`, "Invite-only · permanent small pace bump", { type: "run-club-join" }));
+      }
+      if (member) {
+        const groupOpen = groupRunAvailable(state);
+        items.push(item(
+          "Weekly group run",
+          groupOpen
+            ? `${RUN_CLUB_GROUP_ENERGY} energy · bonus XP · short pace bump`
+            : "Already ran with the group this week",
+          { type: "run-club-group" },
+          !groupOpen || readEnergy(state) < RUN_CLUB_GROUP_ENERGY || isSick(state),
+          isSick(state) ? SICKNESS_BLOCK_MESSAGE : (!groupOpen ? "Come back next week." : LOW_ENERGY),
+        ));
+        const night = state.runClub?.nightQuest;
+        if (night !== "done") {
+          if (night !== "started") {
+            items.push(item("Night-city homework", "Optional side quest from Lina", { type: "run-club-night-start" }));
+          } else {
+            items.push(item(
+              "Turn in night-city report",
+              state.runClub?.nightCityDone ? `+${RUN_CLUB_NIGHT_CITY_COIN_REWARD} coins` : "Finish a night city run first",
+              { type: "run-club-night-turnin" },
+              !state.runClub?.nightCityDone,
+              "Finish a night city run first.",
+            ));
+          }
+        }
+      }
+      if (!items.length) {
+        items.push(headerItem(
+          "Invite only",
+          `Need 5K + 10K + ${RUN_CLUB_WIFI_TURNS} Wi-Fi hours (you have ${readWifiTurns(state)}).`,
+        ));
+      }
+      items.push(headerItem("Segments", RUN_CLUB_SEGMENT_HOOK));
+      return {
+        title: RUN_CLUB_NAME,
+        speaker: RUN_CLUB_NAME,
+        testId: "run-club-menu",
+        intro: member
+          ? "Gazebo shade. Group run once a week. Tips from Drew and Sable."
+          : invited
+            ? "Lina Shore has your invite ready."
+            : `${RUN_CLUB_NAME} meets here. Finish the Brick City 5K and 10K, and log ${RUN_CLUB_WIFI_TURNS} Wi-Fi hours at Tangentline.`,
+        items,
+      };
+    }
+    case "garden": {
+      const quest = state.runClub?.gardenQuest;
+      const items = [];
+      if (quest !== "done") {
+        if (quest !== "started") {
+          items.push(item(
+            "Help the garden",
+            `Optional · ${RUN_CLUB_GARDEN_PARK_RUNS} park trail loops`,
+            { type: "run-club-garden-start" },
+          ));
+        } else {
+          items.push(item(
+            "Report park loops to Pia",
+            `+${RUN_CLUB_GARDEN_COIN_REWARD} coins when done`,
+            { type: "run-club-garden-turnin" },
+          ));
+        }
+      } else {
+        items.push(headerItem("Garden chore", "Done. The beds thank you."));
+      }
+      return {
+        title: "Community Garden",
+        speaker: "Community Garden",
+        testId: "garden-menu",
+        intro: "Raised beds east of the clinic spine. Pia keeps the clipboard.",
+        items,
       };
     }
     default:
@@ -3740,13 +4141,14 @@ export function sponsorMenuItems(state) {
   return rows;
 }
 
-export function chatLines(locationId) {
+export function chatLines(locationId, state = null) {
   if (locationId === "chat-juniper") {
     return {
       speaker: "Juniper Hale",
       lines: [
         "The dirt loop is kind until it isn't.",
         "Five of those and the ranger starts to know your name.",
+        "Otto Venn hangs farther south on the trail if you want a soft race.",
       ],
     };
   }
@@ -3756,6 +4158,83 @@ export function chatLines(locationId) {
       lines: [
         "Easy days are still training days.",
         "Peak gets you the 5K. Endurance gets you home after.",
+        "Kit Solano times fountain laps. Tess Quay owns the grocery block.",
+      ],
+    };
+  }
+  if (locationId === "chat-ned") {
+    return {
+      speaker: "Ned Brickley",
+      lines: [
+        "Ten energy blocks. Sleep fills them. Gels buy one back.",
+        "Wi-Fi at Tangentline does not cost energy, but it still spends the day.",
+        "If the Cornerstone Pace Club ever invites you, it's because you finished real races and studied.",
+      ],
+    };
+  }
+  if (locationId === "chat-pia") {
+    return {
+      speaker: "Pia Moss",
+      lines: [
+        "The community garden listens for footsteps on the park trail.",
+        "Talk to me at the garden board if you want a small chore.",
+      ],
+    };
+  }
+  if (locationId === "chat-harlan") {
+    return {
+      speaker: "Harlan Voss",
+      lines: [
+        "This kiln used to fire the bricks under your shoes.",
+        "Brick City grew east. The overlook stayed. Good place to breathe before a hard week.",
+      ],
+    };
+  }
+  if (locationId === "chat-lina") {
+    if (state && isRunClubMember(state)) {
+      return {
+        speaker: "Lina Shore",
+        lines: [
+          `${RUN_CLUB_NAME} meets at this gazebo.`,
+          "Group run once a week. Optional. Costs energy like a normal easy run.",
+          RUN_CLUB_SEGMENT_HOOK,
+        ],
+      };
+    }
+    if (state && (state.runClub?.invited || runClubInviteReady(state))) {
+      return {
+        speaker: "Lina Shore",
+        lines: [
+          `You're on the invite list for ${RUN_CLUB_NAME}.`,
+          "Stand on the club mat and join when you're ready. Rematches and side quests stay optional.",
+        ],
+      };
+    }
+    return {
+      speaker: "Lina Shore",
+      lines: [
+        `${RUN_CLUB_NAME} is invite-only.`,
+        `Brick City 5K, Community 10K, and ${RUN_CLUB_WIFI_TURNS} Wi-Fi hours at Tangentline. Total hours, not a streak.`,
+      ],
+    };
+  }
+  if (locationId === "chat-drew") {
+    return {
+      speaker: "Drew Pebble",
+      lines: [
+        isRunClubMember(state)
+          ? "Member tip: even splits on Brick Street. The fountain bend eats people who go out hot."
+          : "Club members get the boring tips that save races. Earn the invite first.",
+      ],
+    };
+  }
+  if (locationId === "chat-sable") {
+    return {
+      speaker: "Sable Wren",
+      lines: [
+        isRunClubMember(state)
+          ? "Member tip: a nap before a night city run is not weakness. It's a headlamp you can't buy yet."
+          : "I talk pace once you're stamped in. Until then, wave from the road.",
       ],
     };
   }
@@ -3763,7 +4242,7 @@ export function chatLines(locationId) {
     return {
       speaker: "Sam Hollis",
       lines: [
-        "Brick City stays this size on purpose.",
+        "Brick City got bigger streets this season. Same doors. More blocks east and south.",
         "Finish the races here and the depot opens new towns: Ridgeview, Lakeport, Mesa Verde Flats, Flatland, then Summit Hollow.",
         "Same training spots in every city. Different races, different trouble. Not this season, though. The bus is still in the shop.",
       ],
@@ -3775,7 +4254,74 @@ export function chatLines(locationId) {
       lines: ["You again. One mile, no excuses. Readiness board is right there if you want the truth first."],
     };
   }
+  if (locationId === "garden") {
+    return {
+      speaker: "Community Garden",
+      lines: [
+        "Raised beds, soft dirt, and Pia's clipboard.",
+        "Press A on Pia for the park-trail chore if you want it.",
+      ],
+    };
+  }
+  if (locationId === "library") {
+    return {
+      speaker: "Branch Nook",
+      lines: [
+        "A tiny shelf of race reports and local maps.",
+        "The real study still happens on the Wi-Fi at Tangentline Roasters.",
+      ],
+    };
+  }
+  if (locationId === "kiln") {
+    return {
+      speaker: "Brick Kiln Overlook",
+      lines: [
+        "Old chimney. New view of the east blocks.",
+        "Harlan Voss will talk bricks until the sun goes down.",
+      ],
+    };
+  }
   return null;
+}
+
+/**
+ * Dialogue + race choice for Tess / Kit / Otto / Mara.
+ * Rematch copy only appears after the cooldown.
+ */
+export function streetRaceChat(locationId, state) {
+  const opponent = streetOpponentByLocation(locationId);
+  if (!opponent) return null;
+  const raced = hasRacedBefore(state, opponent.id);
+  const ready = rematchReady(state, opponent.id);
+  let lines;
+  if (!raced) {
+    lines = [
+      opponent.blurb,
+      `${opponent.name}: "Short race. No medals. You in?"`,
+    ];
+  } else if (ready) {
+    lines = [
+      `${opponent.name}: "Been about a week or two. Rematch? Just for fun. Skip it if you're busy."`,
+    ];
+  } else {
+    lines = [
+      `${opponent.name}: "Good race. Give it a week or two and I'll be itchy for another."`,
+      "Optional rematch later. Nothing story-locked behind it.",
+    ];
+  }
+  const canRace = !raced || ready;
+  return {
+    speaker: opponent.name,
+    lines,
+    opponentId: opponent.id,
+    canRace,
+    choices: canRace
+      ? [
+          { id: "street-race", label: raced ? "Rematch" : "Race" },
+          { id: "later", label: "Not now" },
+        ]
+      : [{ id: "later", label: "See you" }],
+  };
 }
 
 export function calendarView(state) {
