@@ -47,6 +47,11 @@
  * recent offer would silence a mailbox the player never saw. The version
  * stays 1.
  *
+ * The rare morning sickness (condition.sickness and
+ * calendar.lastIllnessDay) arrived on this same key too. A blob from
+ * before that event has neither. Missing means healthy, and the gap is
+ * open so the first eligible week can still roll. The version stays 1.
+ *
  * v2 widened every tile from 16px to 32px. A position is stored in pixels,
  * so an old save's x/y would land on the wrong half of the new tile and
  * often inside a wall. New games stamp tileSize: 32. A save without that
@@ -58,6 +63,7 @@ import { slotFromEnergy } from "@/lib/calendar";
 import { TILE } from "@/game/town";
 import { normalizeFiveKTime } from "@/lib/activities";
 import { maxNutritionFromGear, normalizeCitiesReached, normalizeGear } from "@/lib/catalog";
+import { normalizeSickness } from "@/lib/sickness";
 import { normalizeSponsors } from "@/lib/sponsors";
 
 export function serialize(state) {
@@ -106,6 +112,9 @@ export function deserialize(raw) {
     if (data.condition.coffeeNext !== "boost" && data.condition.coffeeNext !== "jitter") {
       data.condition.coffeeNext = null;
     }
+    // Rare morning sickness. Missing means healthy; do not invent a gap
+    // that would silence the first roll on an old save.
+    normalizeSickness(data);
     // No records object, or a best that is not a 5K clock, means you
     // have not run the neighborhood time trial. Do not invent a time.
     if (!data.records || typeof data.records !== "object" || Array.isArray(data.records)) {

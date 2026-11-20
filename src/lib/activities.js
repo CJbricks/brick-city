@@ -50,6 +50,12 @@
  * Blister care is a clinic button. The coin price lives on each city's
  * clinic record. It is not a save field.
  *
+ * Rare morning sickness is a life event rolled in applySleep
+ * (sickness.js). While sick, runs, workouts, and races refuse. A walk,
+ * a meal, a nap, a shop, and a sick visit at the clinic still work.
+ * Natural recovery halves Peak. A sick visit cures now and cuts Peak
+ * harder (65%). The coin price is on each city's clinic record.
+ *
  * The Run Store shelf grows when you reach a city. catalog.js decides
  * which models are unlocked. This file only builds the buttons and
  * takes the coins. A locked model is not on the button list. A sponsor
@@ -182,6 +188,14 @@ import { levelFromXp } from "@/lib/xp";
 import { JOBS, currentShift, noteShiftWorked, resolveShift, rollShiftOnSleep } from "@/lib/shifts";
 import { TILE, homeSpawn } from "@/game/town";
 import { injuryScreenLines, ratesFor } from "@/lib/clinic";
+import {
+  SICKNESS_BLOCK_MESSAGE,
+  SICKNESS_CLINIC_PEAK_LOSS,
+  cutPeakFraction,
+  isSick,
+  rollSicknessOnWake,
+  tickSickness,
+} from "@/lib/sickness";
 import {
   bonkThreshold,
   cafeFor,
@@ -586,6 +600,9 @@ export function createNewGame({ name, gender }) {
     sleepQuality: START_SLEEP_QUALITY,
     sore: false,
     injury: null,
+    // Rare morning illness. null means healthy. An old save is missing
+    // this and Resume fills null. Sleep ticks the days and may roll a new one.
+    sickness: null,
     // "boost", "jitter", or null. Sleep clears it. A run or a race clears it.
     coffeeNext: null,
   };
@@ -626,6 +643,9 @@ export function createNewGame({ name, gender }) {
       findsToday: 0,
       // The PT table books one treatment a day. Sleep clears it.
       clinicTreated: false,
+      // Calendar day the last rare illness started. null means never.
+      // The gap before the next roll uses this. An old save is missing it.
+      lastIllnessDay: null,
       // Cups since wake-up. Two help. The next one jitters. Sleep zeroes it.
       coffeesToday: 0,
       // One Wi-Fi hour a day. Sleep is what opens another. Race IQ stays.
@@ -928,6 +948,10 @@ export function applyRun(state, runId, rng = Math.random) {
   if (runId === "ridge-repeats" && !isMountainOpen(state)) {
     return refuse(state, ["The ranger hasn't opened the gate."]);
   }
+  // A walk (gentle) is still okay while sick. Real runs and gym work wait.
+  if (isSick(state) && !activity.gentle) {
+    return refuse(state, [SICKNESS_BLOCK_MESSAGE]);
+  }
   // The price is `slots` on the workout. Heavy runs say 2. Listing
   // ids here used to miss any new one, so a 2-block session cost 1.
   const energyCost = runEnergyCost(runId);
@@ -996,7 +1020,7 @@ export function applyRun(state, runId, rng = Math.random) {
   return finish(before, next, lines);
 }
 
-export function applySleep(state) {
+export function applySleep(state, rng = Math.random) {
   const before = state;
   const next = clone(state);
   const plan = sleepPlan(next.calendar.slot);
@@ -1024,6 +1048,10 @@ export function applySleep(state) {
   } else if (next.condition.sore && plan.quality !== "poor") {
     next.condition.sore = false;
   }
+  // Tick the rare illness before the morning roll. A recovery morning
+  // also cuts Peak, and justRecovered blocks rolling sick again today.
+  const sickTick = tickSickness(next);
+  const justRecovered = sickTick.recovered;
 
   if (!next.calendar.trainedToday) next.calendar.daysSinceRun += 1;
   else next.calendar.daysSinceRun = 0;
@@ -1048,6 +1076,7 @@ export function applySleep(state) {
     `You sleep ${plan.hours}h. Quality: ${plan.quality}.`,
     loss.active ? detrainingNote(next.calendar.daysSinceRun) : "You wake up in Brick City.",
   ];
+  lines.push(...sickTick.lines);
 
   let summary = null;
   if (wasSunday) {
@@ -1132,6 +1161,10 @@ export function applySleep(state) {
   // from yesterday's trail run is sitting on the table.
   lines.push(...expireOffers(next));
   lines.push(...deliverMail(next));
+  // Rare life event: one small daily roll after the gap and first week.
+  // justRecovered means this sleep already cleared a sickness, so we do
+  // not stack a new one on the same morning ("never twice in a row").
+  lines.push(...rollSicknessOnWake(next, rng, justRecovered));
   const note = planObligation(next);
   if (note) {
     const brand = sponsorById(note.kind, note.sponsorId);
@@ -1525,6 +1558,9 @@ function raceStartNutrition(state) {
 export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) {
   const race = RACES[raceId];
   if (!race) return refuse(state, ["That race isn't on the calendar."]);
+  if (isSick(state)) {
+    return refuse(state, [SICKNESS_BLOCK_MESSAGE]);
+  }
   if (raceId === "10k" && !isTenKOpen(state)) {
     return refuse(state, [`The Community 10K is still locked. ${describeNeeds(tenKStatus(state).needs)}`]);
   }
@@ -1645,6 +1681,9 @@ function scaleAttributes(attributes, factor) {
 }
 
 export function applyRival(state, roll = 0.5, choice, rng = Math.random) {
+  if (isSick(state)) {
+    return refuse(state, [SICKNESS_BLOCK_MESSAGE]);
+  }
   const energyCost = RIVAL.energy || 1;
   if (readEnergy(state) < energyCost) {
     return refuse(state, [LOW_ENERGY]);
@@ -2140,6 +2179,33 @@ export function applyClinicScreen(state) {
   return finish(state, clone(state), injuryScreenLines(state));
 }
 
+/**
+ * Sick visit. Only while sick. Clears the illness immediately so you
+ * can run again, and removes SICKNESS_CLINIC_PEAK_LOSS of current Peak
+ * (harder than natural recovery). No charge when healthy or broke.
+ * The UI confirms before calling this so the player sees the Peak hit.
+ */
+export function applyClinicSick(state) {
+  const rates = ratesFor(state);
+  if (!isSick(state)) {
+    return refuse(state, ["You're not sick. You keep your coins."]);
+  }
+  if (state.coins < rates.sick) {
+    return refuse(state, [`A sick visit costs ${rates.sick} coins.`]);
+  }
+  const before = state;
+  const next = clone(state);
+  next.coins -= rates.sick;
+  const peakBefore = next.condition.peak;
+  cutPeakFraction(next, SICKNESS_CLINIC_PEAK_LOSS);
+  next.condition.sickness = null;
+  sample(next);
+  return finish(before, next, [
+    `Sick visit. ${rates.sick} coins. The sickness clears.`,
+    `Peak Fitness drops from ${peakBefore} to ${next.condition.peak}. You can run again.`,
+  ]);
+}
+
 export function applyCafeCoffee(state) {
   const shop = cafeFor(state);
   if (state.coins < shop.coffee) return refuse(state, [`A cup is ${shop.coffee} coins.`]);
@@ -2216,7 +2282,7 @@ export function perform(state, action, roll = 0.5, rng = Math.random) {
     case "run":
       return applyRun(state, action.id, rng);
     case "sleep":
-      return applySleep(state);
+      return applySleep(state, rng);
     case "nap":
       return applyNap(state);
     case "buy":
@@ -2273,6 +2339,8 @@ export function perform(state, action, roll = 0.5, rng = Math.random) {
       return applyClinicBlister(state);
     case "clinic-screen":
       return applyClinicScreen(state);
+    case "clinic-sick":
+      return applyClinicSick(state);
     case "cafe-coffee":
       return applyCafeCoffee(state);
     case "cafe-pastry":
@@ -2347,13 +2415,15 @@ function runItem(state, runId) {
   const run = RUNS[runId];
   const cost = runEnergyCost(runId);
   const tired = readEnergy(state) < cost;
+  // Walks stay available while sick. Everything else on a run board waits.
+  const sickBlocked = isSick(state) && !run.gentle;
   const miles = run.miles > 0 ? `${round1(run.miles)} mi · ` : "";
   return item(
     run.name,
     `${miles}${cost} energy`,
     { type: "run", id: runId },
-    tired,
-    LOW_ENERGY,
+    sickBlocked || tired,
+    sickBlocked ? SICKNESS_BLOCK_MESSAGE : LOW_ENERGY,
   );
 }
 
@@ -2517,7 +2587,13 @@ export function menuFor(locationId, state) {
           runItem(state, "yards"),
         ],
       };
-    case "track":
+    case "track": {
+      const sick = isSick(state);
+      const fiveKBlocked = sick || false;
+      const tenKOpen = isTenKOpen(state);
+      const tenKBlocked = sick || !tenKOpen;
+      let tenKReason = describeNeeds(tenKStatus(state).needs);
+      if (sick) tenKReason = SICKNESS_BLOCK_MESSAGE;
       return {
         title: "Local Track",
         speaker: "Track booth",
@@ -2526,13 +2602,19 @@ export function menuFor(locationId, state) {
           runItem(state, "intervals"),
           runItem(state, "threshold"),
           runItem(state, "interval-run"),
-          item("Brick City 5K", `${RACES["5k"].energy} energy · race readiness`, { type: "open-race", id: "5k" }),
+          item(
+            "Brick City 5K",
+            `${RACES["5k"].energy} energy · race readiness`,
+            { type: "open-race", id: "5k" },
+            fiveKBlocked,
+            sick ? SICKNESS_BLOCK_MESSAGE : "",
+          ),
           item(
             "Community 10K",
-            isTenKOpen(state) ? `${RACES["10k"].energy} energy · race readiness` : describeNeeds(tenKStatus(state).needs),
+            tenKOpen ? `${RACES["10k"].energy} energy · race readiness` : describeNeeds(tenKStatus(state).needs),
             { type: "open-race", id: "10k" },
-            !isTenKOpen(state),
-            describeNeeds(tenKStatus(state).needs),
+            tenKBlocked,
+            tenKReason,
           ),
           item(
             "Brick City Half",
@@ -2547,6 +2629,7 @@ export function menuFor(locationId, state) {
           ),
         ],
       };
+    }
     case "mountain": {
       const status = mountainStatus(state);
       return {
@@ -2568,44 +2651,61 @@ export function menuFor(locationId, state) {
       const treated = clinicTreated(state);
       const broke = state.coins < rates.treatment;
       const tired = readEnergy(state) < 1;
+      const sick = isSick(state);
       let treatReason = "";
       if (!hurt) treatReason = "Nothing to treat. The chart is clear.";
       else if (treated) treatReason = "You've already had a treatment today. Sleep starts a new day.";
       else if (broke) treatReason = `Need ${rates.treatment} coins.`;
       else if (tired) treatReason = LOW_ENERGY;
+      // Sick visit only appears while sick. Healthy mornings keep the
+      // old four-row board so the menu does not grow a dead button.
+      const items = [
+        item(
+          "Treatment session",
+          hurt
+            ? `${rates.treatment} coins · 1 energy · −${CLINIC_TREATMENT_NIGHTS} nights`
+            : "Nothing to treat. The chart is clear.",
+          { type: "clinic-treat" },
+          !hurt || treated || broke || tired,
+          treatReason,
+        ),
+        item(
+          "Soft tissue work",
+          `${rates.tissue} coins · 0 energy · clears soreness · −${TISSUE_FATIGUE_RELIEF} fatigue`,
+          { type: "clinic-tissue" },
+          state.coins < rates.tissue,
+          `Need ${rates.tissue} coins.`,
+        ),
+        item(
+          "Blister care",
+          hasBlister(state)
+            ? `${rates.blister} coins · 0 energy · clears a blister`
+            : "No blister on the chart.",
+          { type: "clinic-blister" },
+          !hasBlister(state) || state.coins < rates.blister,
+          hasBlister(state) ? `Need ${rates.blister} coins.` : "No blister to dress.",
+        ),
+      ];
+      if (sick) {
+        items.push(
+          item(
+            "Sick visit",
+            `${rates.sick} coins · clears sickness · −65% Peak`,
+            { type: "clinic-sick" },
+            state.coins < rates.sick,
+            `Need ${rates.sick} coins.`,
+          ),
+        );
+      }
+      items.push(item("Injury screen", "Free · what the chart says", { type: "clinic-screen" }));
       return {
         title: "PT Clinic",
         speaker: "PT Clinic",
         testId: "clinic-menu",
-        intro: `${rates.name}. Treatment ${rates.treatment} coins · Soft tissue ${rates.tissue} coins · Blister care ${rates.blister} coins.\nOne treatment a day. Sleep opens the table again.`,
-        items: [
-          item(
-            "Treatment session",
-            hurt
-              ? `${rates.treatment} coins · 1 energy · −${CLINIC_TREATMENT_NIGHTS} nights`
-              : "Nothing to treat. The chart is clear.",
-            { type: "clinic-treat" },
-            !hurt || treated || broke || tired,
-            treatReason,
-          ),
-          item(
-            "Soft tissue work",
-            `${rates.tissue} coins · 0 energy · clears soreness · −${TISSUE_FATIGUE_RELIEF} fatigue`,
-            { type: "clinic-tissue" },
-            state.coins < rates.tissue,
-            `Need ${rates.tissue} coins.`,
-          ),
-          item(
-            "Blister care",
-            hasBlister(state)
-              ? `${rates.blister} coins · 0 energy · clears a blister`
-              : "No blister on the chart.",
-            { type: "clinic-blister" },
-            !hasBlister(state) || state.coins < rates.blister,
-            hasBlister(state) ? `Need ${rates.blister} coins.` : "No blister to dress.",
-          ),
-          item("Injury screen", "Free · what the chart says", { type: "clinic-screen" }),
-        ],
+        intro: sick
+          ? `${rates.name}. Treatment ${rates.treatment} · Soft tissue ${rates.tissue} · Blister care ${rates.blister} · Sick visit ${rates.sick}.\nOne treatment a day. Sleep opens the table again.`
+          : `${rates.name}. Treatment ${rates.treatment} coins · Soft tissue ${rates.tissue} coins · Blister care ${rates.blister} coins.\nOne treatment a day. Sleep opens the table again.`,
+        items,
       };
     }
     case "activity":
