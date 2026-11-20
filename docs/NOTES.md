@@ -192,10 +192,10 @@ Sleep itself is unchanged: it ends the day, refills energy to 10/10, and zeroes 
 
 ## Bonk and DNF
 
-Before the 5K, the 10K, or Remy's mile, a readiness screen shows your Endurance/Peak mix against what that race wants, plus your shoes.
+Before the 5K, the 10K, the Half, the Marathon, or Remy's mile, a readiness screen shows your Endurance/Peak mix against what that race wants, plus your shoes.
 
 - Nutrition under 40 **and** poor sleep (or fatigue at 80+) is a sure bonk. You DNF unless you eat a gel when the game asks. The readiness screen still warns: `⚠ Low fuel + poor sleep: high DNF risk`.
-- Only one of those is bad: a roll under 0.45 bonks you. A 5K becomes a slow finish (half credit). A longer race is a DNF. The same gel question appears if you are carrying one.
+- Only one of those is bad: a roll under 0.45 bonks you. A 5K becomes a slow finish (half credit). A longer race (10K, Half, Marathon) is a DNF. The same gel question appears if you are carrying one.
 - Neither is bad: you just race.
 
 The roll is `Math.random()`, passed into `applyRace` at the moment you confirm. The rule functions never call `Math.random` themselves, so tests can force a bonk or a win by passing `0.1` or `0.9`.
@@ -207,8 +207,11 @@ The roll is `Math.random()`, passed into `applyRace` at the moment you confirm. 
 | Home, gym, store, grocery, park, track, 5K, Remy | Day one |
 | Community 10K | Level 3 and a finished 5K |
 | Mountain gate | Level 8, 5 park trail runs, any trail-style shoe equipped |
-| Brick City Half | Shown, still locked. The requirements are listed. The race itself is a later build. |
+| Brick City Half | Level 15, finished 5K, and finished 10K (`HALF_UNLOCK_LEVEL` in `constants.js`) |
+| Brick City Marathon | Level 20 and a finished Half (`MARATHON_UNLOCK_LEVEL` in `constants.js`) |
 | Other cities | Sam at the depot explains them. The bus is not running yet. |
+
+Locked race rows use `entryNeedsMessage` so the booth only lists what is still missing (for example, "Reach level 15 and finish the Community 10K to enter"). There is no "later season" placeholder for these two races.
 
 Finishing the 5K hangs a banner by the track. Reaching level 3 plants extra flowers. The first park trail run adds a trail marker. Opening the gate changes the gate art and lets you walk a few tiles up the ridge. The actual ridge workout is still a menu on the ranger.
 
@@ -225,6 +228,7 @@ The save version stays `1`. Brand shoes, belts, vests, and sponsors were added w
 - Shoe ids `road`, `trail`, and `hybrid` are the old house pairs (Tempo Daybreak, Peakline Lugger, Switchback Hybrid). They still exist. `resolveShoeId` in `src/lib/catalog.js` is the alias table. An id the catalog does not know becomes the starter trainers instead of crashing.
 - Nutrition is clamped to the cap the equipped carry item actually allows, so a broken number cannot sit past 110.
 - No `calendar.homeMeals`, `calendar.homeSnacks`, or `napsToday` means those counters start at 0. If the older yes/no flag is true (`homeMealUsed`, `homeSnackUsed`, or `nappedToday`), that one use counts as 1, so Resume does not hand back a plate or a nap that was already taken. The audio settings live in a different key, `brick-city-audio-v1`, and this load path does not touch them.
+- No `progress.halfFinished` or `progress.marathonFinished` means those races are not finished yet. Unlock checks stay locked until you earn them.
 
 ## Brand shoes
 
@@ -656,9 +660,36 @@ Balance, compared with what was already on the board:
 - Neighborhood Speed Run is 3 blocks, Peak +10, Endurance +2, fatigue +16. A short version of the tempo.
 - Neighborhood 5K Time Trial is 2 blocks and a clock. The numbers are in "The activity board" above.
 
-Threshold and Interval Run are on the track menu and the gym treadmill menu. Zone 2 is on the park menu, next to the easy run. The old Track Intervals row is still there, and it is still the one that ticks `trackRuns` for the half-marathon checklist. The new sessions do not add a save field. An old `brick-city-save-v1` blob loads unchanged.
+Threshold and Interval Run are on the track menu and the gym treadmill menu. Zone 2 is on the park menu, next to the easy run. The old Track Intervals row is still there, and it still ticks `trackRuns` for training history. Treadmill runs tick `treadmillRuns` the same way. Those counters are not a separate road-readiness score and they do not gate the Half or Marathon. The new sessions do not add a save field. An old `brick-city-save-v1` blob loads unchanged.
 
-The 5K is not a `RUNS` row. It is a race (`open-race` / `applyRace`). It stays on the track menu and costs 2 blocks. The 10K costs 3. Remy's mile costs 2. The menu rows say the number.
+The 5K is not a `RUNS` row. It is a race (`open-race` / `applyRace`). It stays on the track menu and costs 2 blocks. The 10K costs 3. The Half costs 4. The Marathon costs 5. Remy's mile costs 2. The menu rows say the number.
+
+## Half Marathon & Marathon
+
+Both races live in `RACES` in `src/lib/race.js` and start from the Local Track menu, same entry flow as the 5K and 10K: readiness screen, energy cost, bonk / gel choice, fatigue and soreness, nutrition drain, Race IQ pacing, rival-style sponsor rolls on a finish, XP into the Marathon Running track, coins, and finish flags on `progress`.
+
+### Unlock rules
+
+| Race | Opens when | Constant |
+|---|---|---|
+| Brick City Half (13.1 mi) | Overall level **15** and finish both the Brick City 5K and the Community 10K | `HALF_UNLOCK_LEVEL` |
+| Brick City Marathon (26.2 mi) | Overall level **20** and finish the Brick City Half | `MARATHON_UNLOCK_LEVEL` |
+
+The why-comments sit next to those constants in `src/lib/constants.js`. Change the number there if the gate feels too early or too late. Checks live in `halfStatus` / `marathonStatus` in `src/lib/unlocks.js`. An old save without `progress.halfFinished` or `progress.marathonFinished` loads those as `false`.
+
+### Distance scaling (key numbers)
+
+| | 5K | 10K | Half | Marathon |
+|---|---|---|---|---|
+| Energy | 2 | 3 | **4** | **5** |
+| Ideal form | 35% End / 65% Peak | 45 / 55 | **55 / 45** | **65 / 35** |
+| Fatigue | 16 | 22 | **32** | **44** |
+| Nutrition | −14 | −18 | **−28** | **−40** |
+| Overall XP | 46 | 70 | **110** | **170** |
+| Marathon XP | 30 | 48 | **80** | **130** |
+| Coins | 28 | 46 | **72** | **120** |
+
+Longer races lean more on Endurance than Peak, cost more of the day, drain more FOOD (gels matter more), add more fatigue and soreness risk, and pay more XP and coins. A chance bonk at these distances is a DNF, same as the 10K. Road / marathon shoes and road sponsors help on the pace percent; trail and backyard pairs trade that away. Low fatigue (a taper) helps through the existing form score. The first Marathon finish adds a short celebratory booth line and confetti once.
 
 ### How a note gets from the song file to the speaker
 
@@ -894,4 +925,4 @@ The shop's name is not in the save. The door on the map is the id `cafe`. Resume
 
 ## What this build does not do yet
 
-The half marathon itself, backyard race events, the other cities, and real-life run logging are in the design and not in this build. The menus mention the locked ones so the path is visible. Shoe sponsors and nutrition sponsors are in this private prototype. The fictional brand ladder in the README is the public-release plan.
+Backyard race events, the other cities, and real-life run logging are in the design and not in this build. The Half Marathon and Marathon are playable from the Local Track once unlocked. Shoe sponsors and nutrition sponsors are in this private prototype. The fictional brand ladder in the README is the public-release plan.

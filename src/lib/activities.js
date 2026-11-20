@@ -176,9 +176,13 @@ import {
 import { deliverMail, expireOffers, liveOffer, rollOffers, setCooldown } from "@/lib/offers";
 import {
   describeNeeds,
+  entryNeedsMessage,
   halfStatus,
+  isHalfOpen,
+  isMarathonOpen,
   isMountainOpen,
   isTenKOpen,
+  marathonStatus,
   milestoneTags,
   mountainStatus,
   runnerLevel,
@@ -691,6 +695,8 @@ export function createNewGame({ name, gender }) {
     napsToday: 0,
     progress: {
       parkTrailRuns: 0,
+      // Still counted for training history. They do not gate the half or
+      // marathon; those unlocks are level + finished races in unlocks.js.
       trackRuns: 0,
       treadmillRuns: 0,
       longRuns: 0,
@@ -698,6 +704,9 @@ export function createNewGame({ name, gender }) {
       mountainRuns: 0,
       fiveKFinished: false,
       tenKFinished: false,
+      // Half and marathon finish flags. Missing on an old save means false.
+      halfFinished: false,
+      marathonFinished: false,
       rivalWins: 0,
       rivalLosses: 0,
       totalMiles: 0,
@@ -730,6 +739,12 @@ function finish(before, state, lines) {
   }
   if (!isTenKOpen(before) && isTenKOpen(state)) {
     lines.push("A notice goes up at the track: the Community 10K is open.");
+  }
+  if (!isHalfOpen(before) && isHalfOpen(state)) {
+    lines.push("The track booth posts a new sheet: the Brick City Half is open.");
+  }
+  if (!isMarathonOpen(before) && isMarathonOpen(state)) {
+    lines.push("A marathon banner goes up by the track. Brick City's full distance is open.");
   }
   if (!isMountainOpen(before) && isMountainOpen(state)) {
     lines.push("Ranger Quill radios the gate. The mountain trail is open.");
@@ -1562,7 +1577,13 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
     return refuse(state, [SICKNESS_BLOCK_MESSAGE]);
   }
   if (raceId === "10k" && !isTenKOpen(state)) {
-    return refuse(state, [`The Community 10K is still locked. ${describeNeeds(tenKStatus(state).needs)}`]);
+    return refuse(state, [`The Community 10K is still locked. ${entryNeedsMessage(tenKStatus(state).needs)}`]);
+  }
+  if (raceId === "half" && !isHalfOpen(state)) {
+    return refuse(state, [`The Brick City Half is still locked. ${entryNeedsMessage(halfStatus(state).needs)}`]);
+  }
+  if (raceId === "marathon" && !isMarathonOpen(state)) {
+    return refuse(state, [`The Brick City Marathon is still locked. ${entryNeedsMessage(marathonStatus(state).needs)}`]);
   }
   const energyCost = race.energy || 1;
   if (readEnergy(state) < energyCost) {
@@ -1586,6 +1607,7 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
   let celebrate = false;
   let speaker = null;
   let quality = null;
+  const firstMarathon = raceId === "marathon" && !Boolean(before.progress.marathonFinished);
   const fuel = addRaceFuel(next);
   if (fuel) lines.push(`${nutritionTuning(next).name} tops you up with ${fuel} nutrition at the gun.`);
   if (threat.bonk && !rescued && threat.dnf) {
@@ -1607,8 +1629,7 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
     next.condition.peak = clampMeter(next.condition.peak + Math.round(race.peak / 2));
     next.condition.endurance = clampMeter(next.condition.endurance + 1);
     addMiles(next, race.miles);
-    if (raceId === "5k") next.progress.fiveKFinished = true;
-    if (raceId === "10k") next.progress.tenKFinished = true;
+    markRaceFinished(next, raceId);
     if ((state.gels || 0) === 0) lines.push("A Stride Fuel gel could have saved this.");
     // Jogging it in is a finish, not a win. No confetti.
     quality = "finish";
@@ -1629,8 +1650,7 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
     next.condition.peak = clampMeter(next.condition.peak + race.peak);
     next.condition.endurance = clampMeter(next.condition.endurance + race.endurance);
     addMiles(next, race.miles);
-    if (raceId === "5k") next.progress.fiveKFinished = true;
-    if (raceId === "10k") next.progress.tenKFinished = true;
+    markRaceFinished(next, raceId);
   }
   if (quality) {
     // A DNF never gets here. Jogging it in still counts: you wore the
@@ -1640,6 +1660,14 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
     const notice = noticeBrands(next, lines, { style: race.style, quality, channel: "finish" }, rng);
     speaker = notice.speaker;
     celebrate = quality === "win";
+    // First marathon finish is the milestone moment even on a slow day.
+    // Confetti and a short booth line mark it once; later finishes skip it.
+    if (firstMarathon && next.progress.marathonFinished) {
+      lines.push("The booth hangs a brick-red ribbon. First Brick City Marathon, done.");
+      lines.push("The Marathon Running track will remember this mile.");
+      celebrate = true;
+      if (!speaker) speaker = "Track booth";
+    }
   }
   next.calendar.trainedToday = true;
   const sore = nextSoreness(next, { hard: true });
@@ -1653,6 +1681,14 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
   if (rescued) applyRescueGel(next);
   sample(next);
   return withNotice(finish(before, next, lines), celebrate, speaker);
+}
+
+/** Stamp the finish flag for this race id. DNF never calls this. */
+function markRaceFinished(state, raceId) {
+  if (raceId === "5k") state.progress.fiveKFinished = true;
+  if (raceId === "10k") state.progress.tenKFinished = true;
+  if (raceId === "half") state.progress.halfFinished = true;
+  if (raceId === "marathon") state.progress.marathonFinished = true;
 }
 
 function noticeBrands(state, lines, event, rng) {
@@ -2592,12 +2628,22 @@ export function menuFor(locationId, state) {
       const fiveKBlocked = sick || false;
       const tenKOpen = isTenKOpen(state);
       const tenKBlocked = sick || !tenKOpen;
-      let tenKReason = describeNeeds(tenKStatus(state).needs);
-      if (sick) tenKReason = SICKNESS_BLOCK_MESSAGE;
+      const halfOpen = isHalfOpen(state);
+      const halfBlocked = sick || !halfOpen;
+      const marathonOpen = isMarathonOpen(state);
+      const marathonBlocked = sick || !marathonOpen;
+      let tenKReason = entryNeedsMessage(tenKStatus(state).needs);
+      let halfReason = entryNeedsMessage(halfStatus(state).needs);
+      let marathonReason = entryNeedsMessage(marathonStatus(state).needs);
+      if (sick) {
+        tenKReason = SICKNESS_BLOCK_MESSAGE;
+        halfReason = SICKNESS_BLOCK_MESSAGE;
+        marathonReason = SICKNESS_BLOCK_MESSAGE;
+      }
       return {
         title: "Local Track",
         speaker: "Track booth",
-        intro: "Lanes are open. The 5K board is nailed to the booth.",
+        intro: "Lanes are open. The race boards are nailed to the booth.",
         items: [
           runItem(state, "intervals"),
           runItem(state, "threshold"),
@@ -2611,21 +2657,26 @@ export function menuFor(locationId, state) {
           ),
           item(
             "Community 10K",
-            tenKOpen ? `${RACES["10k"].energy} energy · race readiness` : describeNeeds(tenKStatus(state).needs),
+            tenKOpen ? `${RACES["10k"].energy} energy · race readiness` : entryNeedsMessage(tenKStatus(state).needs),
             { type: "open-race", id: "10k" },
             tenKBlocked,
             tenKReason,
           ),
           item(
             "Brick City Half",
-            halfStatus(state).ready
-              ? "Requirements met. The race arrives in a later season."
-              : describeNeeds(halfStatus(state).needs),
-            { type: "noop" },
-            true,
-            halfStatus(state).ready
-              ? "The half marathon arrives in a later season. You're on the list."
-              : describeNeeds(halfStatus(state).needs),
+            halfOpen ? `${RACES.half.energy} energy · race readiness` : entryNeedsMessage(halfStatus(state).needs),
+            { type: "open-race", id: "half" },
+            halfBlocked,
+            halfReason,
+          ),
+          item(
+            "Brick City Marathon",
+            marathonOpen
+              ? `${RACES.marathon.energy} energy · race readiness`
+              : entryNeedsMessage(marathonStatus(state).needs),
+            { type: "open-race", id: "marathon" },
+            marathonBlocked,
+            marathonReason,
           ),
         ],
       };
@@ -3603,14 +3654,17 @@ export function calendarView(state) {
       {
         name: "Community 10K",
         status: isTenKOpen(state) ? "Open" : "Locked",
-        detail: isTenKOpen(state) ? "Local Track" : describeNeeds(tenKStatus(state).needs),
+        detail: isTenKOpen(state) ? "Local Track" : entryNeedsMessage(tenKStatus(state).needs),
       },
       {
         name: "Brick City Half",
-        status: "Locked",
-        detail: halfStatus(state).ready
-          ? "Requirements met. Coming in a later build."
-          : describeNeeds(halfStatus(state).needs),
+        status: isHalfOpen(state) ? "Open" : "Locked",
+        detail: isHalfOpen(state) ? "Local Track" : entryNeedsMessage(halfStatus(state).needs),
+      },
+      {
+        name: "Brick City Marathon",
+        status: isMarathonOpen(state) ? "Open" : "Locked",
+        detail: isMarathonOpen(state) ? "Local Track" : entryNeedsMessage(marathonStatus(state).needs),
       },
       {
         name: "Mountain trail",

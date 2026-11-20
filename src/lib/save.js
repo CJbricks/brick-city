@@ -52,6 +52,12 @@
  * before that event has neither. Missing means healthy, and the gap is
  * open so the first eligible week can still roll. The version stays 1.
  *
+ * Half and marathon finish flags (progress.halfFinished,
+ * progress.marathonFinished) arrived on this same key too. A blob from
+ * before those races were playable has neither. Missing means not
+ * finished, so the unlock checks stay locked until you earn them. The
+ * version stays 1.
+ *
  * v2 widened every tile from 16px to 32px. A position is stored in pixels,
  * so an old save's x/y would land on the wrong half of the new tile and
  * often inside a wall. New games stamp tileSize: 32. A save without that
@@ -115,6 +121,13 @@ export function deserialize(raw) {
     // Rare morning sickness. Missing means healthy; do not invent a gap
     // that would silence the first roll on an old save.
     normalizeSickness(data);
+    // Half / marathon finish flags. Missing on an old save means false.
+    // Do not invent a finish the player never earned.
+    if (!data.progress || typeof data.progress !== "object" || Array.isArray(data.progress)) {
+      data.progress = {};
+    }
+    if (typeof data.progress.halfFinished !== "boolean") data.progress.halfFinished = false;
+    if (typeof data.progress.marathonFinished !== "boolean") data.progress.marathonFinished = false;
     // No records object, or a best that is not a 5K clock, means you
     // have not run the neighborhood time trial. Do not invent a time.
     if (!data.records || typeof data.records !== "object" || Array.isArray(data.records)) {

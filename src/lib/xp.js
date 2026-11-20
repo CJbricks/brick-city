@@ -2,12 +2,12 @@
  * xp.js
  * Turns raw points into levels.
  *
- * Overall XP is the runner's level. It gates the 10K, the mountain, and
- * (later) new cities. The other four tracks are specialties. They rise
- * from the runs that match them. Attribute points (Speed, Endurance, and
- * so on) are a separate pile: they describe skill, not the blue Endurance
- * meter on the HUD. The meter is fitness you can lose this week. Attribute
- * levels stick around.
+ * Overall XP is the runner's level. It gates the 10K, the Half, the
+ * Marathon, the mountain, and (later) new cities. The other four tracks
+ * are specialties. They rise from the runs that match them. Attribute
+ * points (Speed, Endurance, and so on) are a separate pile: they describe
+ * skill, not the blue Endurance meter on the HUD. The meter is fitness
+ * you can lose this week. Attribute levels stick around.
  */
 
 import {
