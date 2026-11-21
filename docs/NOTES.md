@@ -420,6 +420,19 @@ The pictures are still code. `src/game/art.js` paints every tile and every runne
 
 **Shadows, dust, and shimmer** are Pixi graphics, not part of the map texture. An oval is drawn under your feet and under each neighbor so they sit on the tile. While you walk, small tan puffs spawn behind you and fade. The pond and the fountain also get a few white pixels that bob. Those are cleared and redrawn every frame. The map itself is only redrawn when milestones change, plus a second copy of the water so the ripples can blink.
 
+## Tile and prop detail
+
+Most of what you see on a building or in the Community Garden is still `fillRect` art in `src/game/art.js`. There are two kinds of detail:
+
+1. **Solid landmarks** — listed in `LANDMARKS` in `src/game/town.js` (and the smaller lists in `ridgeview.js` / `flatland.js`). `buildWorld` marks those tiles blocked. `drawLandmarks` paints them. Collision and picture share one list, so a shed cannot drift off its footprint.
+2. **Decoration only** — planters, benches, mailboxes, bike racks, door steps, window frames, roof drip edges. These are drawn inside a building's rectangle (or on a wall face). They do **not** add blocked tiles. Doors and sidewalk mats stay walkable.
+
+**Community Garden (Brick City).** The gold mat stays at tile `(52, 13)`. Pia Moss stands at `(54, 13)`. A one-tile path runs north through `(52, 12)` and `(52, 11)` (and the pebble path paint on those tiles). Raised beds, a shed, a scarecrow, a watering can, and a tool rack sit on landmark tiles around that path. Wooden fence rails in `sceneryLayout()` wrap the plot with a south gate gap at x=52; the rails are paint only — the beds are what block your feet.
+
+**Buildings.** Home, Grocery, Gym, Run Store, Clinic, and Cafe got a light pass: wood window frames (night glow in `lighting.js` still uses the same glass rectangle), roof edge shading, door steps or an east stoop on the gym, plus small props (mailbox, planters, bench, bike rack). Name boards are still original text only — no real logos.
+
+When you add a new solid prop, put its footprint in `LANDMARKS` first, paint it from that footprint, and add a reachability check (see `community garden and building doors` in `town.test.js`) so a bed cannot seal a door.
+
 **Time of day** lives in `src/lib/lighting.js`. The calendar slot picks a mood:
 
 | Slot | HUD name | What you see |

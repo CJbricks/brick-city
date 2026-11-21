@@ -6,6 +6,11 @@
  * shops, clinic, cafe with Wi-Fi, depot, trails/park). This file stamps
  * roads, buildings, and interact grids so Ridgeview and Flatland stay
  * the same footprint as Brick City without copying every line of town.js.
+ *
+ * Sidewalk letters ("s") must meet every door mat. The gym mat is west
+ * of the x=10 road at (9, 14); the track booth sits on (26, 12). Those
+ * two used to stay grass in stampCoreTown, so A worked on the interact
+ * grid but feet could not stand there.
  */
 
 // Same footprint as town.js (avoid importing town.js — circular).
@@ -64,19 +69,29 @@ export function ringTrees(ground) {
  */
 export function stampCoreTown(ground) {
   ringTrees(ground);
-  // Main streets
+  // Main streets. Lower east-west is y=20 (same as Brick City), not y=18:
+  // the cafe footprint is y=16..19, so a road on 18 sealed the PT block
+  // and cut Flatland's farm road off from home.
   hRoad(ground, 8, 1, MAP_COLS - 2);
-  hRoad(ground, 18, 1, MAP_COLS - 2);
+  hRoad(ground, 20, 1, MAP_COLS - 2);
   hRoad(ground, 28, 1, 40);
   vRoad(ground, 10, 1, MAP_ROWS - 2);
   vRoad(ground, 22, 1, 40);
   vRoad(ground, 35, 8, 40);
   // Sidewalks under doors
   hRoad(ground, 7, 2, 20, "s");
-  hRoad(ground, 10, 38, 44, "s");
-  hRoad(ground, 15, 36, 44, "s");
+  // Clinic / cafe block: join the x=35 spine to the door mats (Brick City
+  // paves from 34/35 east). Leaving 36–37 as grass used to island the PT.
+  hRoad(ground, 10, 35, 44, "s");
+  hRoad(ground, 15, 35, 44, "s");
+  vRoad(ground, 35, 10, 15, "s");
   hRoad(ground, 17, 14, 24, "s");
-  hRoad(ground, 22, 2, 8, "s");
+  // Through x=9 so the mat meets the x=10 road (Brick City paves 2..9).
+  hRoad(ground, 22, 2, 9, "s");
+  // Gym mat column: west of the x=10 street, same gap Brick City uses.
+  vRoad(ground, 9, 10, 19, "s");
+  // Track approach / booth strip east of the plaza (booth at 26, 12).
+  vRoad(ground, 26, 10, 19, "s");
   // Depot mat (19, 17) and park approach
   ground[17][19] = "s";
   ground[30][18] = "x";
@@ -87,6 +102,9 @@ export function stampCoreTown(ground) {
   fillRect(ground, 16, 34, 10, 6, "h");
   // Pond
   fillRect(ground, 18, 32, 4, 3, "w");
+  // Small track oval pad so the booth meets a walkable lane edge.
+  fillRect(ground, 27, 11, 7, 8, "k");
+  fillRect(ground, 28, 12, 5, 6, "i");
 }
 
 export const CORE_BUILDINGS = [

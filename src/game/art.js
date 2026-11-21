@@ -34,6 +34,13 @@
  * It is not a badge, a logo, or a sign copied from another game.
  * sceneryLayout owns its rectangle so the picture stays on the post.
  *
+ * Tile and prop detail (garden beds, shed, scarecrow, planters, benches,
+ * mailboxes, bike racks) is also original fillRect art. Solid footprints
+ * live in LANDMARKS in town.js so collision and paint stay on the same
+ * tiles. Pure decoration (a mailbox beside a door, a bench under a cafe
+ * window) is drawn inside the building rectangle and does not block a
+ * tile. See "Tile and prop detail" in docs/NOTES.md.
+ *
  * Runner letters (the pictures are drawn as text so the outline is easy
  * to see in the source):
  *   o outline   C cap   P panel   B brim   H hair
@@ -1090,6 +1097,9 @@ function shingles(ctx, x, y, w, h, base, dark, light) {
     const offset = Math.floor(row / 5) % 2 === 0 ? 3 : 7;
     for (let col = offset; col < w - 2; col += 8) ink(ctx, x + col, y + row, 1, 4, dark);
   }
+  // Roof drip edge: a dark lip plus a light ridge so the eave reads.
+  ink(ctx, x + 1, y + h - 3, w - 2, 2, dark);
+  ink(ctx, x + 2, y + 2, w - 4, 1, light);
 }
 
 function brickCourses(ctx, x, y, w, h) {
@@ -1109,6 +1119,11 @@ function woodSiding(ctx, x, y, w, h) {
 }
 
 function windowPane(ctx, x, y, w, h) {
+  // Wood frame around the glass so panes read as windows, not blue boxes.
+  // lighting.js uses the same (x, y, w, h) for the night glow, so the
+  // frame sits outside that rectangle and the glow stays on the glass.
+  ink(ctx, x - 2, y - 2, w + 4, h + 4, "#3e2614");
+  ink(ctx, x - 1, y - 1, w + 2, h + 2, "#c4956a");
   box(ctx, x, y, w, h, "#1c3c55", "#9fd8ea", "#163044");
   ink(ctx, x + 2, y + 2, w - 4, Math.floor(h * 0.45), "#d8f4ff");
   ink(ctx, x + 2, y + 2 + Math.floor(h * 0.45), w - 4, h - 4 - Math.floor(h * 0.45), "#6eb4d4");
@@ -1124,6 +1139,47 @@ function doorPanel(ctx, x, y, w, h, color) {
   ink(ctx, x + 3, y + 4, w - 6, 1, tone.dark);
   ink(ctx, x + 3, y + Math.floor(h * 0.55), w - 6, 1, tone.dark);
   ink(ctx, x + w - 7, y + Math.floor(h * 0.48), 3, 3, "#f2c14e");
+}
+
+/** Two shallow steps under a door. Drawn inside the building footprint. */
+function doorSteps(ctx, x, y, w) {
+  ink(ctx, x - 4, y, w + 8, 6, "#cfc6b8");
+  ink(ctx, x - 4, y, w + 8, 1, "#f6f1e6");
+  ink(ctx, x - 6, y + 6, w + 12, 5, "#b8b0a2");
+  ink(ctx, x - 6, y + 10, w + 12, 1, "#8d877c");
+}
+
+function planterBox(ctx, x, y, salt = 0) {
+  box(ctx, x, y, 18, 10, "#6b4428", "#c4956a", "#3e2614");
+  ink(ctx, x + 2, y + 2, 14, 4, "#3d6b3a");
+  drawFlower(ctx, x + 5, y + 1, salt);
+  drawFlower(ctx, x + 11, y, salt + 2);
+}
+
+function mailbox(ctx, x, y) {
+  // Small roadside box. Original pixels, no postal logo.
+  box(ctx, x + 4, y + 10, 4, 12, "#6b4428", "#c4956a", "#3e2614");
+  box(ctx, x, y, 16, 12, "#214e8f", "#4a7ec4", "#163044");
+  ink(ctx, x + 2, y + 3, 8, 2, "#9fd8ea");
+  ink(ctx, x + 12, y + 4, 3, 4, "#f2c14e");
+}
+
+function bench(ctx, x, y) {
+  ink(ctx, x + 2, y + 10, 4, 8, "#6b4428");
+  ink(ctx, x + 26, y + 10, 4, 8, "#6b4428");
+  box(ctx, x, y + 4, 32, 8, "#c4956a", "#e8d0a4", "#6b4428");
+  ink(ctx, x + 2, y + 2, 28, 3, "#a07848");
+}
+
+function bikeRack(ctx, x, y) {
+  // Three steel loops. Not a brand mark.
+  ink(ctx, x, y + 14, 36, 2, "#5c656e");
+  for (let i = 0; i < 3; i += 1) {
+    const bx = x + 2 + i * 12;
+    ink(ctx, bx, y + 2, 2, 14, "#8a9098");
+    ink(ctx, bx + 8, y + 2, 2, 14, "#8a9098");
+    ink(ctx, bx, y, 10, 2, "#c5ccd2");
+  }
 }
 
 function stripedAwning(ctx, x, y, w, h, a, b) {
@@ -1256,7 +1312,9 @@ export function sceneryLayout() {
     boardRect("track", "TRACK", 27 * TILE + 6, 9 * TILE + 6),
     boardRect("5k", "5K", 26 * TILE + 2, 11 * TILE + 6),
     // East expansion landmarks. Original boards, brand colors only.
-    boardRect("garden", "GARDEN", 51 * TILE + 4, 10 * TILE + 4),
+    // Garden board on grass west of the beds (tiles 48–49, y=9). Keeps
+    // clear of the north rail and the gate path at x=52.
+    boardRect("garden", "GARDEN", 48 * TILE + 4, 9 * TILE + 4),
     boardRect("library", "NOOK", 54 * TILE + 8, 5 * TILE + 4),
     boardRect("kiln", "KILN", 57 * TILE + 8, 20 * TILE + 4),
     boardRect("club", "CLUB", 49 * TILE + 10, 25 * TILE + 4),
@@ -1317,6 +1375,13 @@ export function sceneryLayout() {
     vFence("track-east", 34 * TILE + 8, 11 * TILE + 2, 8 * TILE - 4),
     vFence("track-west-north", 27 * TILE + 8, 11 * TILE + 2, TILE - 4),
     vFence("track-west-south", 27 * TILE + 8, 18 * TILE + 2, TILE - 4),
+    // Community garden rail. Gap at tile x=52 is the gate onto the path.
+    // Collision comes from LANDMARKS beds, not from these painted rails.
+    hFence("garden-north", 50 * TILE, 9 * TILE + 22, 5 * TILE),
+    hFence("garden-south-west", 50 * TILE, 13 * TILE - 6, TILE + 8),
+    hFence("garden-south-east", 53 * TILE + 8, 13 * TILE - 6, 2 * TILE),
+    vFence("garden-west", 49 * TILE + 14, 10 * TILE, 3 * TILE - 4),
+    vFence("garden-east", 57 * TILE - 6, 10 * TILE, 3 * TILE - 4),
   ];
   return { signs, fences };
 }
@@ -1397,6 +1462,7 @@ function drawCafe(ctx, ox, oy, scene) {
   ink(ctx, ox + 210, oy + 42, 6, 62, "#8a9098");
   ink(ctx, ox + 40, oy + 42, 176, 4, "#c5ccd2");
   doorPanel(ctx, ox + 100, oy + 2, 26, 30, "#f4f4f4");
+  doorSteps(ctx, ox + 100, oy + 32, 26);
   ink(ctx, ox + 106, oy + 6, 14, 10, "#9fd8ea");
   windowPane(ctx, ox + 30, oy + 50, 88, 44);
   drawRoaster(ctx, ox + 42, oy + 52);
@@ -1407,6 +1473,9 @@ function drawCafe(ctx, ox, oy, scene) {
   ink(ctx, ox + 206, oy + 78, 8, 18, "#c5ccd2");
   ink(ctx, ox + 202, oy + 74, 16, 6, "#8a9098");
   ink(ctx, ox + 208, oy + 94, 4, 6, "#1a1c1f");
+  // Bench and planter under the south face — still on the building tile.
+  bench(ctx, ox + 130, oy + 100);
+  planterBox(ctx, ox + 48, oy + 102, 3);
   paintBoard(ctx, scenePart(scene, "cafe"));
 }
 
@@ -1416,10 +1485,13 @@ function drawClinic(ctx, ox, oy, scene) {
   shingles(ctx, ox + 20, oy + 36, 152, 40, "#2f6f78", "#1a454c", "#7eb8c4");
   box(ctx, ox + 28, oy + 68, 136, 56, "#f4f1e8", "#fffaf2", "#8a8174");
   doorPanel(ctx, ox + 72, oy + 2, 28, 32, "#1f6f78");
+  doorSteps(ctx, ox + 72, oy + 34, 28);
   ink(ctx, ox + 76, oy + 8, 20, 16, "#d8f4ff");
   ink(ctx, ox + 84, oy + 10, 4, 8, "#1f6f78");
   drawStretchFigure(ctx, ox + 36, oy + 78);
   windowPane(ctx, ox + 108, oy + 78, 28, 22);
+  planterBox(ctx, ox + 40, oy + 108, 1);
+  planterBox(ctx, ox + 140, oy + 108, 4);
   paintBoard(ctx, scenePart(scene, "clinic"));
 }
 
@@ -1441,6 +1513,9 @@ function drawHome(ctx, ox, oy, scene) {
   ink(ctx, ox + 84, oy + foot - 8, 58, 8, "#cfc6b8");
   ink(ctx, ox + 84, oy + foot - 2, 58, 2, "#8d877c");
   drawLantern(ctx, ox + 112, oy + 108);
+  mailbox(ctx, ox + 70, oy + 120);
+  planterBox(ctx, ox + 36, oy + 118, 1);
+  planterBox(ctx, ox + 170, oy + 118, 4);
   paintBoard(ctx, scenePart(scene, "home"));
   drawFlower(ctx, ox + 40, oy + 108, 1);
   drawFlower(ctx, ox + 176, oy + 108, 4);
@@ -1452,8 +1527,12 @@ function drawGrocery(ctx, ox, oy, scene) {
   stripedAwning(ctx, ox + 24, oy + 86, 208, 18, "#2f7a45", "#f4f7f2");
   for (const pane of panes("grocery")) windowPane(ctx, pane.x, pane.y, pane.w, pane.h);
   doorPanel(ctx, ox + 100, oy + 5 * TILE - 36, 24, 36, "#214e8f");
+  doorSteps(ctx, ox + 100, oy + 5 * TILE - 2, 24);
   crate(ctx, ox + 32, oy + 5 * TILE - 28, ["#e23d3d", "#f2c14e", "#3d9a4a", "#e23d3d", "#f2c14e", "#7ec85a"]);
   crate(ctx, ox + 196, oy + 5 * TILE - 28, ["#3d9a4a", "#e23d3d", "#f2c14e", "#7ec85a", "#e23d3d", "#f2c14e"]);
+  // Window boxes under the glass — still on the brick face, not the mat.
+  planterBox(ctx, ox + 48, oy + 72, 2);
+  planterBox(ctx, ox + 178, oy + 72, 5);
   drawLantern(ctx, ox + 128, oy + 96);
   paintBoard(ctx, scenePart(scene, "grocery"));
 }
@@ -1474,11 +1553,18 @@ function drawGym(ctx, ox, oy, scene) {
   // flush with the sidewalk on tile x = 9.
   doorPanel(ctx, ox + 188, oy + 96, 18, 32, "#214e8f");
   doorPanel(ctx, ox + 206, oy + 96, 18, 32, "#1a3f78");
+  // East-facing stoop onto the sidewalk (door faces right, not down).
+  ink(ctx, ox + 222, oy + 118, 10, 40, "#cfc6b8");
+  ink(ctx, ox + 222, oy + 118, 10, 1, "#f6f1e6");
+  ink(ctx, ox + 230, oy + 120, 6, 36, "#b8b0a2");
   ink(ctx, ox + 192, oy + 102, 10, 14, "#9fd8ea");
   ink(ctx, ox + 210, oy + 102, 10, 14, "#9fd8ea");
   box(ctx, ox + 70, oy + 18, 28, 18, "#f3e2c0", "#fff8ea", "#6b4428");
   drawDumbbell(ctx, ox + 73, oy + 21);
   drawLantern(ctx, ox + 214, oy + 88);
+  // Bike rack along the south wall, inside the fence (building tile).
+  bikeRack(ctx, ox + 48, oy + 7 * TILE - 28);
+  planterBox(ctx, ox + 140, oy + 7 * TILE - 24, 2);
   paintFence(ctx, scenePart(scene, "gym-fence"));
   paintBoard(ctx, scenePart(scene, "gym"));
   drawFlower(ctx, ox + 24, oy + 180, 2);
@@ -1500,9 +1586,12 @@ function drawStore(ctx, ox, oy, scene) {
   brickCourses(ctx, ox + 36, oy + 70, 152, 70);
   for (const pane of panes("store")) windowPane(ctx, pane.x, pane.y, pane.w, pane.h);
   doorPanel(ctx, ox + 100, oy, 24, 32, "#214e8f");
+  doorSteps(ctx, ox + 100, oy + 32, 24);
   drawSneaker(ctx, ox + 70, oy + 46);
   crate(ctx, ox + 28, oy + 4, ["#f7f7f7", "#2aa6a0", "#e23b3b"]);
   crate(ctx, ox + 164, oy + 4, ["#24366b", "#f7f7f7", "#2aa6a0"]);
+  mailbox(ctx, ox + 48, oy + 8);
+  planterBox(ctx, ox + 150, oy + 52, 3);
   drawLantern(ctx, ox + 112, oy - 4);
   paintFence(ctx, scenePart(scene, "store-fence"));
   paintBoard(ctx, scenePart(scene, "store"));
@@ -1554,26 +1643,114 @@ function drawParkAndTrackSigns(ctx, scene) {
 }
 
 /**
+ * Crop / flower salt for a garden bed id. Different beds get different
+ * plant colors so the rows read as mixed plantings, not one green slab.
+ */
+function gardenCropSalt(id) {
+  if (id.endsWith("-a")) return 0;
+  if (id.endsWith("-b")) return 2;
+  if (id.endsWith("-c")) return 1;
+  if (id.endsWith("-d")) return 3;
+  if (id.endsWith("-e")) return 4;
+  return 1;
+}
+
+function drawRaisedBed(ctx, x, y, w, h, salt) {
+  // Wood frame, dark soil, then a few crop / flower pixels.
+  box(ctx, x + 1, y + 2, w - 2, h - 4, "#6b4428", "#c4956a", "#3e2614");
+  ink(ctx, x + 3, y + 4, w - 6, h - 8, "#3a2818");
+  ink(ctx, x + 3, y + 4, w - 6, 2, "#5a4030");
+  const crops = ["#3d9a4a", "#e23b3b", "#f2c14e", "#e56aa0", "#7ec85a"];
+  const leaves = ["#245c22", "#3d6b3a", "#1b5c24"];
+  for (let row = 0; row < Math.max(1, Math.floor((h - 10) / 8)); row += 1) {
+    for (let col = 0; col < Math.max(1, Math.floor((w - 10) / 8)); col += 1) {
+      const cx = x + 5 + col * 8 + ((row + salt) % 2);
+      const cy = y + 6 + row * 8;
+      ink(ctx, cx, cy + 2, 1, 3, leaves[(salt + col) % leaves.length]);
+      ink(ctx, cx - 1, cy, 3, 2, crops[(salt + col + row) % crops.length]);
+      ink(ctx, cx, cy - 1, 1, 1, "#fff4c2");
+    }
+  }
+}
+
+function drawGardenShed(ctx, x, y, w, h) {
+  // Small tool shed: shingled roof, wood door, one tiny window.
+  shingles(ctx, x + 2, y, w - 4, 14, "#8d3a32", "#5e221c", "#c45a48");
+  box(ctx, x + 4, y + 12, w - 8, h - 14, "#c4956a", "#e8d0a4", "#6b4428");
+  doorPanel(ctx, x + Math.floor(w / 2) - 8, y + 18, 16, h - 24, "#6b4428");
+  windowPane(ctx, x + 8, y + 18, 10, 10);
+  ink(ctx, x + 6, y + h - 4, w - 12, 3, "#8d877c");
+}
+
+function drawScarecrow(ctx, x, y) {
+  // Stick figure with a straw hat. Original pixels, not a borrowed sprite.
+  ink(ctx, x + 14, y + 20, 4, 12, "#6b4428");
+  ink(ctx, x + 6, y + 22, 20, 3, "#c4956a");
+  box(ctx, x + 10, y + 10, 12, 12, "#e23b3b", "#f06a5a", "#8d221c");
+  ink(ctx, x + 12, y + 12, 3, 3, "#1c1c1c");
+  ink(ctx, x + 17, y + 12, 3, 3, "#1c1c1c");
+  box(ctx, x + 8, y + 4, 16, 8, "#f2c14e", "#fff1c2", "#8a5a20");
+  ink(ctx, x + 6, y + 10, 20, 2, "#c4956a");
+}
+
+function drawWateringCan(ctx, x, y) {
+  box(ctx, x + 6, y + 10, 16, 12, "#5c656e", "#a0a8b0", "#2a2e33");
+  ink(ctx, x + 10, y + 6, 8, 6, "#8a9098");
+  ink(ctx, x + 20, y + 12, 8, 3, "#8a9098");
+  ink(ctx, x + 26, y + 10, 3, 6, "#5c656e");
+  ink(ctx, x + 8, y + 12, 4, 2, "#d8f4ff");
+}
+
+function drawToolRack(ctx, x, y) {
+  box(ctx, x + 4, y + 4, 24, 6, "#6b4428", "#c4956a", "#3e2614");
+  ink(ctx, x + 8, y + 8, 2, 18, "#8a9098");
+  ink(ctx, x + 14, y + 8, 2, 18, "#c4956a");
+  ink(ctx, x + 20, y + 8, 2, 18, "#8a9098");
+  ink(ctx, x + 6, y + 8, 6, 4, "#3d6b3a");
+  ink(ctx, x + 18, y + 8, 6, 4, "#3d6b3a");
+}
+
+/** Dirt path through the garden gate. Visual only — tiles stay walkable. */
+function drawGardenPath(ctx) {
+  // drawPebble paints a full tile using (tx, ty) only for the stone salt.
+  for (const [tx, ty] of [[52, 10], [52, 11], [52, 12], [51, 12]]) {
+    drawPebble(ctx, tx * TILE, ty * TILE, tx, ty);
+  }
+}
+
+/**
  * Solid east-expansion props. Footprints come from LANDMARKS in town.js
  * so collision and paint stay on the same tiles.
  */
 function drawLandmarks(ctx) {
+  drawGardenPath(ctx);
   for (const mark of LANDMARKS) {
     const x = mark.tx * TILE;
     const y = mark.ty * TILE;
     const w = mark.w * TILE;
     const h = mark.h * TILE;
-    if (mark.id.startsWith("garden")) {
-      box(ctx, x + 2, y + 4, w - 4, h - 6, "#3d6b3a", "#6d9a4a", "#244422");
-      ink(ctx, x + 6, y + 8, 4, 4, "#e23b3b");
-      ink(ctx, x + 14, y + 10, 4, 4, "#f2c14e");
+    if (mark.id.startsWith("garden-bed")) {
+      drawRaisedBed(ctx, x, y, w, h, gardenCropSalt(mark.id));
+    } else if (mark.id === "garden-shed") {
+      drawGardenShed(ctx, x, y, w, h);
+    } else if (mark.id === "garden-scarecrow") {
+      drawScarecrow(ctx, x, y);
+    } else if (mark.id === "garden-can") {
+      drawWateringCan(ctx, x, y);
+    } else if (mark.id === "garden-tools") {
+      drawToolRack(ctx, x, y);
     } else if (mark.id.startsWith("library")) {
       box(ctx, x + 2, y + 2, w - 4, h - 4, "#6b4428", "#c4956a", "#3e2614");
       ink(ctx, x + 8, y + 8, w - 16, 4, "#1d4ed8");
       ink(ctx, x + 8, y + 16, w - 16, 4, "#f7f1e4");
+      ink(ctx, x + 8, y + 24, w - 16, 4, "#e23b3b");
+      planterBox(ctx, x + 4, y + h - 12, 2);
     } else if (mark.id.startsWith("kiln")) {
       box(ctx, x + 4, y + 2, w - 8, h - 4, "#8d3a32", "#c45a48", "#5e221c");
       ink(ctx, x + w / 2 - 4, y - 6, 8, 10, "#5c656e");
+      // Warm ember glow in the kiln mouth.
+      ink(ctx, x + 12, y + h - 18, w - 24, 10, "#3a1c10");
+      ink(ctx, x + 16, y + h - 14, w - 32, 4, "#e07a32");
     } else if (mark.id.startsWith("club-post")) {
       box(ctx, x + 10, y + 4, 12, h - 6, "#6b4428", "#c4956a", "#3e2614");
       ink(ctx, x + 8, y + 2, 16, 6, "#f2c14e");
@@ -1675,7 +1852,13 @@ export function paintActivationPads(ctx, world) {
 
 function drawAreaFences(ctx, scene) {
   for (const fence of scene.fences) {
-    if (fence.id.startsWith("park") || fence.id.startsWith("track")) paintFence(ctx, fence);
+    if (
+      fence.id.startsWith("park")
+      || fence.id.startsWith("track")
+      || fence.id.startsWith("garden")
+    ) {
+      paintFence(ctx, fence);
+    }
   }
 }
 
@@ -1794,10 +1977,20 @@ function drawLandmarksFrom(ctx, landmarks) {
     const y = mark.ty * TILE;
     const w = mark.w * TILE;
     const h = mark.h * TILE;
-    if (mark.id.startsWith("garden")) {
-      box(ctx, x + 2, y + 4, w - 4, h - 6, "#3d6b3a", "#6d9a4a", "#244422");
+    if (mark.id.startsWith("garden-bed")) {
+      drawRaisedBed(ctx, x, y, w, h, gardenCropSalt(mark.id));
+    } else if (mark.id === "garden-shed") {
+      drawGardenShed(ctx, x, y, w, h);
+    } else if (mark.id === "garden-scarecrow") {
+      drawScarecrow(ctx, x, y);
+    } else if (mark.id === "garden-can") {
+      drawWateringCan(ctx, x, y);
+    } else if (mark.id === "garden-tools") {
+      drawToolRack(ctx, x, y);
     } else if (mark.id.startsWith("kiln")) {
       box(ctx, x + 4, y + 2, w - 8, h - 4, "#8d3a32", "#c45a48", "#5e221c");
+      ink(ctx, x + 12, y + h - 18, w - 24, 10, "#3a1c10");
+      ink(ctx, x + 16, y + h - 14, w - 32, 4, "#e07a32");
     }
   }
 }

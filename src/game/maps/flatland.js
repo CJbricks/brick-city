@@ -4,6 +4,10 @@
  *
  * Same core training locations, farm flavor, Dark Mowdle (city guide),
  * and a practice yard landmark. Tall grass near the barn can hide a watch.
+ *
+ * FLATLAND_LANDMARKS is a farm garden (beds, shed, tools, scarecrow)
+ * beside the yard road. Column x=48 is the road to the yard mat — do
+ * not place a landmark on that column or the yard walk breaks.
  */
 
 import { CITIES } from "@/lib/constants";
@@ -31,8 +35,15 @@ export const FLATLAND_PLACES = [
 ];
 
 export const FLATLAND_LANDMARKS = [
-  { id: "garden-bed-a", tx: 46, ty: 18, w: 4, h: 1 },
-  { id: "garden-bed-b", tx: 46, ty: 19, w: 1, h: 1 },
+  // Farm garden beside the practice yard. Leave x=48 open — that column
+  // is the north-south farm road to the yard mat.
+  { id: "garden-bed-a", tx: 44, ty: 18, w: 3, h: 1 },
+  { id: "garden-bed-b", tx: 50, ty: 18, w: 2, h: 1 },
+  { id: "garden-bed-c", tx: 44, ty: 19, w: 2, h: 1 },
+  { id: "garden-bed-d", tx: 50, ty: 19, w: 2, h: 1 },
+  { id: "garden-shed", tx: 52, ty: 18, w: 2, h: 2 },
+  { id: "garden-tools", tx: 43, ty: 18, w: 1, h: 1 },
+  { id: "garden-scarecrow", tx: 51, ty: 20, w: 1, h: 1 },
   { id: "kiln-stack", tx: 54, ty: 16, w: 3, h: 2 },
 ];
 
@@ -88,7 +99,8 @@ function createFlatlandGround() {
   fillRect(ground, 42, 20, 16, 14, "x");
   fillRect(ground, 44, 24, 10, 8, "h");
   hRoad(ground, 22, 40, 58, "r");
-  vRoad(ground, 48, 18, 34, "r");
+  // Join the shared y=20 town street; starting at 18 left a dead spur.
+  vRoad(ground, 48, 20, 34, "r");
   // Silo path
   hRoad(ground, 40, 22, 50, "s");
   // Track oval

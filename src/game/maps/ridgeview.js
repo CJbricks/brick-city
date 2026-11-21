@@ -5,6 +5,10 @@
  * Same core training locations every town has, plus mountain flavor,
  * Dylan Broman (city guide), and a few trail NPCs. Tall grass east of
  * the trail head can hide a running watch (forage area "ridgeview").
+ *
+ * RIDGEVIEW_LANDMARKS holds a small trail-side garden (beds, can,
+ * scarecrow) and the kiln stack. art.js paints those ids the same way
+ * as Brick City. Keep the footprints off doors and the main roads.
  */
 
 import { CITIES } from "@/lib/constants";
@@ -29,7 +33,12 @@ export const RIDGEVIEW_BUILDINGS = CORE_BUILDINGS.map((b) => ({ ...b }));
 export const RIDGEVIEW_PLACES = corePlaces("Good Neighbor Roasting", "Mountain Trails");
 
 export const RIDGEVIEW_LANDMARKS = [
-  { id: "garden-bed-a", tx: 48, ty: 12, w: 3, h: 1 },
+  // Small trail-side garden plot (cheap detail pass).
+  { id: "garden-bed-a", tx: 48, ty: 12, w: 2, h: 1 },
+  { id: "garden-bed-b", tx: 51, ty: 12, w: 1, h: 1 },
+  { id: "garden-bed-c", tx: 48, ty: 13, w: 2, h: 1 },
+  { id: "garden-can", tx: 51, ty: 13, w: 1, h: 1 },
+  { id: "garden-scarecrow", tx: 52, ty: 12, w: 1, h: 1 },
   { id: "kiln-stack", tx: 52, ty: 20, w: 3, h: 2 },
 ];
 

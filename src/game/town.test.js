@@ -15,7 +15,9 @@
 import { describe, expect, it } from "vitest";
 import { createNewGame } from "@/lib/activities";
 import { paintActivationPads, sceneryLayout, tilesTouchedBy } from "@/game/art";
-import { ACTIVITY_BOARD, COLS, DIR, ROWS, TOWN_MAP_COLS, TOWN_MAP_ROWS, TRACK_GATE, TRACK_SIGN_TILES, UNBUILT_CITIES, activationTiles, buildWorld, canReach, cityMaps, entranceAt, footBlocked, homeSpawn, isBlocked, lookupInteract, noteArrival, PLACES, TILE, safePlayerPosition, signCopy, townSquareSpawn, trackLaneTiles, unreachableTiles, worldPixelSize } from "@/game/town";
+import { ACTIVITY_BOARD, BUILDINGS, COLS, DIR, LANDMARKS, ROWS, TOWN_MAP_COLS, TOWN_MAP_ROWS, TRACK_GATE, TRACK_SIGN_TILES, UNBUILT_CITIES, activationTiles, buildWorld, canReach, cityMaps, entranceAt, footBlocked, homeSpawn, isBlocked, lookupInteract, noteArrival, PLACES, TILE, safePlayerPosition, signCopy, townSquareSpawn, trackLaneTiles, unreachableTiles, worldPixelSize } from "@/game/town";
+import { buildFlatlandWorld } from "@/game/maps/flatland";
+import { buildRidgeviewWorld } from "@/game/maps/ridgeview";
 import { cafeRates, clinicRates } from "@/lib/constants";
 import { xpToReachLevel } from "@/lib/xp";
 import { deserialize } from "@/lib/save";
@@ -514,5 +516,78 @@ describe("track gate and signs", () => {
         walkFeet(world, center(lane), center(next));
       }
     }
+  });
+});
+
+describe("community garden and building doors", () => {
+  it("keeps the garden gate path open and the mat reachable from home", () => {
+    const state = createNewGame({ name: "Ada", gender: "female" });
+    const world = buildWorld(state);
+    const home = homeSpawn();
+    const origin = { tx: Math.floor(home.x / TILE), ty: Math.floor(home.y / TILE) };
+    const garden = PLACES.find((place) => place.id === "garden");
+    expect(garden).toMatchObject({ tx: 52, ty: 13 });
+    // Gate path through the beds. A landmark on these tiles would seal the gate.
+    for (const tile of [{ tx: 52, ty: 12 }, { tx: 52, ty: 11 }, { tx: 52, ty: 10 }, { tx: 51, ty: 12 }]) {
+      expect(isBlocked(world, tile.tx, tile.ty), tileKey(tile)).toBe(false);
+      expect(
+        LANDMARKS.some(
+          (mark) =>
+            tile.tx >= mark.tx
+            && tile.tx < mark.tx + mark.w
+            && tile.ty >= mark.ty
+            && tile.ty < mark.ty + mark.h,
+        ),
+        `landmark covers gate ${tileKey(tile)}`,
+      ).toBe(false);
+    }
+    expect(isBlocked(world, garden.tx, garden.ty)).toBe(false);
+    expect(canReach(world, origin, garden)).toBe(true);
+    expect(lookupInteract(world, garden.tx, garden.ty, garden.facing)).toBe("garden");
+    // Pia stays east of the mat so facing down on the mat still opens garden.
+    expect(lookupInteract(world, garden.tx, garden.ty, "down")).toBe("garden");
+
+    const beds = LANDMARKS.filter((mark) => mark.id.startsWith("garden"));
+    expect(beds.length).toBeGreaterThanOrEqual(7);
+    for (const mark of beds) {
+      expect(isBlocked(world, mark.tx, mark.ty), mark.id).toBe(true);
+    }
+  });
+
+  it("still reaches every building door after the detail pass", () => {
+    const state = createNewGame({ name: "Ada", gender: "female" });
+    const world = buildWorld(state);
+    const home = homeSpawn();
+    const origin = { tx: Math.floor(home.x / TILE), ty: Math.floor(home.y / TILE) };
+    // Building.door is often the last blocked brick of the wall. The
+    // walkable mat is the matching PLACES tile in front of it.
+    for (const building of BUILDINGS) {
+      expect(world.interact[building.door.y][building.door.x], building.id).toBe(building.id);
+      const mat = PLACES.find((place) => place.id === building.id);
+      expect(mat, building.id).toBeTruthy();
+      expect(isBlocked(world, mat.tx, mat.ty), building.id).toBe(false);
+      expect(canReach(world, origin, mat), building.id).toBe(true);
+    }
+  });
+
+  it("keeps Ridgeview and Flatland doors reachable with their garden props", () => {
+    const state = createNewGame({ name: "Ada", gender: "female" });
+    const ridge = buildRidgeviewWorld(state);
+    const flat = buildFlatlandWorld();
+    const origin = { tx: 5, ty: 7 };
+    for (const world of [ridge, flat]) {
+      expect(isBlocked(world, origin.tx, origin.ty), world.id).toBe(false);
+      for (const place of world.places) {
+        expect(isBlocked(world, place.tx, place.ty), `${world.id}:${place.id}`).toBe(false);
+        expect(canReach(world, origin, place), `${world.id}:${place.id}`).toBe(true);
+      }
+      for (const building of world.buildings) {
+        // Door brick stays solid; the matching place mat is the stand tile.
+        expect(world.interact[building.door.y][building.door.x], `${world.id}:${building.id}`).toBe(building.id);
+      }
+    }
+    // Flatland's farm road at x=48 must stay open to the yard.
+    expect(isBlocked(flat, 48, 20)).toBe(false);
+    expect(isBlocked(flat, 48, 22)).toBe(false);
   });
 });

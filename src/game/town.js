@@ -243,12 +243,28 @@ export const TOWN_SQUARE = { tx: 16, ty: 12, facing: "down" };
  * Solid scenery tiles that are not buildings: garden beds, the kiln
  * chimney block, and the club gazebo posts. art.js paints them; buildWorld
  * marks them blocked.
+ *
+ * Community Garden layout (tiles). The gold mat stays at (52, 13) and
+ * Pia stands at (54, 13). A one-tile path runs north through (52, 12)
+ * and (52, 11) so the gate still opens onto the beds. Do not put a
+ * landmark on those path tiles or on the mat.
+ *
+ *   y10: bed-a (50-51) . path(52) . bed-b (53) . shed (55-56)
+ *   y11: bed-c (50-51) . path(52) . bed-d (53-54) . shed
+ *   y12: bed-e (50)    . path(51-52) . can(53) . scarecrow(56)
+ *   y13: sidewalk mats — garden (52), Pia (54)
  */
 export const LANDMARKS = [
-  // Community garden beds (solid raised plots).
-  { id: "garden-bed-a", tx: 51, ty: 11, w: 3, h: 1 },
-  { id: "garden-bed-b", tx: 51, ty: 12, w: 1, h: 1 },
-  { id: "garden-bed-c", tx: 53, ty: 12, w: 1, h: 1 },
+  // Community garden: tidy raised beds, shed, scarecrow, tools.
+  { id: "garden-bed-a", tx: 50, ty: 10, w: 2, h: 1 },
+  { id: "garden-bed-b", tx: 53, ty: 10, w: 1, h: 1 },
+  { id: "garden-bed-c", tx: 50, ty: 11, w: 2, h: 1 },
+  { id: "garden-bed-d", tx: 53, ty: 11, w: 2, h: 1 },
+  { id: "garden-bed-e", tx: 50, ty: 12, w: 1, h: 1 },
+  { id: "garden-can", tx: 53, ty: 12, w: 1, h: 1 },
+  { id: "garden-shed", tx: 55, ty: 10, w: 2, h: 2 },
+  { id: "garden-scarecrow", tx: 56, ty: 12, w: 1, h: 1 },
+  { id: "garden-tools", tx: 49, ty: 11, w: 1, h: 1 },
   // Branch Nook shelf wall.
   { id: "library-wall", tx: 54, ty: 6, w: 3, h: 2 },
   // Kiln chimney footprint.
