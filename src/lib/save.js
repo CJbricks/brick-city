@@ -65,6 +65,11 @@
  * member, empty rematch book, and quests not started. The version
  * stays 1.
  *
+ * City travel (mapId), weather, segments, watches, Ridgeview/Flatland
+ * race flags, and backyard session also arrived on this same key.
+ * Missing means Brick City map, clear weather, empty segments, no
+ * watches, unfinished premiers, and no backyard session. Version stays 1.
+ *
  * v2 widened every tile from 16px to 32px. A position is stored in pixels,
  * so an old save's x/y would land on the wrong half of the new tile and
  * often inside a wall. New games stamp tileSize: 32. A save without that
@@ -84,6 +89,9 @@ import { normalizeSickness } from "@/lib/sickness";
 import { normalizeSponsors } from "@/lib/sponsors";
 import { normalizeRematches } from "@/lib/streetRaces";
 import { readWifiTurns } from "@/lib/runclub";
+import { normalizeWeather } from "@/lib/weather";
+import { normalizeWatches } from "@/lib/watches";
+import { normalizeSegments } from "@/lib/segments";
 
 export function serialize(state) {
   return JSON.stringify(state);
@@ -175,6 +183,25 @@ export function deserialize(raw) {
     }
     if (typeof data.progress.halfFinished !== "boolean") data.progress.halfFinished = false;
     if (typeof data.progress.marathonFinished !== "boolean") data.progress.marathonFinished = false;
+    // Ridgeview / Flatland race flags. Missing on an old save means false / 0.
+    if (typeof data.progress.ridge50kFinished !== "boolean") data.progress.ridge50kFinished = false;
+    if (typeof data.progress.ridge100kFinished !== "boolean") data.progress.ridge100kFinished = false;
+    if (typeof data.progress.ridge100mFinished !== "boolean") data.progress.ridge100mFinished = false;
+    if (typeof data.progress.ridge200mFinished !== "boolean") data.progress.ridge200mFinished = false;
+    if (typeof data.progress.backyardPracticeBest !== "number") data.progress.backyardPracticeBest = 0;
+    if (typeof data.progress.bigsBackyardFinished !== "boolean") data.progress.bigsBackyardFinished = false;
+    if (typeof data.progress.bpnGoOneMoreFinished !== "boolean") data.progress.bpnGoOneMoreFinished = false;
+    if (typeof data.progress.stormCityBackyardFinished !== "boolean") data.progress.stormCityBackyardFinished = false;
+    // mapId: overworld you walk. Missing means the city you are in, or Brick City.
+    if (typeof data.mapId !== "string" || !data.mapId) {
+      data.mapId = typeof data.city === "string" && data.city ? data.city : "brick-city";
+    }
+    if (data.backyardSession != null && (typeof data.backyardSession !== "object" || Array.isArray(data.backyardSession))) {
+      data.backyardSession = null;
+    }
+    normalizeWeather(data);
+    normalizeWatches(data);
+    normalizeSegments(data);
     // No records object, or a best that is not a 5K clock, means you
     // have not run the neighborhood time trial. Do not invent a time.
     if (!data.records || typeof data.records !== "object" || Array.isArray(data.records)) {

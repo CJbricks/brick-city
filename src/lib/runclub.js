@@ -62,11 +62,11 @@ export const RUN_CLUB_GARDEN_COIN_REWARD = 12;
 export const RUN_CLUB_NIGHT_CITY_COIN_REWARD = 18;
 
 /**
- * Hook for a future segment board. Segments need a running watch.
- * Leave this string in dialogue / NOTES so the feature has a home.
+ * Club tip about segments. The watch unlocks logging; the club does not
+ * hand out a watch. See watches.js / segments.js.
  */
 export const RUN_CLUB_SEGMENT_HOOK =
-  "TODO: Cornerstone segments and local-legend status need a running watch. Not built yet.";
+  "Local segments need a running watch from Ridgeview tall grass. Once you have one, club routes can log Cornerstone segments.";
 
 /**
  * True when the runner has earned the invite. Old saves missing

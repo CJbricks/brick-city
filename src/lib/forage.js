@@ -18,6 +18,8 @@
  */
 
 import { FINDS_PER_DAY } from "@/lib/constants";
+import { WATCH_FIND_WEIGHT, grantWatch } from "@/lib/watches";
+import { currentMapId } from "@/lib/travel";
 
 /**
  * Chance a single step into deep grass finds anything.
@@ -27,12 +29,16 @@ import { FINDS_PER_DAY } from "@/lib/constants";
 export const FIND_CHANCE = {
   park: 0.045,
   mountain: 0.07,
+  ridgeview: 0.08,
+  flatland: 0.075,
+  road: 0.05,
 };
 
 /**
  * Weights are relative, not percents. Park totals 100 so the gel is
  * a bit under half of finds. The mountain shifts weight toward the
  * shake and the plain gear, and its chance above is higher too.
+ * Ridgeview / Flatland tables can drop rare running watches.
  */
 export const LOOT = {
   park: [
@@ -51,6 +57,31 @@ export const LOOT = {
     { id: "generic-belt", weight: 7 },
     { id: "generic-vest", weight: 7 },
   ],
+  ridgeview: [
+    { id: "gel", weight: 28 },
+    { id: "socks", weight: 18 },
+    { id: "flask", weight: 16 },
+    { id: "shake", weight: 14 },
+    { id: "generic-belt", weight: 6 },
+    { id: "generic-vest", weight: 6 },
+    { id: "trail-pulse", weight: WATCH_FIND_WEIGHT },
+    { id: "ridge-chrono", weight: WATCH_FIND_WEIGHT },
+  ],
+  flatland: [
+    { id: "gel", weight: 28 },
+    { id: "socks", weight: 18 },
+    { id: "flask", weight: 16 },
+    { id: "shake", weight: 14 },
+    { id: "generic-belt", weight: 6 },
+    { id: "generic-vest", weight: 6 },
+    { id: "yard-beacon", weight: WATCH_FIND_WEIGHT },
+  ],
+  road: [
+    { id: "gel", weight: 50 },
+    { id: "flask", weight: 20 },
+    { id: "socks", weight: 20 },
+    { id: "shake", weight: 10 },
+  ],
 };
 
 const NAMES = {
@@ -60,6 +91,9 @@ const NAMES = {
   shake: "a protein shake",
   "generic-belt": "a generic belt",
   "generic-vest": "a generic hydration vest",
+  "trail-pulse": "a Trail Pulse 1 watch",
+  "ridge-chrono": "a Ridge Chrono X watch",
+  "yard-beacon": "a Yard Beacon watch",
 };
 
 export function findsToday(state) {
@@ -69,11 +103,15 @@ export function findsToday(state) {
 }
 
 /**
- * Deep grass only exists in two places. North of the upper road, east
- * of the gate rocks, is the mountain. South of the lower road is the
- * park. Anywhere else is not a find, even if a tile were mistyped.
+ * Deep grass finds depend on which map you are on.
+ * Brick City: mountain north-east, park south.
+ * Ridgeview / Flatland / roads: whole-map tall grass tables.
  */
-export function forageArea(tx, ty) {
+export function forageArea(tx, ty, state = null) {
+  const mapId = state ? currentMapId(state) : "brick-city";
+  if (mapId === "ridgeview") return "ridgeview";
+  if (mapId === "flatland") return "flatland";
+  if (mapId === "road-brick-ridgeview" || mapId === "road-ridgeview-flatland") return "road";
   if (ty <= 6 && tx >= 27) return "mountain";
   if (ty >= 22 && tx >= 14) return "park";
   return null;
@@ -95,6 +133,9 @@ function alreadyOwned(state, id) {
   if (id === "generic-belt" || id === "generic-vest") {
     return (state.gear.ownedCarry || []).includes(id);
   }
+  if (id === "trail-pulse" || id === "ridge-chrono" || id === "yard-beacon") {
+    return (state.gear.ownedWatches || []).includes(id);
+  }
   return false;
 }
 
@@ -104,6 +145,9 @@ function alreadyOwned(state, id) {
  * Returns the words for the dialogue box.
  */
 function grantFind(state, id) {
+  if (id === "trail-pulse" || id === "ridge-chrono" || id === "yard-beacon") {
+    return grantWatch(state, id);
+  }
   if ((id === "socks" || id === "generic-belt" || id === "generic-vest") && alreadyOwned(state, id)) {
     state.gels = (state.gels || 0) + 1;
     return `You found ${NAMES[id]}! You already have that, so you pocket a gel.`;

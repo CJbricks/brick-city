@@ -54,6 +54,7 @@ import {
   styleLabel,
 } from "@/lib/catalog";
 import { nutritionTuning, sponsorPace, sponsorSummaryLines } from "@/lib/sponsors";
+import { TRAIL_RACES } from "@/lib/trailRaces";
 
 export { shoeById, shoeMiles, shoeWear } from "@/lib/catalog";
 export { SHOES, CARRY, replaceCost } from "@/lib/catalog";
@@ -144,6 +145,8 @@ export const RACES = {
     dnfXp: { overall: 28, marathon: 16 },
     dnfFatigue: 30,
   },
+  // Ridgeview premier mountain races (see trailRaces.js for unlocks).
+  ...TRAIL_RACES,
 };
 
 export const RIVAL = {

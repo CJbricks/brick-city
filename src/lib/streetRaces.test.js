@@ -16,7 +16,10 @@ import {
 
 describe("street races and rematches", () => {
   it("lists original opponents and a 1–2 week rematch gap", () => {
-    expect(STREET_OPPONENTS.map((row) => row.id)).toEqual(["tess", "kit", "otto", "mara"]);
+    expect(STREET_OPPONENTS.map((row) => row.id)).toEqual([
+      "tess", "kit", "otto", "mara",
+      "joss", "quill", "soren", "breeze", "cedar", "noct",
+    ]);
     expect(REMATCH_COOLDOWN_DAYS).toBe(10);
     expect(STREET_RACE_ENERGY).toBe(2);
   });

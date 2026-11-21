@@ -48,7 +48,10 @@ import {
   travelSpawn,
 } from "@/components/game/Panels";
 import { TouchControls } from "@/components/game/TouchControls";
-import { CITY_SIGNS, PLACES, placeIsLocked, signCopy } from "@/game/town";
+import { CITY_SIGNS, placeIsLocked, placesFor, signCopy, buildActiveWorld } from "@/game/town";
+import { cityById } from "@/lib/constants";
+import { hasWatch } from "@/lib/watches";
+import { segmentMenuLines } from "@/lib/segments";
 import {
   acknowledgeWeek,
   chatLines,
@@ -66,12 +69,18 @@ import { ratesFor } from "@/lib/clinic";
 import { writeSave } from "@/lib/save";
 import { CONFETTI_MS } from "@/game/confetti";
 
-function systemItems(soundOn) {
-  return [
+function systemItems(soundOn, game) {
+  const items = [
     { label: "Runner status", detail: "Meters, attributes, gear, sponsors", action: { type: "open-status" } },
     { label: "Sponsors", detail: "Shoe, nutrition, and gear deals", action: { type: "open-sponsors" } },
     { label: "This week", detail: "Miles, races, old summaries", action: { type: "open-week" } },
-    { label: "Closet", detail: "Shoes, socks, hats, fuel", action: { type: "open-gear" } },
+    { label: "Closet", detail: "Shoes, socks, hats, fuel, watches", action: { type: "open-gear" } },
+    { label: "Segments", detail: "PRs vs Local Legend times", action: { type: "open-segments" } },
+  ];
+  if (hasWatch(game)) {
+    items.push({ label: "GPS map", detail: "Watch overview of this town", action: { type: "open-gps" } });
+  }
+  items.push(
     { label: "How to play", detail: "Buttons", action: { type: "open-help" } },
     {
       label: soundOn ? "Sound: On" : "Sound: Off",
@@ -81,7 +90,8 @@ function systemItems(soundOn) {
     },
     { label: "Save game", detail: "This browser", action: { type: "save" } },
     { label: "Title screen", detail: "Leave the town", action: { type: "title" } },
-  ];
+  );
+  return items;
 }
 
 export function PlayScreen({ game, setGame, onTitle }) {
@@ -114,7 +124,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
         // One roll per new tall-grass tile. The panel freezes walking,
         // which is the GBC "You found" stop. A day at the cap rolls nothing.
         if (panelRef.current || gameRef.current.pendingSummary) return;
-        const area = forageArea(tile.tx, tile.ty);
+        const area = forageArea(tile.tx, tile.ty, gameRef.current);
         if (!area) return;
         const result = applyForage(gameRef.current, area, Math.random);
         if (!result.found) return;
@@ -160,6 +170,13 @@ export function PlayScreen({ game, setGame, onTitle }) {
   }
 
   function commit(next, lines, nextTicker, extra = {}) {
+    // Fast travel / road arrival writes a new position and mapId. Move the
+    // Pixi camera there and force a map rebuild on the next frame.
+    if (next?.position && (next.mapId !== gameRef.current?.mapId
+      || next.position.x !== gameRef.current?.position?.x
+      || next.position.y !== gameRef.current?.position?.y)) {
+      worldRef.current?.travelTo(next.position);
+    }
     setGame(next);
     if (nextTicker) setTicker(nextTicker);
     // Confetti is a timer in the town ticker, not a menu. Input still works.
@@ -194,6 +211,21 @@ export function PlayScreen({ game, setGame, onTitle }) {
         action,
         roll,
         gels: currentState().gels || 0,
+        choiceIndex: 0,
+      });
+      return;
+    }
+    if (result.needsBackyard) {
+      setGame(result.state);
+      setPanel({
+        type: "dialogue",
+        speaker: result.speaker || "Yard bell",
+        pages: result.lines,
+        index: Math.max(0, (result.lines?.length || 1) - 1),
+        choices: [
+          { id: "backyard-continue", label: "Continue another loop" },
+          { id: "backyard-stop", label: "Stop here" },
+        ],
         choiceIndex: 0,
       });
       return;
@@ -249,6 +281,33 @@ export function PlayScreen({ game, setGame, onTitle }) {
     }
     if (action.type === "open-help") {
       setPanel({ type: "help" });
+      return;
+    }
+    if (action.type === "open-segments") {
+      const state = currentState();
+      const pages = hasWatch(state)
+        ? segmentMenuLines(state)
+        : ["Segments need a running watch. Find one in Ridgeview tall grass (and later towns)."];
+      setPanel({
+        type: "dialogue",
+        speaker: "Segments",
+        pages: pages.length ? pages : ["No segments logged yet."],
+        index: 0,
+      });
+      return;
+    }
+    if (action.type === "open-gps") {
+      const state = currentState();
+      if (!hasWatch(state)) {
+        setPanel({
+          type: "dialogue",
+          speaker: "GPS",
+          pages: ["No running watch equipped. Find one in Ridgeview tall grass."],
+          index: 0,
+        });
+        return;
+      }
+      setPanel({ type: "map", index: 0, gps: true });
       return;
     }
     if (action.type === "toggle-sound") {
@@ -322,9 +381,10 @@ export function PlayScreen({ game, setGame, onTitle }) {
     // CITY_SIGNS, and its tile is no longer in the interact grid, so
     // this branch cannot fire for the old copies.
     if (String(id).startsWith("sign-")) {
-      const sign = CITY_SIGNS.find((item) => item.id === id);
+      const world = buildActiveWorld(currentState());
+      const sign = (world.signs || CITY_SIGNS).find((item) => item.id === id);
       if (!sign) return;
-      const copy = signCopy();
+      const copy = signCopy(world.info || cityById(currentState().city));
       setPanel({ type: "dialogue", speaker: copy.speaker, pages: copy.lines, index: 0 });
       return;
     }
@@ -397,6 +457,14 @@ export function PlayScreen({ game, setGame, onTitle }) {
       run({ type: "street-race", id: current.opponentId });
       return;
     }
+    if (choice.id === "backyard-continue") {
+      run({ type: "backyard-loop", choice: "continue" });
+      return;
+    }
+    if (choice.id === "backyard-stop") {
+      run({ type: "backyard-loop", choice: "stop" });
+      return;
+    }
     setPanel(null);
   }
 
@@ -410,7 +478,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
       });
       return;
     }
-    const spawn = travelSpawn(place);
+    const spawn = travelSpawn(place, gameRef.current);
     worldRef.current?.travelTo(spawn);
     const pos = worldRef.current?.getPosition() || spawn;
     setGame({ ...gameRef.current, position: pos });
@@ -455,7 +523,8 @@ export function PlayScreen({ game, setGame, onTitle }) {
       return;
     }
     if (current.type === "map") {
-      tryTravel(PLACES[current.index] || PLACES[0]);
+      const places = placesFor(gameRef.current);
+      tryTravel(places[current.index] || places[0]);
       return;
     }
     setPanel(null);
@@ -527,7 +596,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
   }
 
   function openMenu() {
-    setPanel({ type: "list", title: "Menu", items: systemItems(soundOn), index: 0 });
+    setPanel({ type: "list", title: "Menu", items: systemItems(soundOn, gameRef.current), index: 0 });
   }
 
   useLayoutEffect(() => {
@@ -538,7 +607,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
     // can be one toggle behind; the keyboard should see the same row
     // the screen is showing.
     panelRef.current = panel?.type === "list" && panel.title === "Menu"
-      ? { ...panel, items: systemItems(soundOn) }
+      ? { ...panel, items: systemItems(soundOn, gameRef.current) }
       : panel;
     actions.current = { pressA, pressB, moveSelection, openMap, openInventory };
   });
@@ -625,7 +694,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
               title={panel.title}
               intro={panel.intro}
               introTestId={panel.introTestId}
-              items={panel.title === "Menu" ? systemItems(soundOn) : panel.items}
+              items={panel.title === "Menu" ? systemItems(soundOn, game) : panel.items}
               tabs={panel.tabs}
               index={panel.index}
               testId={panel.testId}
@@ -633,7 +702,7 @@ export function PlayScreen({ game, setGame, onTitle }) {
               // click has to wrap it or the store says nothing happens.
               onTab={(tabAction) => activate({ action: { ...tabAction, replace: true } })}
               onPick={(itemIndex) => {
-                const items = panel.title === "Menu" ? systemItems(soundOn) : panel.items;
+                const items = panel.title === "Menu" ? systemItems(soundOn, game) : panel.items;
                 activate(items[itemIndex]);
               }}
             />
@@ -660,7 +729,8 @@ export function PlayScreen({ game, setGame, onTitle }) {
             <MapView
               game={game}
               index={panel.index}
-              onHover={(index) => setPanel({ type: "map", index })}
+              gps={Boolean(panel.gps)}
+              onHover={(index) => setPanel({ ...panel, index })}
               onTravel={tryTravel}
               onSave={saveFromMap}
               saveNote={mapNote}

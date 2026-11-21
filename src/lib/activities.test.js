@@ -543,11 +543,15 @@ describe("races, rivals, and unlocks", () => {
     expect(marathon.lines.join(" ")).toMatch(/brick-red ribbon|Marathon Running track/i);
 
     // Energy and FOOD were spent; refill and confirm the first-finish line does not repeat.
+    // Clear any typed injury a weather/fatigue roll may have left, and use a
+    // stable rng so injury chance does not refuse the second start.
     const nextStart = structuredClone(marathon.state);
     nextStart.energy = 10;
     nextStart.condition.nutrition = 95;
     nextStart.condition.fatigue = 8;
-    const second = applyRace(nextStart, "marathon", 0.85);
+    nextStart.condition.injury = null;
+    nextStart.condition.sore = false;
+    const second = applyRace(nextStart, "marathon", 0.85, undefined, () => 0.99);
     expect(second.ok).toBe(true);
     expect(second.lines.join(" ")).not.toMatch(/brick-red ribbon/);
   });

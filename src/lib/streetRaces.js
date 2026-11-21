@@ -70,6 +70,57 @@ export const STREET_OPPONENTS = [
     blurb: "Mara waits on the mountain path and races whoever makes the climb.",
     style: "trail",
   },
+  // Optional road challengers (Brick City → Ridgeview). Skip by walking past.
+  {
+    id: "joss",
+    name: "Joss Ember",
+    title: "the ridge-road pacer",
+    location: "race-joss",
+    blurb: "Joss warms up on the shoulder and offers a mile if you want it.",
+    style: "road",
+  },
+  {
+    id: "quill",
+    name: "Quill March",
+    title: "the long-haul jogger",
+    location: "race-quill",
+    blurb: "Quill is headed the same way. Race or keep walking.",
+    style: "road",
+  },
+  // Optional road challengers (Ridgeview → Flatland).
+  {
+    id: "soren",
+    name: "Soren Vale",
+    title: "the farm-road hobbyist",
+    location: "race-soren",
+    blurb: "Soren trains for Flatland yards on this gravel.",
+    style: "versatile",
+  },
+  {
+    id: "breeze",
+    name: "Breeze Dalton",
+    title: "the silo sprinter",
+    location: "race-breeze",
+    blurb: "Breeze will race you to the next fence post — optional.",
+    style: "road",
+  },
+  // Ridgeview / Flatland town challengers.
+  {
+    id: "cedar",
+    name: "Cedar Pike",
+    title: "the switchback kicker",
+    location: "race-cedar",
+    blurb: "Cedar lives on the Ridgeview climb.",
+    style: "trail",
+  },
+  {
+    id: "noct",
+    name: "Remy Noct",
+    title: "the night-yard pacer",
+    location: "race-noct",
+    blurb: "Remy Noct jogs Flatland fence lines after dusk.",
+    style: "versatile",
+  },
 ];
 
 export function streetOpponentById(id) {

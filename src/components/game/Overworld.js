@@ -37,13 +37,14 @@ import { CONFETTI_MS, pieceCount, spawnPieces, stepPieces } from "@/game/confett
 import {
   TILE,
   activationTiles,
-  buildWorld,
+  buildActiveWorld,
   footBlocked,
   lookupInteract,
   noteArrival,
   tileOf,
   worldPixelSize,
 } from "@/game/town";
+import { currentMapId } from "@/lib/travel";
 import { forageArea } from "@/lib/forage";
 import { MOODS, glowAnchors, lightingForSlot } from "@/lib/lighting";
 
@@ -318,7 +319,7 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
       function syncActors() {
         const game = propsRef.current.game;
         if (!game) return;
-        worldRef.current = buildWorld(game);
+        worldRef.current = buildActiveWorld(game);
         padKeys = new Set(activationTiles(worldRef.current).map((tile) => `${tile.tx},${tile.ty}`));
         sparkles = shimmerSpots(worldRef.current.ground);
         for (const sprite of npcSprites) sprite.destroy();
@@ -337,7 +338,7 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
       function syncMap(frame) {
         const game = propsRef.current.game;
         if (!game) return;
-        const key = `${(game.milestones || []).join(",")}|${propsRef.current.mountainOpen ? 1 : 0}`;
+        const key = `${currentMapId(game)}|${(game.milestones || []).join(",")}|${propsRef.current.mountainOpen ? 1 : 0}`;
         if (key !== mapKey) {
           mapKey = key;
           for (const texture of mapFrames) texture.destroy(true);
@@ -407,7 +408,7 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
           if (stepOn.entered) {
             held.current = { up: false, down: false, left: false, right: false };
             live.onEnter?.(stepOn.entered);
-          } else if (changed && moving && !frozen && collision.ground[here.ty]?.[here.tx] === "h" && forageArea(here.tx, here.ty)) {
+          } else if (changed && moving && !frozen && collision.ground[here.ty]?.[here.tx] === "h" && forageArea(here.tx, here.ty, game)) {
             // A new tile of deep grass, not every pixel of the same tile.
             // The find itself is pure (forage.js). This only notices the step.
             live.onGrass?.(here);

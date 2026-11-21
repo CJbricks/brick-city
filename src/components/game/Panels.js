@@ -17,8 +17,9 @@ import { useEffect, useRef } from "react";
 import { Box, Button, Stack, Text } from "@chakra-ui/react";
 import { renderWorld } from "@/game/art";
 import { Icon } from "@/components/game/Hud";
-import { COLS, PLACES, ROWS, placeIsLocked, spawnFor } from "@/game/town";
-import { ATTRIBUTES, CITY_INFO, TRACKS } from "@/lib/constants";
+import { COLS, ROWS, placeIsLocked, placesFor, spawnFor } from "@/game/town";
+import { ATTRIBUTES, CITY_INFO, TRACKS, cityById } from "@/lib/constants";
+import { hasWatch } from "@/lib/watches";
 import { RACES, describeLoadout, readiness } from "@/lib/race";
 import { readRaceIq } from "@/lib/cafe";
 import { attributeLevel, levelProgress, trackRank } from "@/lib/xp";
@@ -36,10 +37,11 @@ function Window({ title, children, testId }) {
   );
 }
 
-function CityPlaque() {
+function CityPlaque({ cityId } = {}) {
+  const info = cityId ? cityById(cityId) : CITY_INFO;
   return (
     <p className="city-plaque" data-testid="city-plaque">
-      {`${CITY_INFO.name} · "${CITY_INFO.motto}"`}
+      {`${info.name} · "${info.motto}"`}
     </p>
   );
 }
@@ -146,8 +148,10 @@ export function RaceView({ game, raceId, onRun, onBack }) {
   );
 }
 
-export function MapView({ game, index, onHover, onTravel, onSave, saveNote }) {
+export function MapView({ game, index, onHover, onTravel, onSave, saveNote, gps }) {
   const canvasRef = useRef(null);
+  const places = placesFor(game);
+  const city = cityById(game.city);
   useEffect(() => {
     const target = canvasRef.current;
     if (!target) return;
@@ -157,17 +161,30 @@ export function MapView({ game, index, onHover, onTravel, onSave, saveNote }) {
     const ctx = target.getContext("2d");
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(painted, 0, 0);
-  }, [game]);
+    // GPS watch overlay: mark the runner and discovered place pins.
+    if (gps && hasWatch(game) && game.position) {
+      const px = game.position.x;
+      const py = game.position.y;
+      ctx.fillStyle = "#1d4ed8";
+      ctx.fillRect(Math.round(px) - 4, Math.round(py) - 4, 8, 8);
+      ctx.fillStyle = "#fff8ea";
+      ctx.fillRect(Math.round(px) - 2, Math.round(py) - 2, 4, 4);
+    }
+  }, [game, gps]);
 
   return (
-    <Window title="Brick City" testId="town-map">
-      <CityPlaque />
-      <p>Unlocked places travel. The mountain stays grey until the ranger opens it.</p>
+    <Window title={gps ? `GPS · ${city.name}` : city.name} testId="town-map">
+      <CityPlaque cityId={game.city} />
+      <p>
+        {gps
+          ? "Watch GPS overview. Blue square is you. Pins are places."
+          : "Unlocked places travel. The mountain stays grey until the ranger opens it."}
+      </p>
       <Button className="gbc-btn" data-testid="map-save" onClick={onSave}>Save Game</Button>
       {saveNote ? <p data-testid="map-save-note">{saveNote}</p> : null}
       <div className="map-stage">
         <canvas ref={canvasRef} className="map-canvas" />
-        {PLACES.map((place, placeIndex) => {
+        {places.map((place, placeIndex) => {
           const locked = placeIsLocked(place, game);
           return (
             <button
@@ -182,7 +199,7 @@ export function MapView({ game, index, onHover, onTravel, onSave, saveNote }) {
           );
         })}
       </div>
-      {PLACES.map((place, placeIndex) => {
+      {places.map((place, placeIndex) => {
         const locked = placeIsLocked(place, game);
         const detail = locked ? describeNeeds(mountainStatus(game).needs) : "Open";
         return (
@@ -201,8 +218,8 @@ export function MapView({ game, index, onHover, onTravel, onSave, saveNote }) {
   );
 }
 
-export function travelSpawn(place) {
-  return spawnFor(place.id);
+export function travelSpawn(place, game) {
+  return spawnFor(place.id, game);
 }
 
 export function StatusView({ game, onClose, onSponsors }) {

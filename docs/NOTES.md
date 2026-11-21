@@ -220,7 +220,7 @@ The roll is `Math.random()`, passed into `applyRace` at the moment you confirm. 
 | Mountain gate | Level 8, 5 park trail runs, any trail-style shoe equipped |
 | Brick City Half | Level 15, finished 5K, and finished 10K (`HALF_UNLOCK_LEVEL` in `constants.js`) |
 | Brick City Marathon | Level 20 and a finished Half (`MARATHON_UNLOCK_LEVEL` in `constants.js`) |
-| Other cities | Sam at the depot explains them. The bus is not running yet. |
+| Other cities | Finish Half + Marathon → road to Ridgeview. Finish Ridgeview premiers → Flatland. Depot buses discovered cities. |
 
 Locked race rows use `entryNeedsMessage` so the booth only lists what is still missing (for example, "Reach level 15 and finish the Community 10K to enter"). There is no "later season" placeholder for these two races.
 
@@ -483,14 +483,14 @@ The same check covers every city that has a map. `cityMaps()` in `src/game/town.
 
 | Town | Map in the game? | City info signs |
 |---|---|---|
-| Brick City | Yes. This is the overworld you walk. | 8 before, 1 after |
-| Ridgeview | No | none |
+| Brick City | Yes. This is the overworld you walk. | 1 |
+| Ridgeview | Yes (trail / mountain town) | 1 |
 | Lakeport | No | none |
 | Mesa Verde Flats | No | none |
-| Flatland | No | none |
+| Flatland | Yes (farm / backyard town) | 1 |
 | Summit Hollow | No | none |
 
-When a later town gets tiles, add it to `cityMaps()` with one welcome sign and take its name off `UNBUILT_CITIES`. The loop will then require that map to have exactly one city info sign too.
+Road maps between Brick City↔Ridgeview and Ridgeview↔Flatland are separate overworlds (not city plaques). When a later town gets tiles, add it to `cityMaps()` with one welcome sign and take its name off `UNBUILT_CITIES`.
 
 ## Controls
 
@@ -693,9 +693,9 @@ Poor visibility means extra soreness strikes on top of the usual tired / hungry 
 
 Trail is riskiest (roots and rocks), park middling, city streets under lamps the safest of the three. Each also pays a little more overall / trail XP than a daylight easy jog so the risk is worth considering. Energy cost is 3, same as an easy day run after the +1 bump.
 
-**TODO (not built yet):** a headlamp in the hat / headlamp gear slot should cut `nightRisk` by 1. The hat slot already exists for sun/heat hats; do not add new gear in this change — leave the hook comment in `nextSoreness`.
+**Headlamp:** buy a **Peakbeam Headlamp** (hat slot, unlocks with the Ridgeview shelf). While worn it cuts `nightRisk` by `HEADLAMP_NIGHT_RISK_CUT` (1) in `src/lib/injuries.js`. `nextSoreness` uses `adjustedNightRisk`.
 
-No new save fields. An old `brick-city-save-v1` loads as-is; the night rows appear on the menus when the clock reaches Evening.
+Night rows still appear on the menus when the clock reaches Evening. An old save without a headlamp loads as usual.
 
 ## Half Marathon & Marathon
 
@@ -1028,10 +1028,101 @@ When the third piece lands, a note delivers the invite (`maybeDeliverRunClubInvi
 
 All bonus numbers live in `src/lib/runclub.js` as `RUN_CLUB_*` constants so CJ can retune without hunting menus.
 
-**TODO (not built):** Strava-style segments and local-legend status need a running watch. The hook string is `RUN_CLUB_SEGMENT_HOOK`.
+**Segments + watches:** see **Ridgeview, Flatland, travel, watches, segments, weather, and injuries** below. The club tip string is still `RUN_CLUB_SEGMENT_HOOK` / `runClubSegmentTip()` — the club does not give you a watch.
 
 Save fields: `wifiTurns`, `runClub`, `rematches`. Missing means 0 / not a member / empty timers. Version stays **1**.
 
-## What this build does not do yet
+## Ridgeview, Flatland, travel, watches, segments, weather, and injuries
 
-Backyard race events, the other cities, real-life run logging, and running-watch segments are in the design and not in this build. The Half Marathon and Marathon are playable from the Local Track once unlocked. Shoe sponsors and nutrition sponsors are in this private prototype. The fictional brand ladder in the README is the public-release plan.
+This section is for CJ. It explains the city-travel update in plain language. Tunable numbers live in named constants so you can retune without hunting menus.
+
+### Unlocking the road to Ridgeview
+
+Finish **both** the Brick City Half and the Brick City Marathon (`progress.halfFinished` and `progress.marathonFinished`). Until then the depot road row stays locked and explains what is missing.
+
+The **first** trip is a walkable **road map** (`road-brick-ridgeview`) with optional street-race challengers (Joss Ember, Quill March). You can race or walk past. Arriving in Ridgeview the first time:
+
+1. Calls the same shelf unlock as `arriveInCity` (so Ridgeview brand catalogs open)
+2. Sets `state.city` and `state.mapId` to `ridgeview`
+3. **Dylan Broman** greets you (city guide)
+
+After a city is in `citiesReached`, every town **depot** offers **fast travel** between discovered cities for `FAST_TRAVEL_ENERGY` (2) energy, `FAST_TRAVEL_FATIGUE` (4), and a small food hit. You can still walk the road.
+
+### Ridgeview town
+
+Built at `TOWN_MAP_COLS` × `TOWN_MAP_ROWS` (72×66). Same core locations every town has: inn/home, grocery, gym, run store, clinic, cafe (Wi-Fi + forecast), depot, trails/park, track, activity board. Mountain flavor and NPCs (Dylan, Cedar Pike, Nessa Quill).
+
+**Premier mountain races** (progressive):
+
+| Race | Energy | Extra days | Overall XP | Coins | Fatigue | Unlocks when |
+|---|---|---|---|---|---|---|
+| Ridgeview 50K | 7 | 0 | 220 | 160 | 55 | Lv 18 + Marathon finished |
+| Ridgeview 100K | 8 | 1 | 320 | 240 | 70 | Lv 22 + 50K finished |
+| Ridgeview 100 Mile | 10 | 1 | 450 | 360 | 85 | Lv 26 + 100K finished |
+| Ridgeview 200 Mile | 10 | 2 | 700 | 550 | 95 | Lv 30 + 100 Mile finished |
+
+Compare to the Marathon: 6 energy / 170 XP / 120 coins. First finish of each premier celebrates like the marathon. Flags: `ridge50kFinished`, `ridge100kFinished`, `ridge100mFinished`, `ridge200mFinished` (missing → `false`).
+
+### Road to Flatland
+
+Finish **all four** Ridgeview premiers. Same walk-first road (`road-ridgeview-flatland`) with optional challengers (Soren Vale, Breeze Dalton), then depot fast travel. **Dark Mowdle** greets you on first arrival.
+
+### Flatland backyard ultras
+
+Practice yard + three premier yards. Format: **4.167 miles** every hour (`BACKYARD_LOOP_MILES`). Menu loop: continue or stop. Fatigue rises each loop; fail chance rises with fatigue. Reward scales with loops; last one standing wins premiers.
+
+| Event | Energy | Field loops | Gate |
+|---|---|---|---|
+| Practice Yard | 4 | 6 | Lv 1 |
+| Big's Backyard | 6 | 12 | Lv 18 |
+| BPN Go One More | 7 | 16 | Lv 22 + Big's finished |
+| Storm City Backyard | 8 | 20 | Lv 26 + BPN finished |
+
+Save: `backyardPracticeBest` (number, default 0), `bigsBackyardFinished`, `bpnGoOneMoreFinished`, `stormCityBackyardFinished` (bool, default false).
+
+### Running watches and segments
+
+Rare watches drop in Ridgeview / Flatland tall grass (`trail-pulse`, `ridge-chrono`, `yard-beacon`). Owning any watch unlocks:
+
+- **GPS map** (pause menu → GPS map)
+- **Segment logging** when a run covers a named segment
+
+Segments are original names (not Strava). Each has a Local Legend NPC time. Beat it for `SEGMENT_LEGEND_COINS` (24) and XP. Menu: pause → Segments. PRs live in `state.segments` (missing → `{}`). The run club does **not** give a watch; club tips mention segments once you own one (`runClubSegmentTip`).
+
+### Weather
+
+Each sleep rolls tomorrow → today. Weights in `WEATHER_WEIGHTS`: clear ~70%, heat/storm/wind less, ice rare (higher in cold season, first 20 days of each 60-day cycle). HUD shows today's weather. Cafe → Weather forecast shows today + tomorrow. Weather adds to injury chance (`WEATHER_INJURY_CHANCE`). Missing save fields → clear / clear.
+
+### Injury types
+
+On top of blisters / night-run strikes / soreness, a finished run can roll a typed injury. Base chance `INJURY_BASE_CHANCE` (0.03), plus weather, high fatigue (70 / 85), hard sessions, and night risk.
+
+| Type | Days | Blocks running? | Clinic cost |
+|---|---|---|---|
+| Muscle cramp | 1 | No | 0.5 × city treatment |
+| Muscle pull | 3 | Yes | 0.85 × |
+| Achilles soreness | 5 | No (pace penalty) | 1.0 × |
+| Knee strain | 7 | Yes | 1.25 × |
+| Concussion | 4 | Yes (trail only, rare) | 1.5 × |
+
+Clinic treatment removes `INJURY_CLINIC_NIGHTS` (2) nights per visit (once per day). Summit Hollow still uses its higher `clinic.treatment` base, so typed costs stay higher there.
+
+### Save compatibility
+
+Version stays **`brick-city-save-v1`**. New fields get safe defaults on load: `mapId`, `weather`, `segments`, `gear.watch` / `ownedWatches`, Ridgeview/Flatland progress flags, `backyardSession`. See `deserialize` in `src/lib/save.js`.
+
+### Files to read
+
+| File | Role |
+|---|---|
+| `src/lib/travel.js` / `travelActions.js` | Road unlocks, depot bus |
+| `src/lib/trailRaces.js` | Ridgeview premiers |
+| `src/lib/backyard.js` | Flatland yards |
+| `src/lib/watches.js` / `segments.js` | Watches + Local Legend |
+| `src/lib/weather.js` / `injuries.js` | Sky + injury types |
+| `src/game/maps/*` | Ridgeview, Flatland, roads |
+| `src/game/town.js` | `buildActiveWorld`, `cityMaps()` |
+
+### What is still later
+
+Lakeport, Mesa Verde Flats, Summit Hollow maps, and real-life run logging are still design-only. Shoe / nutrition / gear sponsors stay as in this private prototype.
