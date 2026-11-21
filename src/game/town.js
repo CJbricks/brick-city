@@ -51,12 +51,11 @@
  * brick-city-save-v1 file rebuilds this map the same way it rebuilds
  * the welcome sign.
  *
- * cityMaps() is the list of overworlds that actually exist. Brick City
- * is the only one. Ridgeview, Lakeport, Mesa Verde Flats, Flatland, and
- * Summit Hollow are names in the design. They are in UNBUILT_CITIES and
- * have no tiles. Each of those records still names a PT clinic and a
- * coffee shop, so a later map has a place to put both doors. Summit
- * Hollow's clinic and its coffee shop are the expensive ones.
+ * cityMaps() is the list of overworlds that actually exist. Brick City,
+ * Ridgeview, and Flatland are built. Lakeport, Mesa Verde Flats, and
+ * Summit Hollow stay in UNBUILT_CITIES. Road maps between towns are
+ * separate overworlds (see src/game/maps/roads.js) and are not city
+ * plaques — they are not in cityMaps().
  *
  * The park trail keeps the pond loop and then winds south through tall
  * grass. The mountain trail keeps the gate at x=30 and then winds east
@@ -67,6 +66,16 @@
 import { CITIES, CITY_INFO } from "@/lib/constants";
 import { RUN_CLUB_NAME } from "@/lib/runclub";
 import { isMountainOpen } from "@/lib/unlocks";
+import { currentMapId } from "@/lib/travel";
+import { buildRidgeviewWorld, ridgeviewHomeSpawn, RIDGEVIEW_INFO, RIDGEVIEW_PLACES, RIDGEVIEW_SIGNS } from "@/game/maps/ridgeview";
+import { buildFlatlandWorld, flatlandHomeSpawn, FLATLAND_INFO, FLATLAND_PLACES, FLATLAND_SIGNS } from "@/game/maps/flatland";
+import {
+  buildBrickRidgeRoadWorld,
+  buildRidgeFlatRoadWorld,
+  roadWestSpawn,
+  roadEastSpawn,
+} from "@/game/maps/roads";
+import { ROAD_BRICK_RIDGEVIEW, ROAD_RIDGEVIEW_FLATLAND } from "@/lib/travel";
 
 export { CITY_INFO };
 
@@ -212,6 +221,8 @@ export const PLACES = [
   { id: "track", name: "Local Track", tx: 26, ty: 12, facing: "right" },
   { id: "mountain", name: "Mountain Gate", tx: 30, ty: 8, facing: "up", lock: "mountain" },
   { id: "depot", name: "World Depot", tx: 19, ty: 17, facing: "up" },
+  // East road exit toward Ridgeview (after Half + Marathon). Talk or use depot.
+  { id: "road-exit", name: "Ridge Road", tx: 68, ty: 8, facing: "right" },
   { id: "clinic", name: "PT Clinic", tx: 40, ty: 10, facing: "down" },
   { id: "cafe", name: "Tangentline Roasters", tx: 39, ty: 15, facing: "down" },
   // East expansion landmarks. Press A on the mat; they are not auto-doors.
@@ -759,8 +770,10 @@ export function tileCenter(tx, ty) {
   };
 }
 
-export function spawnFor(placeId) {
-  const place = PLACES.find((item) => item.id === placeId);
+export function spawnFor(placeId, state = null) {
+  const list = state ? placesFor(state) : PLACES;
+  const place = list.find((item) => item.id === placeId) || PLACES.find((item) => item.id === placeId);
+  if (!place) return homeSpawn();
   const center = tileCenter(place.tx, place.ty);
   return { ...center, facing: place.facing, tx: place.tx, ty: place.ty };
 }
@@ -786,7 +799,7 @@ export function townSquareSpawn() {
  * counts as safe when the feet are clear.
  */
 export function safePlayerPosition(state, world = null) {
-  const map = world || buildWorld(state);
+  const map = world || buildActiveWorld(state);
   const pos = state?.position;
   if (!pos || typeof pos.x !== "number" || typeof pos.y !== "number") {
     return townSquareSpawn();
@@ -877,6 +890,8 @@ export function buildWorld(state) {
   interact[ACTIVITY_BOARD.mat.ty][ACTIVITY_BOARD.mat.tx] = ACTIVITY_BOARD.id;
 
   return {
+    id: "brick-city",
+    info: CITY_INFO,
     ground,
     blocked,
     interact,
@@ -887,6 +902,7 @@ export function buildWorld(state) {
     landmarks: LANDMARKS,
     mountainOpen,
     mountainTrail,
+    activityBoard: ACTIVITY_BOARD,
   };
 }
 
@@ -901,9 +917,9 @@ export const UNBUILT_CITIES = Object.values(CITIES)
   .map((city) => ({ id: city.id, name: city.name, clinic: city.clinic, cafe: city.cafe }));
 
 /**
- * Every overworld the game can build. The sign test loops this list,
- * so a new city is checked on the day it is added here. Brick City is
- * the only entry. Its welcome post is CITY_SIGNS, and there is one.
+ * Every town overworld the game can build. The sign test loops this list,
+ * so a new city is checked on the day it is added here. Road maps are
+ * separate (activeWorld) and are not required to have a city plaque.
  */
 export function cityMaps() {
   return [
@@ -914,7 +930,62 @@ export function cityMaps() {
       places: PLACES,
       build: buildWorld,
     },
+    {
+      id: RIDGEVIEW_INFO.id,
+      info: RIDGEVIEW_INFO,
+      signs: RIDGEVIEW_SIGNS,
+      places: RIDGEVIEW_PLACES,
+      build: buildRidgeviewWorld,
+    },
+    {
+      id: FLATLAND_INFO.id,
+      info: FLATLAND_INFO,
+      signs: FLATLAND_SIGNS,
+      places: FLATLAND_PLACES,
+      build: buildFlatlandWorld,
+    },
   ];
+}
+
+/**
+ * Build the overworld the runner is standing on (town or road).
+ * Brick City still uses buildWorld; other maps live under src/game/maps/.
+ */
+export function buildActiveWorld(state) {
+  const mapId = currentMapId(state);
+  if (mapId === "ridgeview") return buildRidgeviewWorld(state);
+  if (mapId === "flatland") return buildFlatlandWorld(state);
+  if (mapId === ROAD_BRICK_RIDGEVIEW) return buildBrickRidgeRoadWorld(state);
+  if (mapId === ROAD_RIDGEVIEW_FLATLAND) return buildRidgeFlatRoadWorld(state);
+  return buildWorld(state);
+}
+
+/** Home / inn spawn for the current town map. Roads use roadWestSpawn. */
+export function homeSpawnFor(mapId) {
+  if (mapId === "ridgeview") return ridgeviewHomeSpawn();
+  if (mapId === "flatland") return flatlandHomeSpawn();
+  if (mapId === ROAD_BRICK_RIDGEVIEW || mapId === ROAD_RIDGEVIEW_FLATLAND) {
+    return roadWestSpawn();
+  }
+  return homeSpawn();
+}
+
+export function roadArrivalSpawn(mapId, side = "east") {
+  if (side === "west") return roadWestSpawn();
+  return roadEastSpawn();
+}
+
+/**
+ * Places list for the pause-map panel on the current overworld.
+ */
+export function placesFor(state) {
+  const mapId = currentMapId(state);
+  if (mapId === "ridgeview") return RIDGEVIEW_PLACES;
+  if (mapId === "flatland") return FLATLAND_PLACES;
+  if (mapId === ROAD_BRICK_RIDGEVIEW || mapId === ROAD_RIDGEVIEW_FLATLAND) {
+    return buildActiveWorld(state).places;
+  }
+  return PLACES;
 }
 
 export function tileOf(px, py) {

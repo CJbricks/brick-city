@@ -213,6 +213,7 @@ export const HAT_COLORS = {
   "nike-acg": { color: "#c4a574", panel: "#efe6d2" },
   rnnr: { color: "#f7f4ee", panel: "#ff4d2e" },
   bpn: { color: "#0b6b4f", panel: "#e7f4ee" },
+  peakbeam: { color: "#f2c14e", panel: "#1c1a16" },
 };
 
 export function hatColors(colorKey) {

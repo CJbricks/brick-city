@@ -601,6 +601,19 @@ export const HATS = {
     colorKey: "bpn",
     blurb: "Green cap. −2 fatigue on a tiring run.",
   },
+  // Buyable night-running light. Cuts nightRisk by 1 (see injuries.js).
+  // Original name. Unlocks with Ridgeview's shelf.
+  headlamp: {
+    id: "headlamp",
+    name: "Peakbeam Headlamp",
+    brand: "Peakbeam",
+    price: 36,
+    heatCut: 0,
+    nightRiskCut: 1,
+    colorKey: "peakbeam",
+    unlock: "ridgeview",
+    blurb: "A bright beam for night runs. −1 night injury risk while worn.",
+  },
   ...EXTRA_HATS,
 };
 
@@ -902,7 +915,31 @@ export function normalizeGear(gear) {
   }
   if (hat && !ownedHats.includes(hat)) ownedHats.push(hat);
 
-  return { equipped, owned, miles, carry, ownedCarry, socks, ownedSocks, hat, ownedHats };
+  // Running watches (Ridgeview+). Missing means none. Kept here so
+  // normalizeGear does not wipe fields normalizeWatches just filled.
+  const ownedWatches = [];
+  if (Array.isArray(source.ownedWatches)) {
+    for (const id of source.ownedWatches) {
+      if (typeof id === "string" && id && !ownedWatches.includes(id)) ownedWatches.push(id);
+    }
+  }
+  let watch = typeof source.watch === "string" && source.watch ? source.watch : null;
+  if (watch && !ownedWatches.includes(watch)) watch = ownedWatches[0] || null;
+  if (!watch && ownedWatches.length) watch = ownedWatches[0];
+
+  return {
+    equipped,
+    owned,
+    miles,
+    carry,
+    ownedCarry,
+    socks,
+    ownedSocks,
+    hat,
+    ownedHats,
+    watch,
+    ownedWatches,
+  };
 }
 
 export function signedPercent(fraction) {

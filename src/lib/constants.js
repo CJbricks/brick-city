@@ -50,8 +50,9 @@ export const NIGHT_RUN_MIN_SLOT = 3;
  * mountain trail roots and rocks the riskiest. Order must stay
  * trail > park > city so the tests can lock that ranking.
  *
- * TODO: a future headlamp (hat / headlamp gear slot) should cut these
- * by 1 so night work is less punishing once you buy the light.
+ * A headlamp in the hat slot (HEADLAMP_HAT_ID in injuries.js) cuts these
+ * by HEADLAMP_NIGHT_RISK_CUT so night work is less punishing once you
+ * buy the light.
  */
 export const NIGHT_RISK_CITY = 1;
 export const NIGHT_RISK_PARK = 2;
@@ -158,7 +159,7 @@ export const CITIES = {
     id: "ridgeview",
     name: "Ridgeview",
     motto: "The Ridge Keeps the Receipt",
-    built: false,
+    built: true,
     clinic: { name: "Ridgeview PT", treatment: 26, tissue: 12, blister: 10, sick: 240 },
     cafe: {
       name: "Good Neighbor Roasting",
@@ -205,7 +206,7 @@ export const CITIES = {
     id: "flatland",
     name: "Flatland",
     motto: "Last One Standing",
-    built: false,
+    built: true,
     clinic: { name: "Flatland PT", treatment: 18, tissue: 8, blister: 6, sick: 160 },
     cafe: {
       name: "Captain's 43rd Bakery",

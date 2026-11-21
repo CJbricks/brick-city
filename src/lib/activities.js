@@ -258,6 +258,48 @@ import {
   runClubInviteReady,
 } from "@/lib/runclub";
 import {
+  FAST_TRAVEL_ENERGY,
+  ROAD_BRICK_RIDGEVIEW,
+  ROAD_RIDGEVIEW_FLATLAND,
+  depotDestinations,
+  flatlandRoadOpen,
+  ridgeviewRoadOpen,
+  roadExitBlockedMessage,
+} from "@/lib/travel";
+import {
+  applyArriveFromRoad,
+  applyEnterRoad,
+  applyFastTravel,
+  applyReturnFromRoad,
+} from "@/lib/travelActions";
+import {
+  INJURY_BLOCK_MESSAGE,
+  INJURY_CLINIC_NIGHTS,
+  adjustedNightRisk,
+  clinicCostForInjury,
+  injuryBlocksRunning,
+  maybeApplyRunInjury,
+} from "@/lib/injuries";
+import { advanceWeather, forecastLines, normalizeWeather, weatherLabel } from "@/lib/weather";
+import { hasWatch, runClubSegmentTip } from "@/lib/watches";
+import { SEGMENT_LEGEND_XP, logSegmentsForRun } from "@/lib/segments";
+import {
+  TRAIL_RACE_ORDER,
+  isTrailRaceOpen,
+  trailRaceFinishedFlag,
+  trailRaceNeedsMessage,
+  trailRaceStatus,
+} from "@/lib/trailRaces";
+import {
+  BACKYARD_EVENTS,
+  backyardById,
+  backyardReward,
+  backyardUnlockStatus,
+  resolveBackyardLoop,
+  startBackyardSession,
+  backyardFinishedFlag,
+} from "@/lib/backyard";
+import {
   STREET_RACE,
   STREET_RACE_ENERGY,
   hasRacedBefore,
@@ -791,13 +833,17 @@ export function createNewGame({ name, gender }) {
     },
     coins: START_COINS,
     // The town you are standing in. The cafe and the clinic read this
-    // for prices. It does not open the Run Store shelf. The other towns
-    // are not maps yet.
+    // for prices. mapId is the overworld (town or road) you walk.
     city: "brick-city",
-    // Cities whose models are on the shelf. Brick City only, until a
-    // future bus writes the next id. An old save is missing this and
-    // Resume fills the same default. state.city is not this list.
+    mapId: "brick-city",
+    // Cities whose models are on the shelf. Brick City only until you
+    // arrive elsewhere. An old save is missing this and Resume fills
+    // the same default. state.city is not this list.
     citiesReached: ["brick-city"],
+    // Daily weather. Missing on an old save → clear / clear.
+    weather: { today: "clear", tomorrow: "clear" },
+    // Segment PRs. Missing → {}.
+    segments: {},
     gear: {
       equipped: "starter",
       owned: ["starter"],
@@ -810,6 +856,9 @@ export function createNewGame({ name, gender }) {
       ownedSocks: [],
       hat: null,
       ownedHats: [],
+      // Running watches (Ridgeview+). Missing → none.
+      watch: null,
+      ownedWatches: [],
     },
     // No deal on day one. The Sponsors menu explains what is still locked.
     sponsors: emptySponsors(),
@@ -844,10 +893,22 @@ export function createNewGame({ name, gender }) {
       // Half and marathon finish flags. Missing on an old save means false.
       halfFinished: false,
       marathonFinished: false,
+      // Ridgeview premier trail finishes. Missing → false.
+      ridge50kFinished: false,
+      ridge100kFinished: false,
+      ridge100mFinished: false,
+      ridge200mFinished: false,
+      // Flatland backyard. Best practice loops is a number; premiers are bool.
+      backyardPracticeBest: 0,
+      bigsBackyardFinished: false,
+      bpnGoOneMoreFinished: false,
+      stormCityBackyardFinished: false,
       rivalWins: 0,
       rivalLosses: 0,
       totalMiles: 0,
     },
+    // Active backyard session while the loop menu is open. null when idle.
+    backyardSession: null,
     // Street-race rematch timers. Empty until you race Tess, Kit, Otto, or Mara.
     rematches: {},
     // Cornerstone Pace Club. Not a member until the invite is accepted.
@@ -1061,15 +1122,15 @@ function markTraining(state, activity) {
  * Training again while sore, with another strike still true, becomes a blister.
  *
  * Night runs add nightRisk strikes (NIGHT_RISK_CITY / PARK / TRAIL).
- * TODO: a future headlamp in the hat slot should cut nightRisk by 1.
+ * A Peakbeam headlamp in the hat slot cuts nightRisk by 1 (injuries.js).
  */
 export function nextSoreness(state, activity) {
   // Good socks ignore the worn-out-shoe strike. The other strikes
   // (tired, hungry, a hard session, a hard week, night risk) still count.
   const shielded = Boolean(sockById(state.gear?.socks)?.blisterShield);
   const worn = shoeWear(state.gear).label === "worn out" && !shielded;
-  // TODO(headlamp): if gear.hat is a headlamp, subtract 1 from nightRisk.
-  const nightExtra = Math.max(0, Number(activity?.nightRisk) || 0);
+  // Headlamp lowers night risk without deleting it.
+  const nightExtra = adjustedNightRisk(activity?.nightRisk, state);
   const strikes = [
     state.condition.fatigue >= 70,
     state.condition.nutrition < 30,
@@ -1138,6 +1199,9 @@ export function applyRun(state, runId, rng = Math.random) {
   if (isSick(state) && !activity.gentle) {
     return refuse(state, [SICKNESS_BLOCK_MESSAGE]);
   }
+  if (injuryBlocksRunning(state) && !activity.gentle) {
+    return refuse(state, [INJURY_BLOCK_MESSAGE]);
+  }
   // The price is `slots` on the workout. Menu and charge both read it.
   const energyCost = runEnergyCost(runId);
   if (readEnergy(state) < energyCost) {
@@ -1175,6 +1239,17 @@ export function applyRun(state, runId, rng = Math.random) {
     } else if (sore.sore && !before.condition.sore) {
       lines.push("Something feels sore. A rest day now beats a week off later.");
     }
+    // Typed injuries (weather / fatigue / trail). Does not overwrite a
+    // longer existing chart injury.
+    const hit = maybeApplyRunInjury(next, activity, rng);
+    if (hit.hit && hit.line) lines.push(hit.line);
+  }
+  // Watch segment logging (Ridgeview+ feature; needs a watch).
+  const segLines = logSegmentsForRun(next, runId, rng);
+  lines.push(...segLines);
+  if (next._segmentLegendXp) {
+    addXp(next, { overall: next._segmentLegendXp });
+    delete next._segmentLegendXp;
   }
   const gear = gearModForStyle(next.gear, activity.style || "road");
   if (gear.wear === "worn out" && activity.miles > 0) {
@@ -1363,6 +1438,9 @@ export function applySleep(state, rng = Math.random) {
   // justRecovered means this sleep already cleared a sickness, so we do
   // not stack a new one on the same morning ("never twice in a row").
   lines.push(...rollSicknessOnWake(next, rng, justRecovered));
+  // Weather rolls with the new morning. Tomorrow becomes today.
+  const sky = advanceWeather(next, rng);
+  lines.push(`Today's weather: ${weatherLabel(sky.today)}.`);
   const note = planObligation(next);
   if (note) {
     const brand = sponsorById(note.kind, note.sponsorId);
@@ -1759,6 +1837,9 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
   if (isSick(state)) {
     return refuse(state, [SICKNESS_BLOCK_MESSAGE]);
   }
+  if (injuryBlocksRunning(state)) {
+    return refuse(state, [INJURY_BLOCK_MESSAGE]);
+  }
   if (raceId === "10k" && !isTenKOpen(state)) {
     return refuse(state, [`The Community 10K is still locked. ${entryNeedsMessage(tenKStatus(state).needs)}`]);
   }
@@ -1767,6 +1848,9 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
   }
   if (raceId === "marathon" && !isMarathonOpen(state)) {
     return refuse(state, [`The Brick City Marathon is still locked. ${entryNeedsMessage(marathonStatus(state).needs)}`]);
+  }
+  if (TRAIL_RACE_ORDER.includes(raceId) && !isTrailRaceOpen(state, raceId)) {
+    return refuse(state, [`${race.name} is still locked. ${trailRaceNeedsMessage(state, raceId)}`]);
   }
   const energyCost = race.energy || 1;
   if (readEnergy(state) < energyCost) {
@@ -1791,6 +1875,8 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
   let speaker = null;
   let quality = null;
   const firstMarathon = raceId === "marathon" && !Boolean(before.progress.marathonFinished);
+  const trailFlag = trailRaceFinishedFlag(raceId);
+  const firstTrail = trailFlag && !Boolean(before.progress[trailFlag]);
   const fuel = addRaceFuel(next);
   if (fuel) lines.push(`${nutritionTuning(next).name} tops you up with ${fuel} nutrition at the gun.`);
   if (threat.bonk && !rescued && threat.dnf) {
@@ -1851,16 +1937,36 @@ export function applyRace(state, raceId, roll = 0.5, choice, rng = Math.random) 
       celebrate = true;
       if (!speaker) speaker = "Track booth";
     }
+    if (firstTrail && trailFlag && next.progress[trailFlag]) {
+      lines.push(`First ${race.name} finish. The ridge remembers.`);
+      celebrate = true;
+      if (!speaker) speaker = "Ridgeview booth";
+    }
   }
   next.calendar.trainedToday = true;
-  const sore = nextSoreness(next, { hard: true });
+  const sore = nextSoreness(next, { hard: true, style: race.style, id: raceId, nightRisk: 0 });
   next.condition.sore = sore.sore;
   next.condition.injury = sore.injury;
+  const hit = maybeApplyRunInjury(next, { hard: true, style: race.style, id: raceId }, rng);
+  if (hit.hit && hit.line) lines.push(hit.line);
+  const segLines = logSegmentsForRun(next, raceId, rng);
+  lines.push(...segLines);
+  if (next._segmentLegendXp) {
+    addXp(next, { overall: next._segmentLegendXp });
+    delete next._segmentLegendXp;
+  }
   // The cup was for this start, bonk or not. Read the line before clearing.
   const coffeeLine = coffeeEffectLine(next);
   if (coffeeLine) lines.push(coffeeLine);
   clearCoffee(next);
   spendEnergy(next, energyCost, true);
+  // Multi-day ultras: advance calendar days after the effort.
+  const daysCost = Number(race.daysCost) || 0;
+  if (daysCost > 0 && quality) {
+    next.calendar.day += daysCost;
+    next.calendar.weekday = (next.calendar.weekday + daysCost) % 7;
+    lines.push(`The effort spans ${daysCost + 1} days on the calendar.`);
+  }
   if (rescued) applyRescueGel(next);
   sample(next);
   lines.push(...maybeDeliverRunClubInvite(next));
@@ -1873,6 +1979,8 @@ function markRaceFinished(state, raceId) {
   if (raceId === "10k") state.progress.tenKFinished = true;
   if (raceId === "half") state.progress.halfFinished = true;
   if (raceId === "marathon") state.progress.marathonFinished = true;
+  const trailFlag = trailRaceFinishedFlag(raceId);
+  if (trailFlag) state.progress[trailFlag] = true;
 }
 
 function noticeBrands(state, lines, event, rng) {
@@ -2100,7 +2208,7 @@ export function applyRunClubJoin(state) {
   return finish(before, next, [
     `Lina Shore stamps your name into ${RUN_CLUB_NAME}.`,
     "Weekly group runs meet here. Tips from Drew and Sable. Optional side work if you want it.",
-    RUN_CLUB_SEGMENT_HOOK,
+    runClubSegmentTip(next),
   ]);
 }
 
@@ -2553,16 +2661,23 @@ export function applyClinicTreat(state) {
   if (clinicTreated(state)) {
     return refuse(state, ["You've already had a treatment today. Sleep starts a new day."]);
   }
-  if (state.coins < rates.treatment) {
-    return refuse(state, [`Treatment costs ${rates.treatment} coins.`]);
+  // Typed injuries use a multiplier on the city's treatment price.
+  // Blisters keep the base treatment price (and blister care is cheaper).
+  const injuryId = state.condition.injury.id;
+  const cost = injuryId && injuryId !== "blister"
+    ? clinicCostForInjury(state, injuryId)
+    : rates.treatment;
+  const nights = injuryId && injuryId !== "blister" ? INJURY_CLINIC_NIGHTS : CLINIC_TREATMENT_NIGHTS;
+  if (state.coins < cost) {
+    return refuse(state, [`Treatment costs ${cost} coins.`]);
   }
   if (readEnergy(state) < CLINIC_TREATMENT_ENERGY) return refuse(state, [LOW_ENERGY]);
   const before = state;
   const next = clone(state);
-  next.coins -= rates.treatment;
+  next.coins -= cost;
   if (!spendEnergy(next, CLINIC_TREATMENT_ENERGY, true)) return refuse(state, [LOW_ENERGY]);
-  const left = Math.max(0, (next.condition.injury.daysLeft || 0) - CLINIC_TREATMENT_NIGHTS);
-  const lines = [`Treatment session. ${rates.treatment} coins, ${CLINIC_TREATMENT_ENERGY} energy. The chart drops ${CLINIC_TREATMENT_NIGHTS} nights.`];
+  const left = Math.max(0, (next.condition.injury.daysLeft || 0) - nights);
+  const lines = [`Treatment session. ${cost} coins, ${CLINIC_TREATMENT_ENERGY} energy. The chart drops ${nights} nights.`];
   if (left <= 0) {
     next.condition.injury = null;
     next.condition.sore = false;
@@ -2816,9 +2931,99 @@ export function perform(state, action, roll = 0.5, rng = Math.random) {
       return applyCafePastry(state);
     case "cafe-wifi":
       return applyCafeWifi(state);
+    case "fast-travel":
+      return applyFastTravel(state, action.id);
+    case "enter-road":
+      return applyEnterRoad(state, action.id, action.side || "west");
+    case "arrive-road":
+      return applyArriveFromRoad(state, action.id);
+    case "return-road":
+      return applyReturnFromRoad(state, action.id);
+    case "backyard-start":
+      return applyBackyardStart(state, action.id);
+    case "backyard-loop":
+      return applyBackyardLoop(state, action.choice, rng);
+    case "open-forecast":
+      return finish(state, clone(state), forecastLines(state));
     default:
       return refuse(state, ["Nothing happens."]);
   }
+}
+
+/**
+ * Start a backyard ultra session. Energy is spent up front.
+ */
+export function applyBackyardStart(state, eventId) {
+  const event = backyardById(eventId);
+  if (!event) return refuse(state, ["That yard is not on the calendar."]);
+  if (isSick(state)) return refuse(state, [SICKNESS_BLOCK_MESSAGE]);
+  if (injuryBlocksRunning(state)) return refuse(state, [INJURY_BLOCK_MESSAGE]);
+  const status = backyardUnlockStatus(state, eventId);
+  if (!status.open) {
+    return refuse(state, [entryNeedsMessage(status.needs)]);
+  }
+  if (readEnergy(state) < event.energy) return refuse(state, [LOW_ENERGY]);
+  const before = state;
+  const next = clone(state);
+  if (!spendEnergy(next, event.energy, true)) return refuse(state, [LOW_ENERGY]);
+  next.backyardSession = startBackyardSession(next, eventId);
+  next.calendar.trainedToday = true;
+  sample(next);
+  return {
+    ok: true,
+    state: next,
+    lines: [
+      `${event.name}. ${event.blurb}`,
+      "4.167 miles every hour. Continue each loop, or stop when you choose.",
+    ],
+    ticker: "",
+    needsBackyard: true,
+  };
+}
+
+/**
+ * One backyard loop choice: continue or stop.
+ */
+export function applyBackyardLoop(state, choice, rng = Math.random) {
+  if (!state.backyardSession?.alive && !state.backyardSession) {
+    return refuse(state, ["No backyard session is open."]);
+  }
+  const before = state;
+  const next = clone(state);
+  if (!next.backyardSession) return refuse(state, ["No backyard session is open."]);
+  const event = backyardById(next.backyardSession.eventId);
+  const result = resolveBackyardLoop(next, next.backyardSession, choice || "continue", rng);
+  const lines = [...result.lines];
+  if (result.done) {
+    const reward = backyardReward(event, result.loops, result.won);
+    next.coins += reward.coins;
+    addXp(next, { overall: reward.xp, ultra: Math.round(reward.xp / 2), versatile: Math.round(reward.xp / 3) });
+    addMiles(next, reward.miles);
+    const flag = backyardFinishedFlag(event.id);
+    if (flag) {
+      if (flag === "backyardPracticeBest") {
+        const best = next.progress.backyardPracticeBest || 0;
+        if (result.loops > best) next.progress.backyardPracticeBest = result.loops;
+      } else if (result.won || result.loops > 0) {
+        next.progress[flag] = true;
+      }
+    }
+    lines.push(`Loops ${result.loops}. +${reward.coins} coins, +${reward.xp} XP, ${reward.miles} mi.`);
+    if (result.won && event.premier) {
+      lines.push("Last one standing. The yard is yours.");
+    }
+    next.backyardSession = null;
+    sample(next);
+    return withNotice(finish(before, next, lines), Boolean(result.won && event.premier), "Yard bell");
+  }
+  sample(next);
+  return {
+    ok: true,
+    state: next,
+    lines,
+    ticker: "",
+    needsBackyard: true,
+  };
 }
 
 function item(label, detail, action, disabled, disabledReason) {
@@ -3133,7 +3338,50 @@ export function menuFor(locationId, state) {
             marathonBlocked,
             marathonReason,
           ),
+          // Ridgeview premier trail races appear on the track board when
+          // you are in Ridgeview (same booth pattern as Brick City races).
+          ...(state?.city === "ridgeview"
+            ? TRAIL_RACE_ORDER.map((id) => {
+              const race = RACES[id];
+              const open = isTrailRaceOpen(state, id);
+              const blocked = sick || !open;
+              return item(
+                race.name,
+                open
+                  ? `${race.energy} energy · race readiness`
+                  : trailRaceNeedsMessage(state, id),
+                { type: "open-race", id },
+                blocked,
+                sick ? SICKNESS_BLOCK_MESSAGE : trailRaceNeedsMessage(state, id),
+              );
+            })
+            : []),
         ],
+      };
+    }
+    case "yard": {
+      // Flatland backyard board.
+      const sick = isSick(state);
+      const items = Object.values(BACKYARD_EVENTS).map((event) => {
+        const status = backyardUnlockStatus(state, event.id);
+        const open = status.open && !sick && !injuryBlocksRunning(state);
+        return item(
+          event.name,
+          open
+            ? `${event.energy} energy · loop until you stop`
+            : sick
+              ? SICKNESS_BLOCK_MESSAGE
+              : entryNeedsMessage(status.needs),
+          { type: "backyard-start", id: event.id },
+          !open,
+          sick ? SICKNESS_BLOCK_MESSAGE : entryNeedsMessage(status.needs),
+        );
+      });
+      return {
+        title: "Practice Yard",
+        speaker: "Yard bell",
+        intro: "4.167 miles every hour. Last one standing wins the premier yards.",
+        items,
       };
     }
     case "mountain": {
@@ -3154,14 +3402,21 @@ export function menuFor(locationId, state) {
     case "clinic": {
       const rates = ratesFor(state);
       const hurt = Boolean(state.condition?.injury);
+      const injuryId = state.condition?.injury?.id;
+      const treatCost = hurt && injuryId && injuryId !== "blister"
+        ? clinicCostForInjury(state, injuryId)
+        : rates.treatment;
+      const treatNights = hurt && injuryId && injuryId !== "blister"
+        ? INJURY_CLINIC_NIGHTS
+        : CLINIC_TREATMENT_NIGHTS;
       const treated = clinicTreated(state);
-      const broke = state.coins < rates.treatment;
+      const broke = state.coins < treatCost;
       const tired = readEnergy(state) < CLINIC_TREATMENT_ENERGY;
       const sick = isSick(state);
       let treatReason = "";
       if (!hurt) treatReason = "Nothing to treat. The chart is clear.";
       else if (treated) treatReason = "You've already had a treatment today. Sleep starts a new day.";
-      else if (broke) treatReason = `Need ${rates.treatment} coins.`;
+      else if (broke) treatReason = `Need ${treatCost} coins.`;
       else if (tired) treatReason = LOW_ENERGY;
       // Sick visit only appears while sick. Healthy mornings keep the
       // old four-row board so the menu does not grow a dead button.
@@ -3169,7 +3424,7 @@ export function menuFor(locationId, state) {
         item(
           "Treatment session",
           hurt
-            ? `${rates.treatment} coins · ${CLINIC_TREATMENT_ENERGY} energy · −${CLINIC_TREATMENT_NIGHTS} nights`
+            ? `${treatCost} coins · ${CLINIC_TREATMENT_ENERGY} energy · −${treatNights} nights${injuryId && injuryId !== "blister" ? ` · ${state.condition.injury.name}` : ""}`
             : "Nothing to treat. The chart is clear.",
           { type: "clinic-treat" },
           !hurt || treated || broke || tired,
@@ -3264,6 +3519,117 @@ export function menuFor(locationId, state) {
             studied,
             "You've already used the Wi-Fi today. Sleep opens another hour.",
           ),
+          item(
+            "Weather forecast",
+            "Today and tomorrow · free",
+            { type: "open-forecast" },
+          ),
+        ],
+      };
+    }
+    case "depot": {
+      const dests = depotDestinations(state);
+      const city = state?.city || "brick-city";
+      const items = [];
+      if (city === "brick-city") {
+        const open = ridgeviewRoadOpen(state);
+        items.push(item(
+          open ? "Walk the road to Ridgeview" : "Road to Ridgeview (locked)",
+          open
+            ? "Long walk · optional racers on the shoulder"
+            : roadExitBlockedMessage("brick-city"),
+          { type: "enter-road", id: ROAD_BRICK_RIDGEVIEW },
+          !open,
+          roadExitBlockedMessage("brick-city"),
+        ));
+      }
+      if (city === "ridgeview") {
+        const open = flatlandRoadOpen(state);
+        items.push(item(
+          open ? "Walk the road to Flatland" : "Road to Flatland (locked)",
+          open
+            ? "Long walk · optional challengers"
+            : roadExitBlockedMessage("ridgeview"),
+          { type: "enter-road", id: ROAD_RIDGEVIEW_FLATLAND },
+          !open,
+          roadExitBlockedMessage("ridgeview"),
+        ));
+        items.push(item(
+          "Walk the road back to Brick City",
+          "Return west on the ridge road",
+          { type: "enter-road", id: ROAD_BRICK_RIDGEVIEW, side: "east" },
+        ));
+      }
+      if (city === "flatland") {
+        items.push(item(
+          "Walk the road back to Ridgeview",
+          "Return west on the farm road",
+          { type: "enter-road", id: ROAD_RIDGEVIEW_FLATLAND, side: "east" },
+        ));
+      }
+      for (const id of dests) {
+        const label = id === "brick-city" ? "Brick City" : id === "ridgeview" ? "Ridgeview" : "Flatland";
+        items.push(item(
+          `Bus to ${label}`,
+          `${FAST_TRAVEL_ENERGY} energy · small fatigue`,
+          { type: "fast-travel", id },
+          readEnergy(state) < FAST_TRAVEL_ENERGY,
+          LOW_ENERGY,
+        ));
+      }
+      if (!items.length) {
+        items.push(headerItem("Routes", "Finish the Half and Marathon to open Ridge Road."));
+      }
+      return {
+        title: "World Depot",
+        speaker: "Sam Hollis",
+        testId: "depot-menu",
+        intro: "Walk a new road once. After that, the bus runs between cities you have discovered.",
+        items,
+      };
+    }
+    case "road-east": {
+      const mapId = state?.mapId;
+      return {
+        title: "Road ahead",
+        speaker: "Road",
+        items: [
+          item(
+            mapId === ROAD_RIDGEVIEW_FLATLAND ? "Enter Flatland" : "Enter Ridgeview",
+            "Arrive in town",
+            { type: "arrive-road", id: mapId === ROAD_RIDGEVIEW_FLATLAND ? ROAD_RIDGEVIEW_FLATLAND : ROAD_BRICK_RIDGEVIEW },
+          ),
+        ],
+      };
+    }
+    case "road-west": {
+      const mapId = state?.mapId;
+      return {
+        title: "Road behind",
+        speaker: "Road",
+        items: [
+          item(
+            "Head back",
+            "Return to the last town",
+            { type: "return-road", id: mapId === ROAD_RIDGEVIEW_FLATLAND ? ROAD_RIDGEVIEW_FLATLAND : ROAD_BRICK_RIDGEVIEW },
+          ),
+        ],
+      };
+    }
+    case "road-exit": {
+      // Brick City east exit pin.
+      const open = ridgeviewRoadOpen(state);
+      return {
+        title: "Ridge Road",
+        speaker: "Road sign",
+        items: [
+          item(
+            open ? "Walk to Ridgeview" : "Road locked",
+            open ? "Long walk · optional racers" : roadExitBlockedMessage("brick-city"),
+            { type: "enter-road", id: ROAD_BRICK_RIDGEVIEW },
+            !open,
+            roadExitBlockedMessage("brick-city"),
+          ),
         ],
       };
     }
@@ -3306,7 +3672,7 @@ export function menuFor(locationId, state) {
           `Need 5K + 10K + ${RUN_CLUB_WIFI_TURNS} Wi-Fi hours (you have ${readWifiTurns(state)}).`,
         ));
       }
-      items.push(headerItem("Segments", RUN_CLUB_SEGMENT_HOOK));
+      items.push(headerItem("Segments", runClubSegmentTip(state)));
       return {
         title: RUN_CLUB_NAME,
         speaker: RUN_CLUB_NAME,
@@ -4197,7 +4563,7 @@ export function chatLines(locationId, state = null) {
         lines: [
           `${RUN_CLUB_NAME} meets at this gazebo.`,
           "Group run once a week. Optional. Costs energy like a normal easy run.",
-          RUN_CLUB_SEGMENT_HOOK,
+          runClubSegmentTip(state),
         ],
       };
     }
@@ -4239,14 +4605,61 @@ export function chatLines(locationId, state = null) {
     };
   }
   if (locationId === "depot") {
+    // Depot is a menu now (menuFor). Fallback chat if menu missed.
     return {
       speaker: "Sam Hollis",
       lines: [
-        "Brick City got bigger streets this season. Same doors. More blocks east and south.",
-        "Finish the races here and the depot opens new towns: Ridgeview, Lakeport, Mesa Verde Flats, Flatland, then Summit Hollow.",
-        "Same training spots in every city. Different races, different trouble. Not this season, though. The bus is still in the shop.",
+        "Finish the Brick City Half and Marathon to open the road to Ridgeview.",
+        "Walk it once. After you arrive, this depot buses you between discovered cities.",
+        "Finish all four Ridgeview premiers to open the road to Flatland.",
       ],
     };
+  }
+  if (locationId === "guide-dylan") {
+    return {
+      speaker: "Dylan Broman",
+      lines: [
+        "Dylan Broman, Ridgeview guide. Trails climb from here.",
+        "Premier races: 50K, then 100K, 100 Mile, 200 Mile. Finish one to open the next.",
+        "Tall grass hides running watches. Segments need one.",
+      ],
+    };
+  }
+  if (locationId === "guide-dark") {
+    return {
+      speaker: "Dark Mowdle",
+      lines: [
+        "Dark Mowdle. Flatland. Last one standing.",
+        "Backyard: 4.167 every hour on the bell. Practice yard is gentler. Premiers are not.",
+      ],
+    };
+  }
+  if (locationId === "chat-nessa") {
+    return {
+      speaker: "Nessa Quill",
+      lines: ["Cafe Wi-Fi still works up here. Forecast is on the radio board."],
+    };
+  }
+  if (locationId === "road-exit-ridgeview" || locationId === "road-brick-exit") {
+    if (!ridgeviewRoadOpen(state)) {
+      return { speaker: "Road sign", lines: [roadExitBlockedMessage("brick-city")] };
+    }
+    return {
+      speaker: "Road sign",
+      lines: ["Ridge Road east to Ridgeview. Optional racers on the shoulder."],
+    };
+  }
+  if (locationId === "road-exit-flatland") {
+    if (!flatlandRoadOpen(state)) {
+      return { speaker: "Trail Post", lines: [roadExitBlockedMessage("ridgeview")] };
+    }
+    return {
+      speaker: "Trail Post",
+      lines: ["Farm road east to Flatland. Optional challengers — race or walk past."],
+    };
+  }
+  if (locationId === "road-west" || locationId === "road-east") {
+    return null;
   }
   if (locationId === "rival") {
     return {

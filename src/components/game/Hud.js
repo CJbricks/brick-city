@@ -30,7 +30,10 @@ import { MAX_ENERGY } from "@/lib/constants";
 import { maxNutritionFromGear } from "@/lib/catalog";
 import { isOvertrained, overtrainingStatusLine } from "@/lib/overtrain";
 import { isSick, sicknessStatusLine } from "@/lib/sickness";
+import { weatherHudLine } from "@/lib/weather";
+import { injuryBlocksRunning } from "@/lib/injuries";
 import { levelProgress } from "@/lib/xp";
+import { cityById } from "@/lib/constants";
 import { drawRunnerSprite, runnerPalette } from "@/game/art";
 import { gearTint } from "@/game/brandColors";
 import { sponsoredCarry } from "@/lib/sponsors";
@@ -217,6 +220,13 @@ export function Hud({ game, onOpen }) {
             <span>{when}</span>
             <CoinCount coins={game.coins} />
           </div>
+          <div className="hud-meta" data-testid="hud-weather">
+            <span>{weatherHudLine(game)}</span>
+            <span>{cityById(game.city).name}</span>
+          </div>
+          {injuryBlocksRunning(game) ? (
+            <div className="sore-flag" data-testid="hud-injury">{game.condition.injury?.name || "Injured"}</div>
+          ) : null}
         </div>
         <div className="hud-mobile">
           <div className="mini-row">
@@ -246,12 +256,16 @@ export function Hud({ game, onOpen }) {
           <div className="hud-meta">
             <span>{when}</span>
             <CoinCount coins={game.coins} />
+            <span data-testid="hud-weather-mobile">{weatherHudLine(game)}</span>
             {game.condition.sore ? <span className="sore-flag">SORE</span> : null}
             {isSick(game) ? (
               <span className="sore-flag" data-testid="hud-sick-mobile">{sicknessStatusLine(game)}</span>
             ) : null}
             {isOvertrained(game) ? (
               <span className="sore-flag" data-testid="hud-overtrained-mobile">{overtrainingStatusLine()}</span>
+            ) : null}
+            {injuryBlocksRunning(game) ? (
+              <span className="sore-flag" data-testid="hud-injury-mobile">{game.condition.injury?.name || "Injured"}</span>
             ) : null}
           </div>
         </div>

@@ -44,7 +44,7 @@
  * lit edge and the shaded edge. That is the 3-tone shading.
  */
 
-import { ACTIVITY_BOARD, BUILDINGS, CITY_SIGNS, COLS, LANDMARKS, ROWS, TILE, activationTiles, buildWorld } from "@/game/town";
+import { ACTIVITY_BOARD, BUILDINGS, CITY_SIGNS, COLS, LANDMARKS, ROWS, TILE, activationTiles, buildActiveWorld, buildWorld } from "@/game/town";
 import { townLights } from "@/lib/lighting";
 import { applyBrandOutfit, gearTint, hatColors } from "@/game/brandColors";
 import { hatById } from "@/lib/catalog";
@@ -1686,8 +1686,10 @@ function drawAreaFences(ctx, scene) {
  * a separate layer that only turns on at dusk.
  */
 export function renderWorld(state, waterFrame = 0) {
-  const world = buildWorld(state);
-  const scene = sceneryLayout();
+  // Active map: Brick City, Ridgeview, Flatland, or a road between towns.
+  const world = buildActiveWorld(state);
+  const isBrick = world.id === "brick-city" || !world.id;
+  const scene = isBrick ? sceneryLayout() : sceneryLayoutForWorld(world);
   const canvas = document.createElement("canvas");
   canvas.width = COLS * TILE;
   canvas.height = ROWS * TILE;
@@ -1701,7 +1703,8 @@ export function renderWorld(state, waterFrame = 0) {
   // After the ground, before buildings and signs. The 5K letters paint
   // later, so they sit on the mat instead of hiding under it.
   paintActivationPads(ctx, world);
-  for (const building of BUILDINGS) {
+  const buildings = world.buildings || BUILDINGS;
+  for (const building of buildings) {
     const px = building.x * TILE;
     const py = building.y * TILE;
     if (building.id === "home") drawHome(ctx, px, py, scene);
@@ -1711,25 +1714,110 @@ export function renderWorld(state, waterFrame = 0) {
     if (building.id === "clinic") drawClinic(ctx, px, py, scene);
     if (building.id === "cafe") drawCafe(ctx, px, py, scene);
   }
-  drawFountain(ctx, waterFrame);
-  drawLandmarks(ctx);
-  drawActivityBoard(ctx, scene);
-  drawGate(ctx, world.mountainOpen, scene);
-  drawDepot(ctx, scene);
-  for (const lamp of townLights().lamps) drawLampPost(ctx, lamp.x, lamp.y);
-  // Rails first, then boards. The 5K sign used to be under the west fence
-  // because the fence was the later stroke on the same pixels.
-  drawAreaFences(ctx, scene);
-  drawParkAndTrackSigns(ctx, scene);
-  // One welcome post. Do not draw a BC plaque per building. Those
-  // buildings already have their own name boards above.
-  for (const sign of CITY_SIGNS) drawCityPost(ctx, sign.tx, sign.ty);
-  if (state?.milestones?.includes("banner")) drawBanner(ctx, scene);
-  if (state?.milestones?.includes("flowers")) {
+  if (isBrick) {
+    drawFountain(ctx, waterFrame);
+    drawLandmarks(ctx);
+    drawActivityBoard(ctx, scene);
+    drawGate(ctx, world.mountainOpen, scene);
+    drawDepot(ctx, scene);
+    for (const lamp of townLights().lamps) drawLampPost(ctx, lamp.x, lamp.y);
+    drawAreaFences(ctx, scene);
+    drawParkAndTrackSigns(ctx, scene);
+  } else {
+    drawLandmarksFrom(ctx, world.landmarks || []);
+    drawDepotAt(ctx, world);
+    if (world.activityBoard) drawActivityBoardAt(ctx, world.activityBoard);
+  }
+  // One welcome post per map.
+  const signs = world.signs || CITY_SIGNS;
+  for (const sign of signs) drawCityPost(ctx, sign.tx, sign.ty);
+  if (isBrick && state?.milestones?.includes("banner")) drawBanner(ctx, scene);
+  if (isBrick && state?.milestones?.includes("flowers")) {
     drawFlowerBed(ctx, 13 * TILE, 12 * TILE, 13, 12);
     drawFlowerBed(ctx, 22 * TILE, 17 * TILE, 22, 17);
     drawFlowerBed(ctx, 14 * TILE, 18 * TILE, 14, 18);
   }
-  if (state?.milestones?.includes("trail-marker")) drawTrailMarker(ctx);
+  if (isBrick && state?.milestones?.includes("trail-marker")) drawTrailMarker(ctx);
   return canvas;
+}
+
+/** Generic scenery boards for non–Brick City maps (same building drawers). */
+function sceneryLayoutForWorld(world) {
+  const buildings = world.buildings || [];
+  const origin = (id) => {
+    const building = buildings.find((item) => item.id === id);
+    if (!building) return { x: 0, y: 0 };
+    return { x: building.x * TILE, y: building.y * TILE };
+  };
+  const home = origin("home");
+  const gym = origin("gym");
+  const store = origin("store");
+  const grocery = origin("grocery");
+  const clinic = origin("clinic");
+  const cafe = origin("cafe");
+  const depot = (world.places || []).find((p) => p.id === "depot");
+  const initials = (world.info?.name || "??").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "??";
+  return {
+    signs: [
+      boardRect("home", "INN", home.x + 70, home.y + 2),
+      boardRect("grocery", "GROCERY", grocery.x + 78, grocery.y + 24),
+      boardRect("gym", "GYM", gym.x + 78, gym.y + 8),
+      boardRect("store", "RUN STORE", store.x + 48, store.y + 78),
+      boardRect("clinic", "PT", clinic.x + 108, clinic.y + 4),
+      boardRect("cafe", "CAFE", cafe.x + 122, cafe.y + 42),
+      {
+        id: "depot",
+        kind: "label",
+        text: "DEPOT",
+        x: (depot?.tx ?? 19) * TILE + 8,
+        y: ((depot?.ty ?? 17) - 1) * TILE + 2,
+        w: 5 * 4,
+        h: 5,
+      },
+      ...(world.signs || []).map((sign) => ({
+        id: sign.id,
+        kind: "city",
+        text: initials,
+        x: sign.tx * TILE,
+        y: sign.ty * TILE,
+        w: TILE,
+        h: TILE,
+      })),
+    ],
+    fences: [],
+  };
+}
+
+function drawLandmarksFrom(ctx, landmarks) {
+  for (const mark of landmarks) {
+    const x = mark.tx * TILE;
+    const y = mark.ty * TILE;
+    const w = mark.w * TILE;
+    const h = mark.h * TILE;
+    if (mark.id.startsWith("garden")) {
+      box(ctx, x + 2, y + 4, w - 4, h - 6, "#3d6b3a", "#6d9a4a", "#244422");
+    } else if (mark.id.startsWith("kiln")) {
+      box(ctx, x + 4, y + 2, w - 8, h - 4, "#8d3a32", "#c45a48", "#5e221c");
+    }
+  }
+}
+
+function drawDepotAt(ctx, world) {
+  const depot = (world.places || []).find((p) => p.id === "depot");
+  if (!depot) return;
+  const x = depot.tx * TILE;
+  const y = (depot.ty - 1) * TILE;
+  box(ctx, x + 2, y + 4, 8, TILE - 4, "#6b4428", "#c4956a", "#3e2614");
+  box(ctx, x + 54, y + 4, 8, TILE - 4, "#6b4428", "#c4956a", "#3e2614");
+  shingles(ctx, x, y, 64, 16, "#8d3a32", "#5e221c", "#c45a48");
+  box(ctx, x + 14, y + 14, 36, 18, "#f3e2c0", "#fff8ea", "#6b4428");
+  paintOutlinedText(ctx, "DEPOT", x + 8, y + 2, "#fff8ea", 1);
+}
+
+function drawActivityBoardAt(ctx, board) {
+  const x = board.kiosk.tx * TILE;
+  const y = board.kiosk.ty * TILE;
+  box(ctx, x + 14, y + 20, 4, 12, "#6b4428", "#c4956a", "#3e2614");
+  box(ctx, x + 3, y + 2, 26, 20, "#f3e2c0", "#fff8ea", "#6b4428");
+  paintOutlinedText(ctx, "RUN", x + 8, y + 5, "#1c140f", 1);
 }

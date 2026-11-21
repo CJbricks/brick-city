@@ -175,6 +175,7 @@ describe("coffee shop", () => {
       "Coffee",
       "Rosemary maple bar",
       "Use the Wi-Fi",
+      "Weather forecast",
     ]);
 
     const brick = menuFor("cafe", fresh());
