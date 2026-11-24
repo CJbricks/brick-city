@@ -540,7 +540,7 @@ The rules live in one module: `src/lib/cheats.js`. The UI lives in one component
 
 | Code | Effect |
 |---|---|
-| `GIMME05` | +5 overall XP (and week XP). Uses the same level-up / unlock notice path a run's `finish()` would, so crossing a level threshold still says `You reached level N.` |
+| `GIMME05` | +5 overall **levels** (not +5 XP). Grants the XP needed to reach `currentLevel + 5` via `xpToReachLevel`, so unlocks and gated content see a real level jump. Dialogue: `You gained 5 levels!` plus `You reached level N.` and any unlock notices `finish()` would post. No max-level cap in the game today. |
 | `SICKONE` | Makes the runner sick right now: same `condition.sickness` shape and `calendar.lastIllnessDay` that `rollSicknessOnWake` writes. No Peak cut on apply (Peak only drops on recovery, same as a natural illness). |
 | `SHAMAN` | Clears sickness and the chart injury immediately, and clears the sore flag the clinic clears with an injury. **No** Peak penalty and **no** coin cost. |
 
