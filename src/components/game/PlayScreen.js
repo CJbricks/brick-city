@@ -68,6 +68,7 @@ import {
   streetRaceChat,
 } from "@/lib/activities";
 import { applyCheatCode } from "@/lib/cheats";
+import { isTextEntryFocus, shouldIgnoreGameHotkey } from "@/lib/keyboard";
 import { describeNeeds, isMountainOpen, mountainStatus } from "@/lib/unlocks";
 import { applyForage, forageArea } from "@/lib/forage";
 import { ratesFor } from "@/lib/clinic";
@@ -655,13 +656,22 @@ export function PlayScreen({ game, setGame, onTitle }) {
       // and this call covers a handler that preventDefault's the key
       // before that capture listener was installed.
       unlockAudio();
-      // Cheat text box owns the keyboard. Only B / Escape cancel here;
-      // letters must reach the <input>, and must not walk the runner.
+      // Why: WASD / Z / X / P / I must not steal keys from Nick Names.
+      // Mute (M) uses the same shouldIgnoreGameHotkey guard in audio.
       if (panelRef.current?.type === "cheat") {
-        if (event.code === "KeyX" || event.code === "Escape") {
+        // Escape always cancels. X is B only when the field is not focused,
+        // so every letter A–Z (including X and M) stays typeable while typing.
+        if (event.code === "Escape") {
+          event.preventDefault();
+          if (!event.repeat) actions.current.pressB();
+        } else if (event.code === "KeyX" && !isTextEntryFocus(document)) {
           event.preventDefault();
           if (!event.repeat) actions.current.pressB();
         }
+        worldRef.current?.clearHeld();
+        return;
+      }
+      if (shouldIgnoreGameHotkey(document)) {
         worldRef.current?.clearHeld();
         return;
       }
@@ -699,6 +709,12 @@ export function PlayScreen({ game, setGame, onTitle }) {
       }
     };
     const onUp = (event) => {
+      // Same text-entry / cheat guard as onDown so a held WASD key does
+      // not keep walking after focus moves into the Nick Names field.
+      if (shouldIgnoreGameHotkey(document) || panelRef.current?.type === "cheat") {
+        worldRef.current?.clearHeld();
+        return;
+      }
       const dir = dirs[event.code];
       if (dir) worldRef.current?.setDirection(dir, false);
     };

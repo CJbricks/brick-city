@@ -15,6 +15,7 @@ import {
   setMusicCue,
   unlockAudio,
 } from "@/game/audio/engine";
+import { shouldIgnoreGameHotkey } from "@/lib/keyboard";
 
 function param() {
   return {
@@ -247,5 +248,31 @@ describe("audio unlock", () => {
     host.context.state = "suspended";
     host.dispatch("keydown", { code: "KeyZ" });
     expect(host.context.log.filter((entry) => entry === "resume").length).toBeGreaterThan(resumes);
+  });
+
+  it("does not mute on M while a text field is focused", () => {
+    const host = makeHost();
+    host.document.activeElement = { tagName: "INPUT", isContentEditable: false };
+    expect(shouldIgnoreGameHotkey(host.document)).toBe(true);
+    installAudio({ host, storage: { getItem() { return null; } } });
+    expect(getAudioState().muted).toBe(false);
+    let prevented = false;
+    host.dispatch("keydown", {
+      code: "KeyM",
+      preventDefault() {
+        prevented = true;
+      },
+    });
+    expect(getAudioState().muted).toBe(false);
+    expect(prevented).toBe(false);
+  });
+
+  it("still mutes on M when nothing is typing", () => {
+    const host = makeHost();
+    host.document.activeElement = { tagName: "BODY", isContentEditable: false };
+    installAudio({ host, storage: { getItem() { return null; } } });
+    expect(getAudioState().muted).toBe(false);
+    host.dispatch("keydown", { code: "KeyM" });
+    expect(getAudioState().muted).toBe(true);
   });
 });
