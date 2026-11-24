@@ -18,10 +18,13 @@ import {
   milestoneTags,
   runnerLevel,
 } from "@/lib/unlocks";
-import { levelFromXp } from "@/lib/xp";
+import { levelFromXp, xpToReachLevel } from "@/lib/xp";
 
 /** Dialogue line when the typed string is not in the table. */
 export const UNKNOWN_CHEAT_MESSAGE = "Nothing happened...";
+
+/** How many overall levels GIMME05 jumps. */
+export const GIMME05_LEVELS = 5;
 
 /**
  * Trim + uppercase so " gimme05 " and "GIMME05" are the same code.
@@ -38,35 +41,46 @@ function dayOf(state) {
 }
 
 /**
- * Same XP bookkeeping as activities.addXp for overall points, then the
- * same level-up / unlock lines finish() would append. We do not import
- * those private helpers so this file stays deletable without editing
- * activities.js. weekXp tracks the Sunday summary the same way a run would.
+ * Jump `levels` overall levels by granting the XP needed to *be*
+ * currentLevel + levels (xpToReachLevel). That is the same XP the
+ * level-up path uses, so unlocks and gated content see a real level.
+ * There is no MAX_LEVEL in the game today; if one is added later, clamp
+ * the target here. weekXp gets the same delta a run would book.
  */
-function grantOverallXp(state, amount) {
+function grantOverallLevels(state, levels) {
   const lines = [];
   // Snapshot unlock flags before we mutate XP. finish() compares a
   // frozen "before" save to the new one; we only have one object here.
-  const levelBefore = levelFromXp(state.xp?.overall || 0);
+  const xpBefore = state.xp?.overall || 0;
+  const levelBefore = levelFromXp(xpBefore);
   const tenKBefore = isTenKOpen(state);
   const halfBefore = isHalfOpen(state);
   const marathonBefore = isMarathonOpen(state);
   const mountainBefore = isMountainOpen(state);
 
+  const targetLevel = levelBefore + Math.max(0, levels);
+  const need = xpToReachLevel(targetLevel);
+  const amount = Math.max(0, need - xpBefore);
+
   if (!state.xp) state.xp = { overall: 0 };
   if (!state.calendar) state.calendar = {};
   if (!state.calendar.weekXp) state.calendar.weekXp = { overall: 0 };
 
-  state.xp.overall = (state.xp.overall || 0) + amount;
+  state.xp.overall = xpBefore + amount;
   state.calendar.weekXp.overall = (state.calendar.weekXp.overall || 0) + amount;
 
   state.milestones = milestoneTags(state);
 
   const levelAfter = runnerLevel(state);
-  if (levelAfter > levelBefore) {
+  const gained = Math.max(0, levelAfter - levelBefore);
+  if (gained > 0) {
+    const unit = gained === 1 ? "level" : "levels";
+    lines.push(`You gained ${gained} ${unit}!`);
     lines.push(`You reached level ${levelAfter}.`);
+  } else {
+    lines.push("Nothing to gain — already at the target level.");
   }
-  // Unlock notices mirror finish() so a lucky +5 near a gate still posts
+  // Unlock notices mirror finish() so jumping past a gate still posts
   // the track notice the player would see after a real run.
   if (!tenKBefore && isTenKOpen(state)) {
     lines.push("A notice goes up at the track: the Community 10K is open.");
@@ -81,8 +95,7 @@ function grantOverallXp(state, amount) {
     lines.push("Ranger Quill radios the gate. The mountain trail is open.");
   }
 
-  const message = [`+${amount} XP.`, ...lines].join(" ");
-  return message;
+  return lines.join(" ");
 }
 
 /**
@@ -120,7 +133,7 @@ function applyShamanCure(state) {
 export const CHEAT_CODES = [
   {
     code: "GIMME05",
-    apply: (state) => grantOverallXp(state, 5),
+    apply: (state) => grantOverallLevels(state, GIMME05_LEVELS),
   },
   {
     code: "SICKONE",

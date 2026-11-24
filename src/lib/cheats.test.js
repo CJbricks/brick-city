@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { createNewGame } from "@/lib/activities";
 import {
   applyCheatCode,
+  GIMME05_LEVELS,
   normalizeCheatCode,
   UNKNOWN_CHEAT_MESSAGE,
 } from "@/lib/cheats";
@@ -40,29 +41,46 @@ describe("applyCheatCode", () => {
     const state = fresh();
     const result = applyCheatCode(state, "  gImMe05\t");
     expect(result.known).toBe(true);
-    expect(result.state.xp.overall).toBe(state.xp.overall + 5);
-    expect(result.message).toMatch(/\+5 XP/i);
+    expect(levelFromXp(result.state.xp.overall)).toBe(1 + GIMME05_LEVELS);
+    expect(result.message).toMatch(/You gained 5 levels!/i);
   });
 
-  it("GIMME05 adds 5 overall XP and weekXp", () => {
+  it("GIMME05 grants five overall levels via the XP curve", () => {
     const state = fresh();
+    expect(levelFromXp(state.xp.overall)).toBe(1);
     const result = applyCheatCode(state, "GIMME05");
+    const target = 1 + GIMME05_LEVELS;
     expect(result.known).toBe(true);
-    expect(result.state.xp.overall).toBe(state.xp.overall + 5);
-    expect(result.state.calendar.weekXp.overall).toBe(state.calendar.weekXp.overall + 5);
-    expect(result.message).toMatch(/\+5 XP/);
+    expect(levelFromXp(result.state.xp.overall)).toBe(target);
+    expect(result.state.xp.overall).toBe(xpToReachLevel(target));
+    expect(result.state.calendar.weekXp.overall).toBe(xpToReachLevel(target));
+    expect(result.message).toMatch(/You gained 5 levels!/);
+    expect(result.message).toMatch(/You reached level 6/);
     // Original save is untouched (structuredClone).
     expect(state.xp.overall).toBe(0);
   });
 
-  it("GIMME05 triggers the normal level-up line when XP crosses a threshold", () => {
+  it("GIMME05 from mid-level still lands on current + 5", () => {
     const state = fresh();
-    // One point shy of level 2 (25 XP). +5 should land at level 2.
-    state.xp.overall = xpToReachLevel(2) - 1;
-    expect(levelFromXp(state.xp.overall)).toBe(1);
+    // Level 3 with a little progress into 4.
+    state.xp.overall = xpToReachLevel(3) + 5;
+    expect(levelFromXp(state.xp.overall)).toBe(3);
     const result = applyCheatCode(state, "GIMME05");
-    expect(levelFromXp(result.state.xp.overall)).toBe(2);
-    expect(result.message).toMatch(/You reached level 2/);
+    expect(levelFromXp(result.state.xp.overall)).toBe(8);
+    expect(result.state.xp.overall).toBe(xpToReachLevel(8));
+    expect(result.message).toMatch(/You gained 5 levels!/);
+    expect(result.message).toMatch(/You reached level 8/);
+  });
+
+  it("GIMME05 posts unlock notices when gated content opens", () => {
+    const state = fresh();
+    // Level 2 → 7. TenK also needs a finished 5K.
+    state.xp.overall = xpToReachLevel(2);
+    state.progress.fiveKFinished = true;
+    expect(levelFromXp(state.xp.overall)).toBe(2);
+    const result = applyCheatCode(state, "GIMME05");
+    expect(levelFromXp(result.state.xp.overall)).toBe(7);
+    expect(result.message).toMatch(/Community 10K is open/);
   });
 
   it("SICKONE sets the same sickness state a natural wake event would", () => {
