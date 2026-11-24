@@ -493,6 +493,28 @@ canvas {
   white-space: pre-line;
 }
 
+/* Nick Names cheat box. Matches menu-row / name-plate GBC look. */
+.cheat-code-field {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 8px;
+  padding: 8px;
+  font-family: var(--font-pixel), monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #1c1a16;
+  background: #fffdf8;
+  border: 2px solid #1c1a16;
+  border-radius: 0;
+  outline: none;
+  text-transform: uppercase;
+}
+
+.cheat-code-field:focus {
+  background: #f2c14e;
+}
+
 .menu-row {
   width: 100%;
   text-align: left;
