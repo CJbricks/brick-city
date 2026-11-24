@@ -53,9 +53,10 @@ export function CheatInput({ value, onChange, onConfirm, onCancel }) {
               submit();
               return;
             }
-            // Escape and the game's B key (X) cancel. Without this, X
-            // would type into the field while the input is focused.
-            if (event.key === "Escape" || event.key === "x" || event.key === "X") {
+            // Escape cancels. Do not steal X (or any other letter) — CJ
+            // needs every A–Z key available for codes. Touch B / Back
+            // still cancel when the field has focus.
+            if (event.key === "Escape") {
               event.preventDefault();
               onCancel();
             }

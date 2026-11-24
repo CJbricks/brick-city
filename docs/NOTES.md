@@ -520,6 +520,8 @@ On a phone the D-pad and buttons are a bar under the map, not floating over it, 
 
 In a menu, the D-pad moves the highlight instead of walking. A confirms. B closes.
 
+Those letter hotkeys (and mute in `src/game/audio/engine.js`) skip the press when `shouldIgnoreGameHotkey` says a text field, the name grid, or Nick Names is active — otherwise M could not be typed into a code box.
+
 ## Cheat codes (Nick Names)
 
 Developer-only testing codes. CJ uses them to skip grind while building the game, and will likely remove the whole feature before launch. Nothing here is a secret API key; the codes are plain strings in the client.
@@ -532,6 +534,7 @@ Developer-only testing codes. CJ uses them to skip grind while building the game
 4. Matching is **case-insensitive** and **trims whitespace** (`normalizeCheatCode` in `src/lib/cheats.js`).
 5. A short dialogue follows: a success line that describes the effect, or `Nothing happened...` for an unknown code.
 6. While the text box is open, the play-screen keyboard handler does not move the runner or open the map / inventory. A real `<input>` is used so phones bring up the on-screen keyboard.
+7. Global hotkeys (mute **M**, map **P**, inventory **I**, WASD, Z/X) call `shouldIgnoreGameHotkey` in `src/lib/keyboard.js` so they do not steal letters from the field. Mute used to eat **M** in the capture phase before the input saw it — that guard is why every A–Z and digit is typeable now.
 
 The rules live in one module: `src/lib/cheats.js`. The UI lives in one component: `src/components/game/CheatInput.js`. PlayScreen only adds a menu row, a `cheat` panel type, and a small keyboard guard. **No new `brick-city-save-v1` fields.** Old saves keep working. The version stays 1.
 
@@ -559,6 +562,7 @@ Delete these, then run `npm test`, `npm run lint`, and `npm run build`:
 3. In `PlayScreen.js`: the `Nick Names` menu row, the `open-cheats` / `cheat` panel branches, `submitCheat`, the keyboard early-return for `panel.type === "cheat"`, and the `CheatInput` / `applyCheatCode` imports
 4. The `.cheat-code-field` rules in `src/app/globals.css`
 5. This section in `docs/NOTES.md`
+6. Keep `src/lib/keyboard.js` (and its test): mute and the name grid still need that hotkey guard after Nick Names is gone
 
 That is the whole feature. Nothing else in the save format or the clinic / sickness modules depends on it.
 

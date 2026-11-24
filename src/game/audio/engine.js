@@ -30,6 +30,7 @@ import { DEFAULT_VOLUME, readAudioPrefs, writeAudioPrefs } from "@/game/audio/pr
 import { notesInRange } from "@/game/audio/scheduler";
 import { SONGS } from "@/game/audio/songs";
 import { isNoiseHit, pitchToHz, songDuration } from "@/game/audio/theory";
+import { shouldIgnoreGameHotkey } from "@/lib/keyboard";
 
 const LOOKAHEAD = 0.12;
 const TICK_MS = 25;
@@ -373,9 +374,9 @@ export function unlockAudio() {
 function onMuteKey(event) {
   if (event.code !== "KeyM" || event.repeat) return;
   if (event.metaKey || event.ctrlKey || event.altKey) return;
-  // The name grid needs the letter M. Everywhere else, M is mute.
-  const doc = hostDocument();
-  if (doc && doc.querySelector && doc.querySelector("[data-testid='name-screen']")) return;
+  // Why: this listener is capture-phase, so it used to eat M before the
+  // Nick Names <input> (and the name grid) could see it. Shared guard.
+  if (shouldIgnoreGameHotkey(hostDocument())) return;
   event.preventDefault();
   event.stopPropagation();
   toggleMuted();
