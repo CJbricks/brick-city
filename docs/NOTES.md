@@ -520,6 +520,48 @@ On a phone the D-pad and buttons are a bar under the map, not floating over it, 
 
 In a menu, the D-pad moves the highlight instead of walking. A confirms. B closes.
 
+## Cheat codes (Nick Names)
+
+Developer-only testing codes. CJ uses them to skip grind while building the game, and will likely remove the whole feature before launch. Nothing here is a secret API key; the codes are plain strings in the client.
+
+### How it works
+
+1. Open the pause / start **Menu** (touch Menu, or the same system list that has Save and Title screen).
+2. Choose **Nick Names**. Same menu row style as the other entries; A / touch confirm opens it, B backs out.
+3. A GBC-styled text box appears (`CheatInput`). Type a code. Confirm with **A**, **Enter**, or the OK button. Cancel with **B**, **Escape**, or Back.
+4. Matching is **case-insensitive** and **trims whitespace** (`normalizeCheatCode` in `src/lib/cheats.js`).
+5. A short dialogue follows: a success line that describes the effect, or `Nothing happened...` for an unknown code.
+6. While the text box is open, the play-screen keyboard handler does not move the runner or open the map / inventory. A real `<input>` is used so phones bring up the on-screen keyboard.
+
+The rules live in one module: `src/lib/cheats.js`. The UI lives in one component: `src/components/game/CheatInput.js`. PlayScreen only adds a menu row, a `cheat` panel type, and a small keyboard guard. **No new `brick-city-save-v1` fields.** Old saves keep working. The version stays 1.
+
+| Code | Effect |
+|---|---|
+| `GIMME05` | +5 overall XP (and week XP). Uses the same level-up / unlock notice path a run's `finish()` would, so crossing a level threshold still says `You reached level N.` |
+| `SICKONE` | Makes the runner sick right now: same `condition.sickness` shape and `calendar.lastIllnessDay` that `rollSicknessOnWake` writes. No Peak cut on apply (Peak only drops on recovery, same as a natural illness). |
+| `SHAMAN` | Clears sickness and the chart injury immediately, and clears the sore flag the clinic clears with an injury. **No** Peak penalty and **no** coin cost. |
+
+### How to add a code
+
+1. Open `src/lib/cheats.js`.
+2. Append a row to the `CHEAT_CODES` table: `{ code: "YOURCODE", apply: (state) => { /* mutate state */; return "Success line."; } }`.
+3. Add a Vitest case in `src/lib/cheats.test.js`.
+4. Mention the code in the table above.
+
+`applyCheatCode(state, raw)` clones the save, looks up the normalized code, runs `apply`, and returns `{ known, state, message }`. Keep side effects inside `apply` so the menu stays dumb.
+
+### How to remove the whole feature before launch
+
+Delete these, then run `npm test`, `npm run lint`, and `npm run build`:
+
+1. `src/lib/cheats.js` and `src/lib/cheats.test.js`
+2. `src/components/game/CheatInput.js`
+3. In `PlayScreen.js`: the `Nick Names` menu row, the `open-cheats` / `cheat` panel branches, `submitCheat`, the keyboard early-return for `panel.type === "cheat"`, and the `CheatInput` / `applyCheatCode` imports
+4. The `.cheat-code-field` rules in `src/app/globals.css`
+5. This section in `docs/NOTES.md`
+
+That is the whole feature. Nothing else in the save format or the clinic / sickness modules depends on it.
+
 ## Adding a quote, a run, or a building
 
 - **Quote:** add an object to `prototype/quotes.json`. Do not put quote marks in the text. The screens add none.

@@ -27,6 +27,9 @@
  * marks those tiles as the track, so A opens the workout menu. The
  * activity board in the square is the same kind of button. Its mat
  * and its post both open the neighborhood runs.
+ *
+ * "Nick Names" on the system menu opens a temporary cheat text box
+ * (CheatInput + src/lib/cheats.js). Delete those when the codes go.
  */
 
 "use client";
@@ -48,6 +51,7 @@ import {
   travelSpawn,
 } from "@/components/game/Panels";
 import { TouchControls } from "@/components/game/TouchControls";
+import { CheatInput } from "@/components/game/CheatInput";
 import { CITY_SIGNS, placeIsLocked, placesFor, signCopy, buildActiveWorld } from "@/game/town";
 import { cityById } from "@/lib/constants";
 import { hasWatch } from "@/lib/watches";
@@ -63,6 +67,7 @@ import {
   sponsorMenuItems,
   streetRaceChat,
 } from "@/lib/activities";
+import { applyCheatCode } from "@/lib/cheats";
 import { describeNeeds, isMountainOpen, mountainStatus } from "@/lib/unlocks";
 import { applyForage, forageArea } from "@/lib/forage";
 import { ratesFor } from "@/lib/clinic";
@@ -82,6 +87,9 @@ function systemItems(soundOn, game) {
   }
   items.push(
     { label: "How to play", detail: "Buttons", action: { type: "open-help" } },
+    // Developer testing codes. Easy to delete: see docs/NOTES.md
+    // "Cheat codes (Nick Names)" and src/lib/cheats.js.
+    { label: "Nick Names", detail: "Type a code", action: { type: "open-cheats" }, testId: "nick-names" },
     {
       label: soundOn ? "Sound: On" : "Sound: Off",
       detail: "Press M",
@@ -281,6 +289,10 @@ export function PlayScreen({ game, setGame, onTitle }) {
     }
     if (action.type === "open-help") {
       setPanel({ type: "help" });
+      return;
+    }
+    if (action.type === "open-cheats") {
+      setPanel({ type: "cheat", value: "" });
       return;
     }
     if (action.type === "open-segments") {
@@ -485,6 +497,17 @@ export function PlayScreen({ game, setGame, onTitle }) {
     setPanel(null);
   }
 
+  function submitCheat(raw) {
+    const result = applyCheatCode(currentState(), raw);
+    setGame(result.state);
+    setPanel({
+      type: "dialogue",
+      speaker: "Nick Names",
+      pages: [result.message],
+      index: 0,
+    });
+  }
+
   function pressA() {
     const current = panelRef.current;
     if (gameRef.current.pendingSummary && (!current || current.type !== "dialogue")) {
@@ -494,6 +517,10 @@ export function PlayScreen({ game, setGame, onTitle }) {
     if (!current) {
       const hit = worldRef.current?.interact();
       if (hit) openLocation(hit);
+      return;
+    }
+    if (current.type === "cheat") {
+      submitCheat(current.value || "");
       return;
     }
     if (current.type === "dialogue") {
@@ -628,6 +655,16 @@ export function PlayScreen({ game, setGame, onTitle }) {
       // and this call covers a handler that preventDefault's the key
       // before that capture listener was installed.
       unlockAudio();
+      // Cheat text box owns the keyboard. Only B / Escape cancel here;
+      // letters must reach the <input>, and must not walk the runner.
+      if (panelRef.current?.type === "cheat") {
+        if (event.code === "KeyX" || event.code === "Escape") {
+          event.preventDefault();
+          if (!event.repeat) actions.current.pressB();
+        }
+        worldRef.current?.clearHeld();
+        return;
+      }
       const dir = dirs[event.code];
       if (dir) {
         event.preventDefault();
@@ -743,6 +780,14 @@ export function PlayScreen({ game, setGame, onTitle }) {
               onHover={(choiceIndex) => setPanel({ ...panel, choiceIndex })}
               onEat={() => run({ ...panel.action, choice: "eat" }, panel.roll)}
               onDecline={() => run({ ...panel.action, choice: "decline" }, panel.roll)}
+            />
+          ) : null}
+          {panel?.type === "cheat" ? (
+            <CheatInput
+              value={panel.value || ""}
+              onChange={(value) => setPanel({ ...panel, value })}
+              onConfirm={submitCheat}
+              onCancel={() => setPanel(null)}
             />
           ) : null}
           {panel?.type === "status" ? (
