@@ -75,9 +75,10 @@
  * often inside a wall. New games stamp tileSize: 32. A save without that
  * stamp is treated as 16px and doubled once on load.
  *
- * The map then grew again (~2× area). A pixel that now sits out of
- * bounds or inside a wall is moved to the town-square spawn so Resume
- * never traps the runner.
+ * The map then grew again (~2× area), and later road cleanups turned
+ * some asphalt into grass. A pixel that now sits out of bounds or
+ * inside a wall is nudged to the nearest walkable tile (town square
+ * only if nothing nearby is open) so Resume never traps the runner.
  */
 
 import { MAX_ENERGY, SAVE_KEY, SAVE_VERSION } from "@/lib/constants";
@@ -249,8 +250,10 @@ export function deserialize(raw) {
       }
       data.tileSize = TILE;
     }
-    // After tile scaling, a grown map may put old pixels in a wall.
-    // Move those runners to the town square instead of trapping them.
+    // After tile scaling, a grown map (or a road cleanup that turned
+    // asphalt into grass) may put old pixels in a wall. Nudge to the
+    // nearest walkable tile; town square is only the last fallback.
+    // Save key and fields stay brick-city-save-v1.
     data.position = safePlayerPosition(data);
     // Touch wifiTurns through the helper so a weird NaN cannot linger.
     data.wifiTurns = readWifiTurns(data);

@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import { createNewGame, applyRun } from "@/lib/activities";
 import { shoeById } from "@/lib/catalog";
 import { deserialize, serialize } from "@/lib/save";
+import { buildWorld, isBlocked, TILE } from "@/game/town";
 
 describe("save serialization", () => {
   it("round-trips a runner who has already trained", () => {
@@ -64,14 +65,19 @@ describe("save serialization", () => {
     expect(fromSixteen.position).toEqual({ x: 176, y: 240, facing: "left" });
     expect(fromSixteen.tileSize).toBe(32);
 
-    // A doubled pixel that lands inside a wall relocates to the square.
+    // A doubled pixel that lands inside a wall nudges to the nearest
+    // walkable tile (facing kept). Town square is only the last fallback.
     const trapped = createNewGame({ name: "Ada", gender: "female" });
     trapped.tileSize = 16;
     trapped.position = { x: 8, y: 8, facing: "up" };
     const rescued = deserialize(serialize(trapped));
-    expect(rescued.position.facing).toBe("down");
-    expect(rescued.position.x).toBe(16.5 * 32);
-    expect(rescued.position.y).toBe(12.5 * 32);
+    expect(rescued.position.facing).toBe("up");
+    const rtx = Math.floor(rescued.position.x / TILE);
+    const rty = Math.floor(rescued.position.y / TILE);
+    const world = buildWorld(rescued);
+    expect(isBlocked(world, rtx, rty)).toBe(false);
+    expect(rescued.position.x).toBe((rtx + 0.5) * TILE);
+    expect(rescued.position.y).toBe((rty + 0.5) * TILE);
 
     const kept = deserialize(serialize(modern));
     expect(kept.position).toEqual(modern.position);

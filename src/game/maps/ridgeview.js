@@ -9,6 +9,11 @@
  * RIDGEVIEW_LANDMARKS holds a small trail-side garden (beds, can,
  * scarecrow) and the kiln stack. art.js paints those ids the same way
  * as Brick City. Keep the footprints off doors and the main roads.
+ *
+ * Roads: stampCoreTown lays only the shared door grid. This file adds a
+ * dirt trail out to the Flatland exit post and keeps a short asphalt
+ * spur at the map edge. Do not re-extend y=8 / y=20 across the meadow —
+ * that was the leftover-grid look CJ screenshotted.
  */
 
 import { CITIES } from "@/lib/constants";
@@ -75,14 +80,17 @@ const RIDGEVIEW_NPCS = [
     location: "chat-nessa",
   },
   {
+    // Stand north of the exit asphalt. Sitting on y=18 used to split the
+    // spur into two dead ends (you could not walk past the post).
     id: "road-block-rv",
     name: "Trail Post",
     tx: 60,
-    ty: 18,
-    facing: "left",
+    ty: 17,
+    facing: "down",
     palette: "ranger",
     gender: "female",
     location: "road-exit-flatland",
+    stand: { tx: 60, ty: 18 },
   },
 ];
 
@@ -100,14 +108,21 @@ const TRACK_SIGNS = [
 function createRidgeviewGround() {
   const ground = emptyGround("g");
   stampCoreTown(ground);
-  // Mountain path east of gate
+  // Mountain path east of gate (pebble dirt, not asphalt).
   hRoad(ground, 6, 30, 55, "x");
   vRoad(ground, 45, 2, 8, "x");
   fillRect(ground, 40, 2, 14, 5, "h");
   // Rocks
   fillRect(ground, 33, 3, 2, 2, "t");
   fillRect(ground, 50, 4, 2, 2, "t");
-  // Road exit east toward Flatland
+  // Dirt trail from the east end of the lower street out to the Flatland
+  // exit. A mountain town should read as trail, not a boulevard across
+  // the meadow. Short asphalt only at the map-edge spur by the Trail Post.
+  // Loop north around the kiln stack (52–54, 20–21) so the path stays open.
+  hRoad(ground, 20, 42, 51, "x");
+  vRoad(ground, 51, 19, 20, "x");
+  hRoad(ground, 19, 51, 55, "x");
+  vRoad(ground, 55, 18, 19, "x");
   hRoad(ground, 18, 55, 70, "r");
   // Small track oval
   fillRect(ground, 27, 11, 7, 8, "k");

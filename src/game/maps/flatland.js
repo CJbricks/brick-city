@@ -8,6 +8,11 @@
  * FLATLAND_LANDMARKS is a farm garden (beds, shed, tools, scarecrow)
  * beside the yard road. Column x=48 is the road to the yard mat — do
  * not place a landmark on that column or the yard walk breaks.
+ *
+ * Roads: stampCoreTown stops the shared grid at the door block. This
+ * file extends the lower street east only as far as the farm / yard
+ * spur. That replaces the old full-width y=20 asphalt across empty
+ * grass east of the clinic.
  */
 
 import { CITIES } from "@/lib/constants";
@@ -98,6 +103,9 @@ function createFlatlandGround() {
   // Farm fields and barn loop
   fillRect(ground, 42, 20, 16, 14, "x");
   fillRect(ground, 44, 24, 10, 8, "h");
+  // Extend the shared lower street only as far as the yard spur — not
+  // across the rest of the east meadow (stampCoreTown already stops at 42).
+  hRoad(ground, 20, 40, 58, "r");
   hRoad(ground, 22, 40, 58, "r");
   // Join the shared y=20 town street; starting at 18 left a dead spur.
   vRoad(ground, 48, 20, 34, "r");

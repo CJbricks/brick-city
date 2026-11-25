@@ -11,6 +11,14 @@
  * of the x=10 road at (9, 14); the track booth sits on (26, 12). Those
  * two used to stay grass in stampCoreTown, so A worked on the interact
  * grid but feet could not stand there.
+ *
+ * Road extents stay tight on purpose. An early stampCoreTown painted the
+ * full Brick City megagrid (y=8 and y=20 across MAP_COLS, x=10 down to
+ * the south trees). That left long asphalt strips through empty grass in
+ * Ridgeview and Flatland. stampCoreTown now only lays the streets that
+ * serve the shared doors; each town adds its own east/south spur (farm
+ * road, Flatland exit trail, etc.). See "Town road stamping" in
+ * docs/NOTES.md.
  */
 
 // Same footprint as town.js (avoid importing town.js — circular).
@@ -66,18 +74,30 @@ export function ringTrees(ground) {
 /**
  * Core brick-style town skeleton shared by Ridgeview and Flatland.
  * Buildings sit near Brick City's original coords so art drawers work.
+ *
+ * Streets stop where the shared doors end (roughly x<=42, y<=42). Do not
+ * stretch asphalt to MAP_COLS / MAP_ROWS here — that is what left the
+ * dead-end strips across open grass. Callers add town-specific spurs.
  */
 export function stampCoreTown(ground) {
   ringTrees(ground);
   // Main streets. Lower east-west is y=20 (same as Brick City), not y=18:
   // the cafe footprint is y=16..19, so a road on 18 sealed the PT block
   // and cut Flatland's farm road off from home.
-  hRoad(ground, 8, 1, MAP_COLS - 2);
-  hRoad(ground, 20, 1, MAP_COLS - 2);
-  hRoad(ground, 28, 1, 40);
-  vRoad(ground, 10, 1, MAP_ROWS - 2);
-  vRoad(ground, 22, 1, 40);
-  vRoad(ground, 35, 8, 40);
+  // Upper street: home → grocery → mountain / track. Stops before the
+  // empty east meadow (used to run to MAP_COLS - 2).
+  hRoad(ground, 8, 1, 42);
+  // Lower street through store / plaza / clinic spine.
+  hRoad(ground, 20, 1, 42);
+  // Park approach is a dirt trail, not a third asphalt boulevard across
+  // the lawn (the old y=28 x=1..40 road was one of CJ's leftover strips).
+  hRoad(ground, 28, 10, 28, "x");
+  // West spine: stop at the park's south edge, not the tree border.
+  vRoad(ground, 10, 1, 42);
+  // Plaza spine down to the park entrance row.
+  vRoad(ground, 22, 1, 30);
+  // Clinic / cafe spine meets the lower street only (no dead spur south).
+  vRoad(ground, 35, 8, 20);
   // Sidewalks under doors
   hRoad(ground, 7, 2, 20, "s");
   // Clinic / cafe block: join the x=35 spine to the door mats (Brick City

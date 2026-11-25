@@ -10,12 +10,16 @@
  * you, and every neighbor facing the sign, has to open the track.
  * The activity board in the square is the same kind of check: the post
  * is solid, the mat is walkable, and A opens it without cutting a path.
+ *
+ * Town road networks: every asphalt tile must sit on the walkable path
+ * that reaches a door, depot, or exit. That is what catches leftover
+ * strips from stampCoreTown's old full-grid pass on Ridgeview/Flatland.
  */
 
 import { describe, expect, it } from "vitest";
 import { createNewGame } from "@/lib/activities";
 import { paintActivationPads, sceneryLayout, tilesTouchedBy } from "@/game/art";
-import { ACTIVITY_BOARD, BUILDINGS, COLS, DIR, LANDMARKS, ROWS, TOWN_MAP_COLS, TOWN_MAP_ROWS, TRACK_GATE, TRACK_SIGN_TILES, UNBUILT_CITIES, activationTiles, buildWorld, canReach, cityMaps, entranceAt, footBlocked, homeSpawn, isBlocked, lookupInteract, noteArrival, PLACES, TILE, safePlayerPosition, signCopy, townSquareSpawn, trackLaneTiles, unreachableTiles, worldPixelSize } from "@/game/town";
+import { ACTIVITY_BOARD, BUILDINGS, COLS, DIR, LANDMARKS, ROWS, TOWN_MAP_COLS, TOWN_MAP_ROWS, TRACK_GATE, TRACK_SIGN_TILES, UNBUILT_CITIES, activationTiles, buildWorld, canReach, cityMaps, entranceAt, footBlocked, homeSpawn, isBlocked, lookupInteract, nearestWalkableTile, noteArrival, PLACES, TILE, safePlayerPosition, signCopy, trackLaneTiles, unreachableTiles, worldPixelSize } from "@/game/town";
 import { buildFlatlandWorld } from "@/game/maps/flatland";
 import { buildRidgeviewWorld } from "@/game/maps/ridgeview";
 import { cafeRates, clinicRates } from "@/lib/constants";
@@ -48,11 +52,41 @@ describe("town paths", () => {
     expect(COLS * ROWS).toBeGreaterThan(48 * 46 * 1.9);
   });
 
-  it("moves a blocked save position to the town square", () => {
+  it("nudges a blocked save position to the nearest walkable tile", () => {
     const state = createNewGame({ name: "Ada", gender: "female" });
+    const world = buildWorld(state);
+    // Pixel (16, 16) is tile (0, 0), a border tree. Resume must not trap
+    // the runner; nearest open ground is fine (town square is fallback).
     state.position = { x: 16, y: 16, facing: "up" };
-    const safe = safePlayerPosition(state);
-    expect(safe).toEqual(townSquareSpawn());
+    const safe = safePlayerPosition(state, world);
+    const tx = Math.floor(safe.x / TILE);
+    const ty = Math.floor(safe.y / TILE);
+    expect(isBlocked(world, tx, ty)).toBe(false);
+    const near = nearestWalkableTile(world, 0, 0);
+    expect(near).not.toBeNull();
+    expect({ tx, ty }).toEqual(near);
+  });
+
+  it("nudges a former-road tile to nearby walkable ground", () => {
+    // Simulates a save that stood on asphalt later turned into grass.
+    const state = createNewGame({ name: "Ada", gender: "female" });
+    const world = buildWorld(state);
+    // Force a blocked tile that has walkable neighbors (inside a building).
+    const door = BUILDINGS.find((b) => b.id === "home");
+    const blockedTx = door.x + 1;
+    const blockedTy = door.y + 1;
+    expect(isBlocked(world, blockedTx, blockedTy)).toBe(true);
+    state.position = {
+      x: (blockedTx + 0.5) * TILE,
+      y: (blockedTy + 0.5) * TILE,
+      facing: "down",
+    };
+    const safe = safePlayerPosition(state, world);
+    const tx = Math.floor(safe.x / TILE);
+    const ty = Math.floor(safe.y / TILE);
+    expect(isBlocked(world, tx, ty)).toBe(false);
+    // Should be close — not a teleport across the whole map.
+    expect(Math.abs(tx - blockedTx) + Math.abs(ty - blockedTy)).toBeLessThanOrEqual(6);
   });
 
   it("starts at home on a walkable tile and can reach every place", () => {
@@ -589,5 +623,94 @@ describe("community garden and building doors", () => {
     // Flatland's farm road at x=48 must stay open to the yard.
     expect(isBlocked(flat, 48, 20)).toBe(false);
     expect(isBlocked(flat, 48, 22)).toBe(false);
+  });
+});
+
+/**
+ * Road tiles ("r") must belong to the walkable network that reaches a
+ * door mat, the depot, a trailhead/park/track/yard, or a road exit.
+ * That catches orphan asphalt left by stampCoreTown's old full-grid pass.
+ */
+function roadNetworkAnchors(world) {
+  const ids = new Set([
+    "home", "grocery", "gym", "store", "clinic", "cafe",
+    "depot", "park", "track", "mountain", "yard",
+    "road-exit", "garden", "library", "kiln", "club", "activity",
+  ]);
+  return world.places.filter((place) => ids.has(place.id));
+}
+
+function tilesReachableFrom(world, seeds) {
+  const seen = new Set();
+  const queue = [];
+  for (const seed of seeds) {
+    if (isBlocked(world, seed.tx, seed.ty)) continue;
+    const key = `${seed.tx},${seed.ty}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    queue.push({ tx: seed.tx, ty: seed.ty });
+  }
+  while (queue.length) {
+    const current = queue.shift();
+    for (const [dx, dy] of Object.values(DIR)) {
+      const tx = current.tx + dx;
+      const ty = current.ty + dy;
+      const key = `${tx},${ty}`;
+      if (seen.has(key) || isBlocked(world, tx, ty)) continue;
+      seen.add(key);
+      queue.push({ tx, ty });
+    }
+  }
+  return seen;
+}
+
+describe("town road networks", () => {
+  for (const map of cityMaps()) {
+    it(`keeps every ${map.info.name} road tile on a path that touches a door, depot, or exit`, () => {
+      const world = map.build(createNewGame({ name: "Ada", gender: "female" }));
+      const anchors = roadNetworkAnchors(world);
+      expect(anchors.length, world.id).toBeGreaterThan(0);
+      const connected = tilesReachableFrom(world, anchors);
+      const orphanRoads = [];
+      for (let ty = 0; ty < world.ground.length; ty += 1) {
+        for (let tx = 0; tx < world.ground[ty].length; tx += 1) {
+          if (world.ground[ty][tx] !== "r") continue;
+          // An NPC or landmark standing on asphalt is not walkable; skip it.
+          if (isBlocked(world, tx, ty)) continue;
+          if (!connected.has(`${tx},${ty}`)) orphanRoads.push({ tx, ty });
+        }
+      }
+      expect(orphanRoads, world.id).toEqual([]);
+      // Doors stay reachable from home even after road trims.
+      const origin = { tx: 5, ty: 7 };
+      for (const place of world.places) {
+        if (isBlocked(world, place.tx, place.ty)) continue;
+        expect(canReach(world, origin, place), `${world.id}:${place.id}`).toBe(true);
+      }
+    });
+  }
+
+  it("does not paint asphalt across Ridgeview's empty east meadow", () => {
+    // The bug CJ reported: long horizontal strips at y=8 / y=20 past the
+    // clinic block, and x=10 running to the south trees.
+    const world = buildRidgeviewWorld(createNewGame({ name: "Ada", gender: "female" }));
+    expect(world.ground[8][60]).not.toBe("r");
+    expect(world.ground[8][68]).not.toBe("r");
+    expect(world.ground[20][60]).not.toBe("r");
+    expect(world.ground[50][10]).not.toBe("r");
+    expect(world.ground[60][10]).not.toBe("r");
+    // Flatland exit spur still exists by the Trail Post.
+    expect(world.ground[18][60]).toBe("r");
+    expect(canReach(world, { tx: 5, ty: 7 }, { tx: 59, ty: 18 })).toBe(true);
+  });
+
+  it("extends Flatland asphalt only to the farm yard, not empty grass", () => {
+    const world = buildFlatlandWorld();
+    // Core stamp no longer runs y=8 full-width; east meadow stays grass.
+    expect(world.ground[8][60]).not.toBe("r");
+    expect(world.ground[50][10]).not.toBe("r");
+    // Yard spur stays connected.
+    expect(world.ground[22][48]).toBe("r");
+    expect(canReach(world, { tx: 5, ty: 7 }, { tx: 48, ty: 22 })).toBe(true);
   });
 });
