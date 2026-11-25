@@ -1186,6 +1186,22 @@ Version stays **`brick-city-save-v1`**. New fields get safe defaults on load: `m
 
 Lakeport, Mesa Verde Flats, Summit Hollow maps, and real-life run logging are still design-only. Shoe / nutrition / gear sponsors stay as in this private prototype.
 
+## Town themes and palettes
+
+Each overworld can look different without moving doors. `src/game/townThemes.js` holds one theme per map id:
+
+| Map | Ground | Trees | Buildings |
+|---|---|---|---|
+| Brick City | Bright lawn green | Round canopy | Original brick / wood drawers |
+| Ridgeview | Cool alpine green + golden meadow patches | Tall conifers (spruce / pine) | Chamonix chalets (slate roof, cream plaster, dark wood) and Auburn Gold Rush false-front shops |
+| Flatland | Slightly warmer farm lawn | Round (same drawers as Brick City for now) | Brick City drawers |
+
+`renderWorld` in `art.js` calls `themeFor(world.id)` once and sets `activeTheme`. Tile drawers (grass, deep grass, trees, pebble, rocks, infield) read those colors. Ridgeview also paints `"x"` trail pads as dusty pebble paths instead of asphalt. Building drawers branch on `buildingStyle`: `"ridgeview"` uses the chalet / Auburn painters; `"brick-city"` keeps the original functions so Brick City's look does not change.
+
+Ridgeview landmarks add mountain-town props: a white plaza **church** with steeple and onion-dome cap (landmark only — not a shop or race menu), a race arch with original "RIDGE" text, granite rock piles, trail posts, and a short wood fence. Door mats, building footprints, and warps stay on the shared coordinates from `stampCoreTown`.
+
+Inspiration mood (original pixels only, no real logos): Chamonix, France (UTMB) and Auburn, California (Western States finish) — alpine greens, slate roofs, cream walls, and Gold Rush brick storefronts. Accent teal / white / black comes from trail-runner kit colors, not a brand mark.
+
 ## Town road stamping
 
 Ridgeview and Flatland reuse Brick City's door layout through `stampCoreTown` in `src/game/maps/shared.js`. That helper is supposed to stamp only the shared training block (inn, shops, clinic, cafe, depot, plaza, park, track). An early version also painted Brick City's full street grid: east-west asphalt on `y=8` and `y=20` all the way to the east trees, a third boulevard on `y=28`, and the west spine (`x=10`) down to the south border. On a mountain or farm town that left long asphalt strips through empty grass, stub T-junctions that died at a sidewalk, and roads that led nowhere.
