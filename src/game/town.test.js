@@ -608,8 +608,9 @@ describe("community garden and building doors", () => {
     const state = createNewGame({ name: "Ada", gender: "female" });
     const ridge = buildRidgeviewWorld(state);
     const flat = buildFlatlandWorld();
-    const origin = { tx: 5, ty: 7 };
     for (const world of [ridge, flat]) {
+      const home = world.places.find((place) => place.id === "home");
+      const origin = { tx: home.tx, ty: home.ty };
       expect(isBlocked(world, origin.tx, origin.ty), world.id).toBe(false);
       for (const place of world.places) {
         expect(isBlocked(world, place.tx, place.ty), `${world.id}:${place.id}`).toBe(false);
@@ -620,9 +621,10 @@ describe("community garden and building doors", () => {
         expect(world.interact[building.door.y][building.door.x], `${world.id}:${building.id}`).toBe(building.id);
       }
     }
-    // Flatland's farm road at x=48 must stay open to the yard.
-    expect(isBlocked(flat, 48, 20)).toBe(false);
-    expect(isBlocked(flat, 48, 22)).toBe(false);
+    // Flatland's yard spur stays open to the practice yard mat.
+    const yard = flat.places.find((place) => place.id === "yard");
+    expect(yard).toBeTruthy();
+    expect(isBlocked(flat, yard.tx, yard.ty)).toBe(false);
   });
 });
 
@@ -681,8 +683,9 @@ describe("town road networks", () => {
         }
       }
       expect(orphanRoads, world.id).toEqual([]);
-      // Doors stay reachable from home even after road trims.
-      const origin = { tx: 5, ty: 7 };
+      // Doors stay reachable from that map's home mat.
+      const home = world.places.find((place) => place.id === "home");
+      const origin = { tx: home.tx, ty: home.ty };
       for (const place of world.places) {
         if (isBlocked(world, place.tx, place.ty)) continue;
         expect(canReach(world, origin, place), `${world.id}:${place.id}`).toBe(true);
@@ -691,26 +694,26 @@ describe("town road networks", () => {
   }
 
   it("does not paint asphalt across Ridgeview's empty east meadow", () => {
-    // The bug CJ reported: long horizontal strips at y=8 / y=20 past the
-    // clinic block, and x=10 running to the south trees.
+    // Valley town: no leftover Brick City megagrid strips through grass.
     const world = buildRidgeviewWorld(createNewGame({ name: "Ada", gender: "female" }));
     expect(world.ground[8][60]).not.toBe("r");
     expect(world.ground[8][68]).not.toBe("r");
-    expect(world.ground[20][60]).not.toBe("r");
     expect(world.ground[50][10]).not.toBe("r");
     expect(world.ground[60][10]).not.toBe("r");
-    // Flatland exit spur still exists by the Trail Post.
-    expect(world.ground[18][60]).toBe("r");
-    expect(canReach(world, { tx: 5, ty: 7 }, { tx: 59, ty: 18 })).toBe(true);
+    // Flatland exit spur still exists by the Trail Post on the valley floor.
+    expect(world.ground[28][64]).toBe("r");
+    const home = world.places.find((place) => place.id === "home");
+    expect(canReach(world, { tx: home.tx, ty: home.ty }, { tx: 64, ty: 28 })).toBe(true);
   });
 
-  it("extends Flatland asphalt only to the farm yard, not empty grass", () => {
+  it("extends Flatland asphalt along the crossroads to the farm yard", () => {
     const world = buildFlatlandWorld();
-    // Core stamp no longer runs y=8 full-width; east meadow stays grass.
-    expect(world.ground[8][60]).not.toBe("r");
+    // No leftover megagrid strip down the west tree line.
     expect(world.ground[50][10]).not.toBe("r");
-    // Yard spur stays connected.
-    expect(world.ground[22][48]).toBe("r");
-    expect(canReach(world, { tx: 5, ty: 7 }, { tx: 48, ty: 22 })).toBe(true);
+    // Country crossroads + yard spur stay connected.
+    expect(world.ground[30][50]).toBe("r");
+    const home = world.places.find((place) => place.id === "home");
+    const yard = world.places.find((place) => place.id === "yard");
+    expect(canReach(world, { tx: home.tx, ty: home.ty }, yard)).toBe(true);
   });
 });

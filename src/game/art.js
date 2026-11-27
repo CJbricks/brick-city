@@ -58,6 +58,7 @@
  */
 
 import { ACTIVITY_BOARD, BUILDINGS, CITY_SIGNS, COLS, LANDMARKS, ROWS, TILE, activationTiles, buildActiveWorld, buildWorld } from "@/game/town";
+import { compositionFor } from "@/game/buildingKit";
 import { townLights } from "@/lib/lighting";
 import { applyBrandOutfit, gearTint, hatColors } from "@/game/brandColors";
 import { BRICK_CITY_THEME, themeFor } from "@/game/townThemes";
@@ -850,6 +851,11 @@ function isRoad(code) {
   return code === "r" || code === "x";
 }
 
+/** Sidewalk counts as pavement so a curb is not drawn against a door path. */
+function isPavement(code) {
+  return code === "r" || code === "x" || code === "s" || code === "d" || code === "k";
+}
+
 function drawRoad(ctx, px, py, x, y, ground) {
   const n = hash(x, y);
   ink(ctx, px, py, TILE, TILE, "#7d858e");
@@ -860,29 +866,38 @@ function drawRoad(ctx, px, py, x, y, ground) {
   const down = isRoad(at(0, 1));
   const left = isRoad(at(-1, 0));
   const right = isRoad(at(1, 0));
-  // A curb on every edge that leaves the asphalt, so the road reads as a
-  // slab sitting on the grass instead of a gray square.
-  if (!up) {
+  // Curbs only where the slab meets grass / trees / water — not where a
+  // sidewalk or dirt path continues the walk. That is what used to draw
+  // a hard seam when a sidewalk stub cut a vertical road in half.
+  const curbUp = !isPavement(at(0, -1));
+  const curbDown = !isPavement(at(0, 1));
+  const curbLeft = !isPavement(at(-1, 0));
+  const curbRight = !isPavement(at(1, 0));
+  if (curbUp) {
     ink(ctx, px, py, TILE, 3, "#4a515a");
     ink(ctx, px, py, TILE, 1, "#c5ccd4");
   }
-  if (!down) {
+  if (curbDown) {
     ink(ctx, px, py + TILE - 3, TILE, 3, "#4a515a");
     ink(ctx, px, py + TILE - 1, TILE, 1, "#9aa3ab");
   }
-  if (!left) {
+  if (curbLeft) {
     ink(ctx, px, py, 3, TILE, "#4a515a");
     ink(ctx, px, py, 1, TILE, "#c5ccd4");
   }
-  if (!right) {
+  if (curbRight) {
     ink(ctx, px + TILE - 3, py, 3, TILE, "#4a515a");
     ink(ctx, px + TILE - 1, py, 1, TILE, "#9aa3ab");
   }
-  // A straight road is two tiles wide, so each lane has three road
-  // neighbors. The crossing is the only place with four. Stripes go
-  // there. Dashes stay on the straight sections, on one lane only, so
-  // the center line is a single row of marks instead of two stacked.
-  if (up && down && left && right) {
+  // Crosswalk: road continues through a sidewalk on the crossing axis.
+  const walkUp = at(0, -1) === "s";
+  const walkDown = at(0, 1) === "s";
+  const walkLeft = at(-1, 0) === "s";
+  const walkRight = at(1, 0) === "s";
+  if ((up && down && (walkLeft || walkRight)) || (left && right && (walkUp || walkDown))) {
+    for (let i = 4; i < TILE; i += 8) ink(ctx, px + 2, py + i, TILE - 4, 3, "#f7f4ea");
+  } else if (up && down && left && right) {
+    // Full asphalt intersection — painted stripes.
     for (let i = 2; i < TILE; i += 8) ink(ctx, px + 2, py + i, TILE - 4, 3, "#f7f4ea");
   } else if (left && right && down && !up && x % 2 === 0) {
     ink(ctx, px + 8, py + TILE - 5, 16, 3, "#f4f1e4");
@@ -930,13 +945,15 @@ function drawCobble(ctx, px, py, x, y) {
   }
 }
 
-function drawSidewalk(ctx, px, py, x, y) {
+function drawSidewalk(ctx, px, py, x, y, ground) {
   // Pale slabs, lighter than the asphalt and the cobble plaza, so the
-  // walk reads as a path from the curb to the door.
+  // walk reads as a path from the curb to the door. Edges that meet a
+  // road stay open (no dark lip) so the seam reads as a join, not a cut.
   const n = hash(x, y);
   ink(ctx, px, py, TILE, TILE, "#d7d0c3");
-  ink(ctx, px, py, TILE, 1, "#f6f1e6");
-  ink(ctx, px, py + TILE - 2, TILE, 2, "#a9a193");
+  const at = (dx, dy) => ground?.[y + dy]?.[x + dx];
+  if (!isPavement(at(0, -1))) ink(ctx, px, py, TILE, 1, "#f6f1e6");
+  if (!isPavement(at(0, 1))) ink(ctx, px, py + TILE - 2, TILE, 2, "#a9a193");
   ink(ctx, px + 15, py + 2, 2, TILE - 4, "#b7b0a2");
   ink(ctx, px + 2, py + 15, TILE - 4, 2, "#b7b0a2");
   ink(ctx, px + 3 + (n % 8), py + 5, 4, 1, "#eee8dc");
@@ -1103,7 +1120,7 @@ function drawTile(ctx, code, x, y, ground, waterFrame) {
       drawDeepGrass(ctx, px, py, x, y);
       break;
     case "s":
-      drawSidewalk(ctx, px, py, x, y);
+      drawSidewalk(ctx, px, py, x, y, ground);
       break;
     case "t":
       drawTree(ctx, px, py, x, y);
@@ -1466,8 +1483,17 @@ function chimney(ctx, x, y) {
   ink(ctx, x + 4, y + 8, 4, 2, "#2a241c");
 }
 
-function panes(id) {
-  return townLights().windows.filter((pane) => pane.id === id);
+/** Paint every window from a composition, always relative to the building origin. */
+function paintCompWindows(ctx, ox, oy, windows) {
+  for (const pane of windows || []) {
+    windowPane(ctx, ox + pane.x, oy + pane.y, pane.w, pane.h);
+  }
+}
+
+function paintCompDoor(ctx, ox, oy, door, color, withSteps = false) {
+  if (!door) return;
+  doorPanel(ctx, ox + door.x, oy + door.y, door.w, door.h, color);
+  if (withSteps) doorSteps(ctx, ox + door.x, oy + door.y + door.h, door.w);
 }
 
 function drawStretchFigure(ctx, x, y) {
@@ -1501,66 +1527,56 @@ function drawRoaster(ctx, x, y) {
 }
 
 /**
- * Steep slate gable + cream plaster + dark wood shutters (Chamonix mood).
- * Door pixel positions match the Brick City drawers so mats stay lined up.
+ * Building drawers — every type reads compositionFor(id) from buildingKit.js.
+ * Roof, wall, door, and windows share one relative composition so a theme
+ * restyle cannot stack a second pane or misplace a door.
  */
-function drawChaletShell(ctx, ox, oy, bodyW, bodyH, roofH, door) {
+
+/** Chalet shell from a composition (no extra center window). */
+function drawChaletFromComp(ctx, ox, oy, comp) {
   const theme = activeTheme;
-  // Steep gable roof
-  shingles(ctx, ox + 20, oy + 20, bodyW - 40, roofH, theme.slateRoof, theme.slateRoofDark, theme.slateRoofLit);
-  // Peak triangle overhang
-  ink(ctx, ox + bodyW / 2 - 8, oy + 8, 16, 14, theme.slateRoofDark);
-  ink(ctx, ox + bodyW / 2 - 6, oy + 10, 12, 10, theme.slateRoof);
-  // Cream plaster walls
-  box(ctx, ox + 28, oy + 20 + roofH - 4, bodyW - 56, bodyH, theme.chaletWall, theme.chaletWallLit, theme.chaletWallShade);
-  // Dark wood balcony rail
-  ink(ctx, ox + 36, oy + 20 + roofH + 20, bodyW - 72, 4, theme.chaletWood);
-  ink(ctx, ox + 36, oy + 20 + roofH + 24, bodyW - 72, 2, theme.chaletWoodLit);
-  for (let i = 0; i < 5; i += 1) {
-    ink(ctx, ox + 40 + i * Math.floor((bodyW - 80) / 5), oy + 20 + roofH + 16, 3, 10, theme.chaletWood);
+  const roof = comp.roof;
+  const wall = comp.wall;
+  ink(ctx, ox + wall.x - 4, oy + roof.y, wall.w + 8, comp.tilesH * TILE - roof.y, theme.chaletWallShade);
+  shingles(ctx, ox + roof.x, oy + roof.y, roof.w, roof.h, theme.slateRoof, theme.slateRoofDark, theme.slateRoofLit);
+  ink(ctx, ox + roof.x + roof.w / 2 - 8, oy + roof.y - 12, 16, 14, theme.slateRoofDark);
+  ink(ctx, ox + roof.x + roof.w / 2 - 6, oy + roof.y - 10, 12, 10, theme.slateRoof);
+  box(ctx, ox + wall.x, oy + wall.y, wall.w, wall.h, theme.chaletWall, theme.chaletWallLit, theme.chaletWallShade);
+  ink(ctx, ox + wall.x + 8, oy + wall.y + 16, wall.w - 16, 4, theme.chaletWood);
+  paintCompWindows(ctx, ox, oy, comp.windows);
+  if (comp.windows?.[0]) {
+    const pane = comp.windows[0];
+    ink(ctx, ox + pane.x - 10, oy + pane.y, 8, pane.h, theme.chaletWood);
+    ink(ctx, ox + pane.x + pane.w + 2, oy + pane.y, 8, pane.h, theme.chaletWood);
   }
-  // Shutters beside a center window
-  const wx = ox + bodyW / 2 - 16;
-  const wy = oy + 20 + roofH + 32;
-  ink(ctx, wx - 10, wy, 8, 18, theme.chaletWood);
-  ink(ctx, wx + 24, wy, 8, 18, theme.chaletWood);
-  windowPane(ctx, wx, wy, 24, 18);
-  doorPanel(ctx, door.x, door.y, door.w, door.h, theme.chaletWood);
-  if (door.steps) doorSteps(ctx, door.x, door.y + door.h, door.w);
+  paintCompDoor(ctx, ox, oy, comp.door, theme.chaletWood, false);
 }
 
-/** Auburn Gold Rush false-front: tall board parapet, brick face, boardwalk. */
-function drawAuburnStorefront(ctx, ox, oy, bodyW, bodyH, door) {
+/** South-facing Auburn grocery from the kit. */
+function drawAuburnFromComp(ctx, ox, oy, comp) {
   const theme = activeTheme;
-  // False front parapet above the roof line
-  box(ctx, ox + 16, oy + 8, bodyW - 32, 28, theme.auburnFalse, "#fff8ea", "#8a6840");
-  ink(ctx, ox + 20, oy + 12, bodyW - 40, 4, theme.accentTeal);
-  ink(ctx, ox + 20, oy + 20, bodyW - 40, 2, theme.chaletWood);
-  // Brick courses
-  box(ctx, ox + 24, oy + 36, bodyW - 48, bodyH, theme.auburnBrick, theme.auburnBrickLit, theme.auburnBrickShade);
-  for (let row = 40; row < 36 + bodyH - 4; row += 6) {
-    ink(ctx, ox + 26, oy + row, bodyW - 52, 1, "#f0d2b4");
+  const wall = comp.wall;
+  ink(ctx, ox + 16, oy + 8, comp.tilesW * TILE - 32, comp.tilesH * TILE - 8, theme.auburnBrickShade);
+  box(ctx, ox + 16, oy + 8, comp.tilesW * TILE - 32, 28, theme.auburnFalse, "#fff8ea", "#8a6840");
+  ink(ctx, ox + 20, oy + 12, comp.tilesW * TILE - 40, 4, theme.accentTeal);
+  box(ctx, ox + wall.x, oy + wall.y, wall.w, wall.h, theme.auburnBrick, theme.auburnBrickLit, theme.auburnBrickShade);
+  for (let row = wall.y + 4; row < wall.y + wall.h - 4; row += 6) {
+    ink(ctx, ox + wall.x + 2, oy + row, wall.w - 4, 1, "#f0d2b4");
   }
-  // Boardwalk porch lip (still on the building footprint)
-  ink(ctx, ox + 20, oy + 36 + bodyH - 10, bodyW - 40, 10, theme.auburnBoardwalk);
-  ink(ctx, ox + 20, oy + 36 + bodyH - 10, bodyW - 40, 2, "#c4a878");
-  windowPane(ctx, ox + 40, oy + 48, 28, 22);
-  windowPane(ctx, ox + bodyW - 72, oy + 48, 28, 22);
-  doorPanel(ctx, door.x, door.y, door.w, door.h, theme.chaletWood);
-  if (door.steps) doorSteps(ctx, door.x, door.y + door.h, door.w);
+  if (comp.awning) {
+    stripedAwning(ctx, ox + comp.awning.x, oy + comp.awning.y, comp.awning.w, comp.awning.h, theme.accentTeal, theme.accentWhite);
+  }
+  ink(ctx, ox + wall.x - 4, oy + wall.y + wall.h - 10, wall.w + 8, 10, theme.auburnBoardwalk);
+  paintCompWindows(ctx, ox, oy, comp.windows);
+  paintCompDoor(ctx, ox, oy, comp.door, theme.chaletWood, true);
 }
 
 function drawRidgeHome(ctx, ox, oy, scene) {
-  const foot = 5 * TILE;
+  const comp = compositionFor("home");
+  const foot = comp.tilesH * TILE;
   paintFence(ctx, scenePart(scene, "home-west"));
   paintFence(ctx, scenePart(scene, "home-east"));
-  drawChaletShell(ctx, ox, oy, 7 * TILE, 56, 46, {
-    x: ox + 100,
-    y: oy + 112,
-    w: 26,
-    h: 32,
-    steps: false,
-  });
+  drawChaletFromComp(ctx, ox, oy, comp);
   ink(ctx, ox + 88, oy + 144, 50, 16, "#d7d0c3");
   ink(ctx, ox + 84, oy + foot - 8, 58, 8, "#cfc6b8");
   drawLantern(ctx, ox + 112, oy + 108);
@@ -1569,64 +1585,63 @@ function drawRidgeHome(ctx, ox, oy, scene) {
 }
 
 function drawRidgeGrocery(ctx, ox, oy, scene) {
-  drawAuburnStorefront(ctx, ox, oy, 8 * TILE, 78, {
-    x: ox + 100,
-    y: oy + 5 * TILE - 36,
-    w: 24,
-    h: 36,
-    steps: true,
-  });
+  drawAuburnFromComp(ctx, ox, oy, compositionFor("grocery"));
   crate(ctx, ox + 32, oy + 5 * TILE - 28, ["#e23d3d", "#f2c14e", "#3d9a4a"]);
   paintBoard(ctx, scenePart(scene, "grocery"));
 }
 
 function drawRidgeGym(ctx, ox, oy, scene) {
   const theme = activeTheme;
-  shingles(ctx, ox + 28, oy + 24, 168, 56, theme.slateRoof, theme.slateRoofDark, theme.slateRoofLit);
-  box(ctx, ox + 36, oy + 72, 188, 96, theme.chaletWall, theme.chaletWallLit, theme.chaletWallShade);
-  ink(ctx, ox + 44, oy + 90, 160, 4, theme.chaletWood);
-  for (const pane of panes("gym")) windowPane(ctx, pane.x, pane.y, pane.w, pane.h);
-  doorPanel(ctx, ox + 188, oy + 96, 18, 32, theme.chaletWood);
-  doorPanel(ctx, ox + 206, oy + 96, 18, 32, theme.chaletWoodLit);
-  ink(ctx, ox + 222, oy + 118, 10, 40, "#cfc6b8");
-  bikeRack(ctx, ox + 48, oy + 7 * TILE - 28);
+  const comp = compositionFor("gym");
+  ink(ctx, ox + comp.wall.x - 4, oy + comp.roof.y, comp.wall.w + 8, comp.tilesH * TILE - comp.roof.y, theme.chaletWallShade);
+  shingles(ctx, ox + comp.roof.x, oy + comp.roof.y, comp.roof.w, comp.roof.h, theme.slateRoof, theme.slateRoofDark, theme.slateRoofLit);
+  box(ctx, ox + comp.wall.x, oy + comp.wall.y, comp.wall.w, comp.wall.h, theme.chaletWall, theme.chaletWallLit, theme.chaletWallShade);
+  ink(ctx, ox + comp.wall.x + 8, oy + comp.wall.y + 18, comp.wall.w - 16, 4, theme.chaletWood);
+  paintCompWindows(ctx, ox, oy, comp.windows);
+  paintCompDoor(ctx, ox, oy, comp.door, theme.chaletWood, false);
+  ink(ctx, ox + comp.tilesW * TILE - 10, oy + comp.door.y + 22, 8, 32, "#cfc6b8");
+  bikeRack(ctx, ox + 48, oy + comp.tilesH * TILE - 28);
   paintFence(ctx, scenePart(scene, "gym-fence"));
   paintBoard(ctx, scenePart(scene, "gym"));
 }
 
 function drawRidgeStore(ctx, ox, oy, scene) {
-  stripedAwning(ctx, ox + 20, oy - 12, 184, 16, activeTheme.accentTeal, activeTheme.accentWhite);
-  drawAuburnStorefront(ctx, ox, oy + 20, 7 * TILE, 70, {
-    x: ox + 100,
-    y: oy,
-    w: 24,
-    h: 32,
-    steps: true,
-  });
-  drawSneaker(ctx, ox + 70, oy + 46);
+  const theme = activeTheme;
+  const comp = compositionFor("store");
+  ink(ctx, ox + 16, oy, comp.tilesW * TILE - 32, comp.tilesH * TILE, theme.auburnBrickShade);
+  paintCompDoor(ctx, ox, oy, comp.door, theme.chaletWood, true);
+  stripedAwning(ctx, ox + comp.awning.x, oy + comp.awning.y, comp.awning.w, comp.awning.h, theme.accentTeal, theme.accentWhite);
+  box(ctx, ox + 16, oy + comp.awning.y + comp.awning.h, comp.tilesW * TILE - 32, 22, theme.auburnFalse, "#fff8ea", "#8a6840");
+  ink(ctx, ox + 20, oy + comp.awning.y + comp.awning.h + 4, comp.tilesW * TILE - 40, 4, theme.accentTeal);
+  box(ctx, ox + comp.wall.x, oy + comp.wall.y, comp.wall.w, comp.wall.h, theme.auburnBrick, theme.auburnBrickLit, theme.auburnBrickShade);
+  paintCompWindows(ctx, ox, oy, comp.windows);
+  ink(ctx, ox + 20, oy + comp.tilesH * TILE - 12, comp.tilesW * TILE - 40, 10, theme.auburnBoardwalk);
+  drawSneaker(ctx, ox + 70, oy + 100);
   paintFence(ctx, scenePart(scene, "store-fence"));
   paintBoard(ctx, scenePart(scene, "store"));
 }
 
 function drawRidgeClinic(ctx, ox, oy, scene) {
   const theme = activeTheme;
-  shingles(ctx, ox + 20, oy + 36, 152, 40, theme.slateRoof, theme.slateRoofDark, theme.slateRoofLit);
-  box(ctx, ox + 28, oy + 68, 136, 56, theme.chaletWall, theme.chaletWallLit, theme.chaletWallShade);
-  doorPanel(ctx, ox + 72, oy + 2, 28, 32, theme.accentTeal);
-  doorSteps(ctx, ox + 72, oy + 34, 28);
+  const comp = compositionFor("clinic");
+  ink(ctx, ox + 16, oy, comp.tilesW * TILE - 24, comp.tilesH * TILE, theme.chaletWallShade);
+  shingles(ctx, ox + comp.roof.x, oy + comp.roof.y, comp.roof.w, comp.roof.h, theme.slateRoof, theme.slateRoofDark, theme.slateRoofLit);
+  box(ctx, ox + comp.wall.x, oy + comp.wall.y, comp.wall.w, comp.wall.h, theme.chaletWall, theme.chaletWallLit, theme.chaletWallShade);
+  paintCompDoor(ctx, ox, oy, comp.door, theme.accentTeal, true);
   drawStretchFigure(ctx, ox + 36, oy + 78);
-  windowPane(ctx, ox + 108, oy + 78, 28, 22);
+  paintCompWindows(ctx, ox, oy, comp.windows);
   paintBoard(ctx, scenePart(scene, "clinic"));
 }
 
 function drawRidgeCafe(ctx, ox, oy, scene) {
   const theme = activeTheme;
-  shingles(ctx, ox + 16, oy + 20, 224, 28, theme.slateRoof, theme.slateRoofDark, theme.slateRoofLit);
-  box(ctx, ox + 20, oy + 42, 216, 80, theme.chaletWall, theme.chaletWallLit, theme.chaletWallShade);
-  ink(ctx, ox + 28, oy + 60, 200, 4, theme.chaletWood);
-  doorPanel(ctx, ox + 100, oy + 2, 26, 30, theme.accentWhite);
-  doorSteps(ctx, ox + 100, oy + 32, 26);
-  windowPane(ctx, ox + 30, oy + 50, 88, 44);
+  const comp = compositionFor("cafe");
+  ink(ctx, ox + 12, oy, comp.tilesW * TILE - 20, comp.tilesH * TILE, theme.chaletWallShade);
+  shingles(ctx, ox + comp.roof.x, oy + comp.roof.y, comp.roof.w, comp.roof.h, theme.slateRoof, theme.slateRoofDark, theme.slateRoofLit);
+  box(ctx, ox + comp.wall.x, oy + comp.wall.y, comp.wall.w, comp.wall.h, theme.chaletWall, theme.chaletWallLit, theme.chaletWallShade);
+  ink(ctx, ox + comp.wall.x + 8, oy + comp.wall.y + 18, comp.wall.w - 16, 4, theme.chaletWood);
+  paintCompDoor(ctx, ox, oy, comp.door, theme.accentWhite, true);
+  paintCompWindows(ctx, ox, oy, comp.windows);
   drawRoaster(ctx, ox + 42, oy + 52);
   bench(ctx, ox + 130, oy + 100);
   planterBox(ctx, ox + 48, oy + 102, 3);
@@ -1634,65 +1649,45 @@ function drawRidgeCafe(ctx, ox, oy, scene) {
 }
 
 function drawCafe(ctx, ox, oy, scene) {
-  // Matte black, white trim, a concrete base, steel posts. The door sits
-  // on the north edge so it meets the sidewalk. The roaster is in the
-  // south window, which is the face the town sees. No logo.
-  ink(ctx, ox + 16, oy + 20, 224, 14, "#2a2e33");
-  ink(ctx, ox + 16, oy + 20, 224, 3, "#b7bcc2");
-  ink(ctx, ox + 20, oy + 32, 216, 90, "#f7f7f7");
-  ink(ctx, ox + 26, oy + 38, 204, 70, "#141414");
-  ink(ctx, ox + 26, oy + 96, 204, 20, "#8d8680");
-  ink(ctx, ox + 26, oy + 96, 204, 3, "#d4cdc4");
-  ink(ctx, ox + 40, oy + 42, 6, 62, "#8a9098");
-  ink(ctx, ox + 210, oy + 42, 6, 62, "#8a9098");
-  ink(ctx, ox + 40, oy + 42, 176, 4, "#c5ccd2");
-  doorPanel(ctx, ox + 100, oy + 2, 26, 30, "#f4f4f4");
-  doorSteps(ctx, ox + 100, oy + 32, 26);
-  ink(ctx, ox + 106, oy + 6, 14, 10, "#9fd8ea");
-  windowPane(ctx, ox + 30, oy + 50, 88, 44);
+  const comp = compositionFor("cafe");
+  ink(ctx, ox + comp.roof.x, oy + comp.roof.y, comp.roof.w, 14, "#2a2e33");
+  ink(ctx, ox + comp.roof.x, oy + comp.roof.y, comp.roof.w, 3, "#b7bcc2");
+  ink(ctx, ox + comp.wall.x, oy + comp.wall.y - 10, comp.wall.w, 90, "#f7f7f7");
+  ink(ctx, ox + comp.wall.x + 6, oy + comp.wall.y - 4, comp.wall.w - 12, 70, "#141414");
+  ink(ctx, ox + comp.wall.x + 6, oy + 96, comp.wall.w - 12, 20, "#8d8680");
+  paintCompDoor(ctx, ox, oy, comp.door, "#f4f4f4", true);
+  ink(ctx, ox + comp.door.x + 6, oy + comp.door.y + 4, 14, 10, "#9fd8ea");
+  paintCompWindows(ctx, ox, oy, comp.windows);
   drawRoaster(ctx, ox + 42, oy + 52);
   ink(ctx, ox + 34, oy + 52, 80, 2, "#d8f4ff");
-  ink(ctx, ox + 150, oy + 80, 22, 16, "#6b4428");
-  ink(ctx, ox + 154, oy + 84, 14, 6, "#c4a574");
-  ink(ctx, ox + 176, oy + 82, 18, 16, "#5c4030");
-  ink(ctx, ox + 206, oy + 78, 8, 18, "#c5ccd2");
-  ink(ctx, ox + 202, oy + 74, 16, 6, "#8a9098");
-  ink(ctx, ox + 208, oy + 94, 4, 6, "#1a1c1f");
-  // Bench and planter under the south face — still on the building tile.
   bench(ctx, ox + 130, oy + 100);
   planterBox(ctx, ox + 48, oy + 102, 3);
   paintBoard(ctx, scenePart(scene, "cafe"));
 }
 
 function drawClinic(ctx, ox, oy, scene) {
-  // Pale walls, a teal roof, a PT board, and the stretch figure. The door
-  // sits on the north edge so it meets the sidewalk. No red cross.
-  shingles(ctx, ox + 20, oy + 36, 152, 40, "#2f6f78", "#1a454c", "#7eb8c4");
-  box(ctx, ox + 28, oy + 68, 136, 56, "#f4f1e8", "#fffaf2", "#8a8174");
-  doorPanel(ctx, ox + 72, oy + 2, 28, 32, "#1f6f78");
-  doorSteps(ctx, ox + 72, oy + 34, 28);
-  ink(ctx, ox + 76, oy + 8, 20, 16, "#d8f4ff");
-  ink(ctx, ox + 84, oy + 10, 4, 8, "#1f6f78");
+  const comp = compositionFor("clinic");
+  shingles(ctx, ox + comp.roof.x, oy + comp.roof.y, comp.roof.w, comp.roof.h, "#2f6f78", "#1a454c", "#7eb8c4");
+  box(ctx, ox + comp.wall.x, oy + comp.wall.y, comp.wall.w, comp.wall.h, "#f4f1e8", "#fffaf2", "#8a8174");
+  paintCompDoor(ctx, ox, oy, comp.door, "#1f6f78", true);
+  ink(ctx, ox + comp.door.x + 4, oy + comp.door.y + 6, 20, 16, "#d8f4ff");
   drawStretchFigure(ctx, ox + 36, oy + 78);
-  windowPane(ctx, ox + 108, oy + 78, 28, 22);
+  paintCompWindows(ctx, ox, oy, comp.windows);
   planterBox(ctx, ox + 40, oy + 108, 1);
   planterBox(ctx, ox + 140, oy + 108, 4);
   paintBoard(ctx, scenePart(scene, "clinic"));
 }
 
 function drawHome(ctx, ox, oy, scene) {
-  const foot = 5 * TILE;
-  // Fences before the name board. sceneryLayout owns the rectangles so
-  // a later edit cannot put a rail on top of the letters.
+  const comp = compositionFor("home");
+  const foot = comp.tilesH * TILE;
   paintFence(ctx, scenePart(scene, "home-west"));
   paintFence(ctx, scenePart(scene, "home-east"));
-  shingles(ctx, ox + 36, oy + 26, 156, 46, "#b33a32", "#7a241c", "#d45a48");
+  shingles(ctx, ox + comp.roof.x, oy + comp.roof.y, comp.roof.w, comp.roof.h, "#b33a32", "#7a241c", "#d45a48");
   chimney(ctx, ox + 156, oy + 8);
-  woodSiding(ctx, ox + 48, oy + 64, 132, 56);
-  for (const pane of panes("home")) windowPane(ctx, pane.x, pane.y, pane.w, pane.h);
-  // The door and its last step end on the south edge of the building,
-  // which is the north edge of the sidewalk tile. No grass strip between.
-  doorPanel(ctx, ox + 100, oy + 112, 26, 32, "#2f6b3a");
+  woodSiding(ctx, ox + comp.wall.x, oy + comp.wall.y, comp.wall.w, comp.wall.h);
+  paintCompWindows(ctx, ox, oy, comp.windows);
+  paintCompDoor(ctx, ox, oy, comp.door, "#2f6b3a", false);
   ink(ctx, ox + 88, oy + 144, 50, 16, "#d7d0c3");
   ink(ctx, ox + 88, oy + 144, 50, 1, "#f6f1e6");
   ink(ctx, ox + 84, oy + foot - 8, 58, 8, "#cfc6b8");
@@ -1707,15 +1702,14 @@ function drawHome(ctx, ox, oy, scene) {
 }
 
 function drawGrocery(ctx, ox, oy, scene) {
-  shingles(ctx, ox + 28, oy + 16, 200, 40, "#8d3a32", "#5e221c", "#c45a48");
-  brickCourses(ctx, ox + 36, oy + 48, 184, 78);
-  stripedAwning(ctx, ox + 24, oy + 86, 208, 18, "#2f7a45", "#f4f7f2");
-  for (const pane of panes("grocery")) windowPane(ctx, pane.x, pane.y, pane.w, pane.h);
-  doorPanel(ctx, ox + 100, oy + 5 * TILE - 36, 24, 36, "#214e8f");
-  doorSteps(ctx, ox + 100, oy + 5 * TILE - 2, 24);
+  const comp = compositionFor("grocery");
+  shingles(ctx, ox + comp.roof.x, oy + comp.roof.y, comp.roof.w, comp.roof.h, "#8d3a32", "#5e221c", "#c45a48");
+  brickCourses(ctx, ox + comp.wall.x, oy + comp.wall.y, comp.wall.w, comp.wall.h);
+  stripedAwning(ctx, ox + comp.awning.x, oy + comp.awning.y, comp.awning.w, comp.awning.h, "#2f7a45", "#f4f7f2");
+  paintCompWindows(ctx, ox, oy, comp.windows);
+  paintCompDoor(ctx, ox, oy, comp.door, "#214e8f", true);
   crate(ctx, ox + 32, oy + 5 * TILE - 28, ["#e23d3d", "#f2c14e", "#3d9a4a", "#e23d3d", "#f2c14e", "#7ec85a"]);
   crate(ctx, ox + 196, oy + 5 * TILE - 28, ["#3d9a4a", "#e23d3d", "#f2c14e", "#7ec85a", "#e23d3d", "#f2c14e"]);
-  // Window boxes under the glass — still on the brick face, not the mat.
   planterBox(ctx, ox + 48, oy + 72, 2);
   planterBox(ctx, ox + 178, oy + 72, 5);
   drawLantern(ctx, ox + 128, oy + 96);
@@ -1731,25 +1725,20 @@ function drawDumbbell(ctx, x, y) {
 }
 
 function drawGym(ctx, ox, oy, scene) {
-  shingles(ctx, ox + 28, oy + 28, 168, 52, "#3c4654", "#232a33", "#6a7380");
-  brickCourses(ctx, ox + 36, oy + 72, 188, 96);
-  for (const pane of panes("gym")) windowPane(ctx, pane.x, pane.y, pane.w, pane.h);
-  // Double doors end on the east edge of the gym (local x = 7 tiles),
-  // flush with the sidewalk on tile x = 9.
-  doorPanel(ctx, ox + 188, oy + 96, 18, 32, "#214e8f");
-  doorPanel(ctx, ox + 206, oy + 96, 18, 32, "#1a3f78");
-  // East-facing stoop onto the sidewalk (door faces right, not down).
-  ink(ctx, ox + 222, oy + 118, 10, 40, "#cfc6b8");
-  ink(ctx, ox + 222, oy + 118, 10, 1, "#f6f1e6");
-  ink(ctx, ox + 230, oy + 120, 6, 36, "#b8b0a2");
-  ink(ctx, ox + 192, oy + 102, 10, 14, "#9fd8ea");
-  ink(ctx, ox + 210, oy + 102, 10, 14, "#9fd8ea");
+  const comp = compositionFor("gym");
+  ink(ctx, ox + comp.wall.x - 4, oy + comp.roof.y, comp.wall.w + 8, comp.tilesH * TILE - comp.roof.y, "#8d3a28");
+  shingles(ctx, ox + comp.roof.x, oy + comp.roof.y, comp.roof.w, comp.roof.h, "#3c4654", "#232a33", "#6a7380");
+  brickCourses(ctx, ox + comp.wall.x, oy + comp.wall.y, comp.wall.w, comp.wall.h);
+  paintCompWindows(ctx, ox, oy, comp.windows);
+  paintCompDoor(ctx, ox, oy, comp.door, "#214e8f", false);
+  ink(ctx, ox + comp.tilesW * TILE - 10, oy + comp.door.y + 22, 8, 32, "#cfc6b8");
+  ink(ctx, ox + comp.tilesW * TILE - 10, oy + comp.door.y + 22, 8, 1, "#f6f1e6");
+  ink(ctx, ox + comp.door.x + 4, oy + comp.door.y + 8, 12, 14, "#9fd8ea");
   box(ctx, ox + 70, oy + 18, 28, 18, "#f3e2c0", "#fff8ea", "#6b4428");
   drawDumbbell(ctx, ox + 73, oy + 21);
-  drawLantern(ctx, ox + 214, oy + 88);
-  // Bike rack along the south wall, inside the fence (building tile).
-  bikeRack(ctx, ox + 48, oy + 7 * TILE - 28);
-  planterBox(ctx, ox + 140, oy + 7 * TILE - 24, 2);
+  drawLantern(ctx, ox + comp.tilesW * TILE - 36, oy + 88);
+  bikeRack(ctx, ox + 48, oy + comp.tilesH * TILE - 28);
+  planterBox(ctx, ox + 140, oy + comp.tilesH * TILE - 24, 2);
   paintFence(ctx, scenePart(scene, "gym-fence"));
   paintBoard(ctx, scenePart(scene, "gym"));
   drawFlower(ctx, ox + 24, oy + 180, 2);
@@ -1764,20 +1753,19 @@ function drawSneaker(ctx, x, y) {
 }
 
 function drawStore(ctx, ox, oy, scene) {
-  // Awning hangs a few pixels onto the sidewalk. The door itself starts
-  // on the north edge of the building, flush with tile y = 22.
-  stripedAwning(ctx, ox + 20, oy - 12, 184, 16, "#2a4f8f", "#f7f7f7");
-  shingles(ctx, ox + 28, oy + 36, 168, 40, "#b33a32", "#7a241c", "#d45a48");
-  brickCourses(ctx, ox + 36, oy + 70, 152, 70);
-  for (const pane of panes("store")) windowPane(ctx, pane.x, pane.y, pane.w, pane.h);
-  doorPanel(ctx, ox + 100, oy, 24, 32, "#214e8f");
-  doorSteps(ctx, ox + 100, oy + 32, 24);
-  drawSneaker(ctx, ox + 70, oy + 46);
-  crate(ctx, ox + 28, oy + 4, ["#f7f7f7", "#2aa6a0", "#e23b3b"]);
-  crate(ctx, ox + 164, oy + 4, ["#24366b", "#f7f7f7", "#2aa6a0"]);
-  mailbox(ctx, ox + 48, oy + 8);
-  planterBox(ctx, ox + 150, oy + 52, 3);
-  drawLantern(ctx, ox + 112, oy - 4);
+  const comp = compositionFor("store");
+  ink(ctx, ox + 20, oy, comp.tilesW * TILE - 40, comp.tilesH * TILE, "#8d3a28");
+  paintCompDoor(ctx, ox, oy, comp.door, "#214e8f", true);
+  stripedAwning(ctx, ox + comp.awning.x, oy + comp.awning.y, comp.awning.w, comp.awning.h, "#2a4f8f", "#f7f7f7");
+  shingles(ctx, ox + comp.roof.x, oy + comp.roof.y, comp.roof.w, comp.roof.h, "#b33a32", "#7a241c", "#d45a48");
+  brickCourses(ctx, ox + comp.wall.x, oy + comp.wall.y, comp.wall.w, comp.wall.h);
+  paintCompWindows(ctx, ox, oy, comp.windows);
+  drawSneaker(ctx, ox + 70, oy + 110);
+  crate(ctx, ox + 28, oy + 52, ["#f7f7f7", "#2aa6a0", "#e23b3b"]);
+  crate(ctx, ox + 164, oy + 52, ["#24366b", "#f7f7f7", "#2aa6a0"]);
+  mailbox(ctx, ox + 48, oy + 56);
+  planterBox(ctx, ox + 150, oy + 118, 3);
+  drawLantern(ctx, ox + 112, oy + 48);
   paintFence(ctx, scenePart(scene, "store-fence"));
   paintBoard(ctx, scenePart(scene, "store"));
 }
@@ -1799,19 +1787,27 @@ function drawFountain(ctx, frame) {
   ink(ctx, x + 30, y + 8 + spark, 2, 2, "#fff6d0");
 }
 
-function drawGate(ctx, open, scene) {
-  const x = 30 * TILE;
-  const y = 6 * TILE;
-  box(ctx, x - 8, y, 12, TILE, "#9aa3ab", "#d5dee6", "#5c656e");
-  box(ctx, x + 28, y, 12, TILE, "#9aa3ab", "#d5dee6", "#5c656e");
+/**
+ * Trail gatehouse. tx/ty is the mat tile (Brick City default 30,6).
+ * Opaque stone base first so grass never chops the posts into columns.
+ */
+function drawGate(ctx, open, scene, at = { tx: 30, ty: 6 }) {
+  const x = at.tx * TILE;
+  const y = (at.ty - 1) * TILE;
+  ink(ctx, x - 8, y, TILE + 16, TILE, "#7a848e");
+  box(ctx, x - 8, y, 14, TILE, "#9aa3ab", "#d5dee6", "#5c656e");
+  box(ctx, x + 26, y, 14, TILE, "#9aa3ab", "#d5dee6", "#5c656e");
+  box(ctx, x - 8, y, TILE + 16, 10, "#8a949e", "#d5dee6", "#5c656e");
+  windowPane(ctx, x - 4, y + 14, 8, 10);
+  windowPane(ctx, x + 30, y + 14, 8, 10);
   if (!open) {
-    box(ctx, x + 2, y + 6, 28, 6, "#c4956a", "#e8d0a4", "#6b4428");
-    box(ctx, x + 2, y + 18, 28, 6, "#c4956a", "#e8d0a4", "#6b4428");
-    ink(ctx, x + 14, y + 4, 4, 24, "#6b4428");
+    box(ctx, x + 4, y + 12, 24, 6, "#c4956a", "#e8d0a4", "#6b4428");
+    box(ctx, x + 4, y + 20, 24, 6, "#c4956a", "#e8d0a4", "#6b4428");
+    ink(ctx, x + 14, y + 10, 4, 20, "#6b4428");
   } else {
-    box(ctx, x - 6, y + 4, 8, 22, "#c4956a", "#e8d0a4", "#6b4428");
-    box(ctx, x + 30, y + 4, 8, 22, "#c4956a", "#e8d0a4", "#6b4428");
-    drawPebble(ctx, x, y, 30, 6);
+    box(ctx, x - 6, y + 12, 8, 18, "#c4956a", "#e8d0a4", "#6b4428");
+    box(ctx, x + 30, y + 12, 8, 18, "#c4956a", "#e8d0a4", "#6b4428");
+    drawPebble(ctx, x, y, at.tx, at.ty - 1);
   }
   paintBoard(ctx, scenePart(scene, "mountain"));
 }
@@ -2101,11 +2097,12 @@ export function renderWorld(state, waterFrame = 0) {
       if (building.id === "cafe") drawCafe(ctx, px, py, scene);
     }
   }
+  const mountainPlace = (world.places || []).find((place) => place.id === "mountain");
   if (isBrick) {
     drawFountain(ctx, waterFrame);
     drawLandmarks(ctx);
     drawActivityBoard(ctx, scene);
-    drawGate(ctx, world.mountainOpen, scene);
+    drawGate(ctx, world.mountainOpen, scene, mountainPlace || { tx: 30, ty: 6 });
     drawDepot(ctx, scene);
     for (const lamp of townLights().lamps) drawLampPost(ctx, lamp.x, lamp.y);
     drawAreaFences(ctx, scene);
@@ -2114,10 +2111,8 @@ export function renderWorld(state, waterFrame = 0) {
     drawLandmarksFrom(ctx, world.landmarks || []);
     drawDepotAt(ctx, world);
     if (world.activityBoard) drawActivityBoardAt(ctx, world.activityBoard);
-    if (isRidge) {
-      drawRidgePlazaExtras(ctx);
-      drawGate(ctx, world.mountainOpen, scene);
-    }
+    if (isRidge) drawRidgePlazaExtras(ctx);
+    if (mountainPlace) drawGate(ctx, world.mountainOpen, scene, mountainPlace);
   }
   // One welcome post per map.
   const signs = world.signs || CITY_SIGNS;
@@ -2220,6 +2215,9 @@ function drawLandmarksFrom(ctx, landmarks) {
 function drawChurch(ctx, x, y, w, h) {
   const theme = activeTheme;
   const bodyH = Math.max(24, h - 36);
+  // Opaque base across the whole landmark footprint so grass columns
+  // cannot show through between steeple / wall / door pieces.
+  ink(ctx, x, y, w, h, theme.churchWall || "#f7f7f7");
   shingles(ctx, x + 4, y + 28, w - 8, 18, theme.churchSlate || theme.slateRoof, theme.slateRoofDark, theme.slateRoofLit);
   box(ctx, x + 8, y + 42, w - 16, bodyH, theme.churchWall || "#f7f7f7", "#ffffff", "#c8c0b4");
   // Steeple

@@ -226,7 +226,9 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
         grades = [];
       }
 
-      const lights = glowAnchors();
+      // Rebuilt in syncMap when the active town changes so window glows
+      // follow each map's building footprints (buildingKit relative panes).
+      let lights = glowAnchors();
       const sheetCache = new Map();
       function framesFor(palette, gender) {
         // carry and carryKind are in the key so a new gear deal, or
@@ -349,6 +351,7 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
             return texture;
           });
           syncActors();
+          lights = glowAnchors(worldRef.current?.buildings);
         }
         if (mapFrames[frame]) mapSprite.texture = mapFrames[frame];
       }
@@ -402,7 +405,9 @@ export const Overworld = forwardRef(function Overworld({ initialPosition }, ref)
           arrival = here;
           jumped.current = false;
         } else {
-          const stepOn = noteArrival(arrival, here, moving && !frozen);
+          // Pass this map's places so a Ridgeview / Flatland mat still
+          // auto-opens after layouts moved the door tiles.
+          const stepOn = noteArrival(arrival, here, moving && !frozen, collision?.places);
           const changed = arrival && (arrival.tx !== here.tx || arrival.ty !== here.ty);
           arrival = stepOn.previous;
           if (stepOn.entered) {

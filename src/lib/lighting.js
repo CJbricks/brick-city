@@ -15,11 +15,14 @@
  *    and streetlamps. Those glows are drawn AFTER the grade and added
  *    on top, so the dark wash does not swallow the lamps.
  *
- * Window rectangles live here, and art.js paints the glass at the same
- * spots. One list means the glow cannot drift off the pane.
+ * Window rectangles come from buildingKit.js compositions, offset by
+ * each building's map origin. That keeps the night glow on the same
+ * pane art.js paints — absolute panes() lists were the stacked-window
+ * bug when towns moved their footprints.
  */
 
-import { TILE } from "@/game/town";
+import { TILE, BUILDINGS } from "@/game/town";
+import { compositionFor, knownBuildingIds } from "@/game/buildingKit";
 
 export const MOODS = [
   {
@@ -83,36 +86,36 @@ function window(id, x, y, w, h) {
 }
 
 /**
- * Pixel positions for the night layer. Lamp y is the base of the post
- * (where it meets the grass). The bulb sits about 28px above that.
+ * Pixel positions for the night layer. Pass the active world's buildings
+ * so Ridgeview / Flatland glows sit on their moved footprints. Defaults
+ * to Brick City BUILDINGS.
  */
-export function townLights() {
+export function townLights(buildings = BUILDINGS) {
+  const byId = Object.fromEntries((buildings || []).map((b) => [b.id, b]));
+  const windows = [];
+  for (const id of knownBuildingIds()) {
+    const building = byId[id];
+    const comp = compositionFor(id);
+    if (!building || !comp) continue;
+    const ox = building.x * TILE;
+    const oy = building.y * TILE;
+    for (const pane of comp.windows || []) {
+      windows.push(window(id, ox + pane.x, oy + pane.y, pane.w, pane.h));
+    }
+  }
+
+  const home = byId.home || { x: 2, y: 2 };
+  const grocery = byId.grocery || { x: 14, y: 2 };
+  const gym = byId.gym || { x: 2, y: 11 };
+  const store = byId.store || { x: 2, y: 23 };
   const T = TILE;
-  const home = { x: 2 * T, y: 2 * T };
-  const grocery = { x: 14 * T, y: 2 * T };
-  const gym = { x: 2 * T, y: 11 * T };
-  const store = { x: 2 * T, y: 23 * T };
-  const clinic = { x: 38 * T, y: 11 * T };
-  const cafe = { x: 36 * T, y: 16 * T };
   return {
-    windows: [
-      window("home", home.x + 62, home.y + 70, 22, 18),
-      window("home", home.x + 136, home.y + 70, 22, 18),
-      window("grocery", grocery.x + 46, grocery.y + 54, 28, 16),
-      window("grocery", grocery.x + 176, grocery.y + 54, 28, 16),
-      window("gym", gym.x + 46, gym.y + 78, 26, 18),
-      window("gym", gym.x + 96, gym.y + 78, 26, 18),
-      window("store", store.x + 36, store.y + 22, 26, 16),
-      window("store", store.x + 156, store.y + 22, 26, 16),
-      window("clinic", clinic.x + 108, clinic.y + 78, 28, 22),
-      // Same rectangle drawCafe uses for the roaster window.
-      window("cafe", cafe.x + 30, cafe.y + 50, 88, 44),
-    ],
+    windows,
     lanterns: [
-      { id: "home", x: home.x + 112, y: home.y + 108, r: 14 },
-      { id: "grocery", x: grocery.x + 128, y: grocery.y + 96, r: 18 },
-      { id: "store", x: store.x + 112, y: store.y + 8, r: 16 },
-      { id: "gym", x: gym.x + 198, y: gym.y + 108, r: 16 },
+      { id: "home", x: home.x * T + 112, y: home.y * T + 108, r: 14 },
+      { id: "grocery", x: grocery.x * T + 128, y: grocery.y * T + 96, r: 18 },
+      { id: "store", x: store.x * T + 112, y: store.y * T + 48, r: 16 },
+      { id: "gym", x: gym.x * T + 188, y: gym.y * T + 108, r: 16 },
     ],
     lamps: [
       { x: 9 * T + 16, y: 7 * T + 28, r: 30 },
@@ -123,7 +126,6 @@ export function townLights() {
       { x: 12 * T + 16, y: 22 * T + 28, r: 30 },
       { x: 23 * T + 16, y: 19 * T + 28, r: 30 },
       { x: 26 * T + 16, y: 22 * T + 28, r: 30 },
-      // East expansion: garden, club, kiln block.
       { x: 48 * T + 16, y: 7 * T + 28, r: 30 },
       { x: 52 * T + 16, y: 13 * T + 28, r: 28 },
       { x: 50 * T + 16, y: 28 * T + 28, r: 30 },
@@ -132,8 +134,8 @@ export function townLights() {
   };
 }
 
-export function glowAnchors() {
-  const lights = townLights();
+export function glowAnchors(buildings = BUILDINGS) {
+  const lights = townLights(buildings);
   return {
     windows: lights.windows.map((pane) => ({
       x: pane.x + pane.w / 2,

@@ -19,9 +19,9 @@
  * buildings and doors keep their old tile coordinates; new streets
  * and landmarks fill the east and south expansion. An old save whose
  * pixel position lands in a wall is nudged to the nearest walkable tile
- * (see safePlayerPosition). Brick City roads are hand-authored here;
- * Ridgeview / Flatland use stampCoreTown in maps/shared.js (kept tight
- * so asphalt does not spill across empty grass — see docs/NOTES.md).
+ * (see safePlayerPosition). Brick City roads are hand-authored here
+ * (dense downtown grid). Ridgeview / Flatland each have their own
+ * layout in maps/layouts — see docs/NOTES.md "Town layouts".
  *
  * The town has one welcome sign. It names the city and the motto, and
  * it stands on the sidewalk beside the Home mat (where you start).
@@ -78,6 +78,7 @@ import {
   roadEastSpawn,
 } from "@/game/maps/roads";
 import { ROAD_BRICK_RIDGEVIEW, ROAD_RIDGEVIEW_FLATLAND } from "@/lib/travel";
+import { DEFAULT_TRACK_ORIGIN, TRACK_ROWS as SHARED_TRACK_ROWS } from "@/game/maps/shared";
 
 export { CITY_INFO };
 
@@ -146,18 +147,10 @@ export function signCopy(info = CITY_INFO) {
  * "k", including the corners. A corner that only touched on the diagonal
  * drew as its own white-bordered square and the feet could not cross it.
  */
-export const TRACK_ORIGIN = { tx: 27, ty: 11 };
+export const TRACK_ORIGIN = DEFAULT_TRACK_ORIGIN;
 
-export const TRACK_ROWS = [
-  ".kkkkk.",
-  "kkiiikk",
-  "kiiiiik",
-  "kiiiiik",
-  "kiiiiik",
-  "kiiiiik",
-  "kkiiikk",
-  ".kkkkk.",
-];
+/** Same oval pattern shared.js exports so every town matches. */
+export const TRACK_ROWS = SHARED_TRACK_ROWS;
 
 /**
  * Opening from the sidewalk (x = 26) onto the west lane (x = 27).
@@ -704,7 +697,8 @@ export function createGround() {
   // y=15 is south of the clinic and north of the shop. x=35 connects
   // that row back to the clinic sidewalk, so the mat is not an island.
   for (let y = 11; y <= 15; y += 1) pave(35, y);
-  for (let x = 35; x <= 44; x += 1) pave(x, 15);
+  // Reach the east spine at x=47 so the cafe row is not a grass stub tip.
+  for (let x = 35; x <= 47; x += 1) pave(x, 15);
   for (let y = 17; y <= 19; y += 1) pave(19, y);
   // East expansion mats: library, garden, kiln, club.
   for (let x = 50; x <= 56; x += 1) pave(x, 8);
@@ -756,9 +750,12 @@ const BUILDING_DOORS = new Set(["home", "grocery", "gym", "store", "clinic", "ca
  * The walkable mat in front of a building door. Park, the track, the
  * depot, and the mountain gate are not in this set: those still wait
  * for the A button.
+ *
+ * places defaults to Brick City. Other towns pass their own list so a
+ * moved Ridgeview / Flatland mat still auto-opens the shop.
  */
-export function entranceAt(tx, ty) {
-  const place = PLACES.find((item) => item.tx === tx && item.ty === ty);
+export function entranceAt(tx, ty, places = PLACES) {
+  const place = places.find((item) => item.tx === tx && item.ty === ty);
   if (!place || !BUILDING_DOORS.has(place.id)) return null;
   return place.id;
 }
@@ -769,13 +766,15 @@ export function entranceAt(tx, ty) {
  * save): we remember the tile and do not open anything, or Home would
  * pop its menu the moment a new game starts. moved is false for a
  * teleport such as the town map. Only a real step onto a new mat opens.
+ *
+ * places is the active map's place list (Brick City by default).
  */
-export function noteArrival(previous, next, moved) {
+export function noteArrival(previous, next, moved, places = PLACES) {
   if (!next) return { previous: null, entered: null };
   if (!previous || previous.tx !== next.tx || previous.ty !== next.ty) {
     return {
       previous: next,
-      entered: previous && moved ? entranceAt(next.tx, next.ty) : null,
+      entered: previous && moved ? entranceAt(next.tx, next.ty, places) : null,
     };
   }
   return { previous, entered: null };
@@ -848,8 +847,15 @@ export function nearestWalkableTile(world, fromTx, fromTy, maxSteps = 32) {
 export function safePlayerPosition(state, world = null) {
   const map = world || buildActiveWorld(state);
   const pos = state?.position;
-  if (!pos || typeof pos.x !== "number" || typeof pos.y !== "number") {
+  const fallback = () => {
+    // Prefer this map's home/inn spawn over Brick City's square so a
+    // Ridgeview save never wakes up in another town.
+    const mapId = map?.id || currentMapId(state);
+    if (mapId && mapId !== "brick-city") return homeSpawnFor(mapId);
     return townSquareSpawn();
+  };
+  if (!pos || typeof pos.x !== "number" || typeof pos.y !== "number") {
+    return fallback();
   }
   const facing = pos.facing === "up" || pos.facing === "left" || pos.facing === "right"
     ? pos.facing
@@ -868,7 +874,7 @@ export function safePlayerPosition(state, world = null) {
     const center = tileCenter(near.tx, near.ty);
     return { ...pos, x: center.x, y: center.y, facing, tx: near.tx, ty: near.ty };
   }
-  return townSquareSpawn();
+  return fallback();
 }
 
 /**
