@@ -15,6 +15,12 @@
  * CSS scale them with nearest-neighbor filtering. That is what keeps the
  * edges crisp instead of blurry.
  *
+ * Town look comes from townThemes.js. renderWorld sets activeTheme from
+ * the current map id. Brick City keeps the original lawn and building
+ * drawers. Ridgeview swaps alpine grass, conifers, Chamonix chalets,
+ * and Auburn false-front shops — same door pixels, different paint.
+ * See "Town themes and palettes" in docs/NOTES.md.
+ *
  * The blue-striped "BC" post is the town welcome sign. town.js lists
  * exactly one, beside Home. The HOME / GROCERY / GYM boards (and PARK,
  * TRACK, MOUNTAIN, DEPOT) are a different picture: they name that
@@ -54,6 +60,10 @@
 import { ACTIVITY_BOARD, BUILDINGS, CITY_SIGNS, COLS, LANDMARKS, ROWS, TILE, activationTiles, buildActiveWorld, buildWorld } from "@/game/town";
 import { townLights } from "@/lib/lighting";
 import { applyBrandOutfit, gearTint, hatColors } from "@/game/brandColors";
+import { BRICK_CITY_THEME, themeFor } from "@/game/townThemes";
+
+/** Set once per renderWorld so tile and building drawers share one look. */
+let activeTheme = BRICK_CITY_THEME;
 import { hatById } from "@/lib/catalog";
 import { sponsoredCarry } from "@/lib/sponsors";
 
@@ -793,31 +803,36 @@ function drawDeepGrass(ctx, px, py, x, y) {
   // Darker and taller than the town lawn, so a step reads as wild grass
   // the way a handheld RPG's tall grass does. These pixels are original.
   // They are not a copy of any other game's grass tile.
+  const theme = activeTheme;
   const n = hash(x, y);
-  const base = (x + y) % 2 === 0 ? "#1b5c24" : "#14491c";
+  const base = (x + y) % 2 === 0 ? theme.deepGrassA : theme.deepGrassB;
   ink(ctx, px, py, TILE, TILE, base);
   const blades = [[3, 4], [9, 12], [16, 6], [24, 14], [7, 20], [20, 22], [13, 8]];
   blades.forEach(([bx, by], index) => {
     const height = 9 + (index % 3) * 2;
-    ink(ctx, px + bx, py + by, 2, height, "#0c3014");
-    ink(ctx, px + bx, py + by, 1, height - 3, "#3d8f3a");
-    if (index % 2 === 0) ink(ctx, px + bx + 2, py + by + 3, 1, height - 4, "#163e18");
+    ink(ctx, px + bx, py + by, 2, height, theme.deepBlade);
+    ink(ctx, px + bx, py + by, 1, height - 3, theme.deepLit);
+    if (index % 2 === 0) ink(ctx, px + bx + 2, py + by + 3, 1, height - 4, theme.deepShade);
   });
-  if (n % 3 === 0) ink(ctx, px + 8, py + 5, 2, 2, "#d7e27a");
-  if (n % 4 === 0) ink(ctx, px + 22, py + 16, 2, 2, "#e6d27a");
+  if (n % 3 === 0) ink(ctx, px + 8, py + 5, 2, 2, theme.deepSeedA);
+  if (n % 4 === 0) ink(ctx, px + 22, py + 16, 2, 2, theme.deepSeedB);
 }
 
 function drawGrass(ctx, px, py, x, y) {
+  const theme = activeTheme;
   const n = hash(x, y);
-  const base = (x + y) % 2 === 0 ? "#4ea33b" : "#59b246";
+  // Ridgeview: cooler alpine base, with golden meadow patches by salt.
+  let base = (x + y) % 2 === 0 ? theme.grassA : theme.grassB;
+  if (theme.id === "ridgeview" && n % 7 === 0) base = "#c4a24a";
+  if (theme.id === "ridgeview" && n % 11 === 0) base = "#b87838";
   ink(ctx, px, py, TILE, TILE, base);
-  ink(ctx, px + (n % 18), py + ((n >>> 3) % 16), 4, 2, "#78d15e");
-  ink(ctx, px + ((n >>> 6) % 20), py + ((n >>> 9) % 18), 3, 2, "#3b8a2e");
+  ink(ctx, px + (n % 18), py + ((n >>> 3) % 16), 4, 2, theme.grassLit);
+  ink(ctx, px + ((n >>> 6) % 20), py + ((n >>> 9) % 18), 3, 2, theme.grassShade);
   const blades = [[3, 7], [12, 20], [22, 8], [8, 26], [26, 18]];
   blades.forEach(([bx, by], index) => {
     if ((n >>> index) & 1) return;
-    ink(ctx, px + bx, py + by, 1, 3, "#245c22");
-    ink(ctx, px + bx + 1, py + by + 1, 1, 2, "#b6e88a");
+    ink(ctx, px + bx, py + by, 1, 3, theme.grassBlade);
+    ink(ctx, px + bx + 1, py + by + 1, 1, 2, theme.grassTip);
   });
   if (n % 6 === 0) drawFlower(ctx, px + 8 + (n % 10), py + 8 + ((n >>> 4) % 12), n);
   if (n % 9 === 0) drawFlower(ctx, px + 18, py + 22, n >>> 2);
@@ -877,19 +892,20 @@ function drawRoad(ctx, px, py, x, y, ground) {
 }
 
 function drawPebble(ctx, px, py, x, y) {
+  const theme = activeTheme;
   const n = hash(x, y);
-  ink(ctx, px, py, TILE, TILE, "#c4a36a");
-  ink(ctx, px, py + TILE - 3, TILE, 3, "#a8844e");
+  ink(ctx, px, py, TILE, TILE, theme.pebbleBase);
+  ink(ctx, px, py + TILE - 3, TILE, 3, theme.pebbleEdge);
   const stones = [[4, 6], [14, 8], [22, 18], [8, 20], [18, 24]];
   stones.forEach(([sx, sy], index) => {
     const tone = (n + index) % 3;
-    const color = tone === 0 ? "#e6d0a4" : tone === 1 ? "#8d6b3e" : "#f2e2c0";
+    const color = theme.pebbleStones[tone] || theme.pebbleStones[0];
     ink(ctx, px + sx, py + sy, 5, 4, OUTLINE);
     ink(ctx, px + sx + 1, py + sy + 1, 3, 2, color);
   });
   if ((n + x) % 4 === 0) {
-    ink(ctx, px + 2, py + 2, 1, 2, "#3b8a2e");
-    ink(ctx, px + TILE - 4, py + TILE - 6, 1, 2, "#3b8a2e");
+    ink(ctx, px + 2, py + 2, 1, 2, theme.pebbleMoss);
+    ink(ctx, px + TILE - 4, py + TILE - 6, 1, 2, theme.pebbleMoss);
   }
 }
 
@@ -955,6 +971,11 @@ function drawDirt(ctx, px, py, x, y) {
 
 function drawTree(ctx, px, py, x, y) {
   drawGrass(ctx, px, py, x, y);
+  const theme = activeTheme;
+  if (theme.treeShape === "conifer") {
+    drawConifer(ctx, px, py, x, y);
+    return;
+  }
   const cx = px + 16;
   const top = py + 3;
   const bands = [8, 12, 16, 20, 22, 24, 24, 22, 18, 14];
@@ -962,13 +983,37 @@ function drawTree(ctx, px, py, x, y) {
     ink(ctx, cx - (w + 2) / 2, top + i * 2, w + 2, 2, OUTLINE);
   });
   bands.forEach((w, i) => {
-    const color = i > 7 ? "#1e5a28" : i < 3 ? "#4ea84a" : "#2f7a32";
+    const color = i > 7 ? theme.treeBands[2] : i < 3 ? theme.treeBands[0] : theme.treeBands[1];
     ink(ctx, cx - w / 2, top + i * 2, w, 2, color);
   });
-  ink(ctx, cx - 5, top + 4, 6, 3, "#b6e88a");
+  ink(ctx, cx - 5, top + 4, 6, 3, theme.treeHighlight);
   ink(ctx, cx - 3, top + 18, 6, 10, OUTLINE);
-  ink(ctx, cx - 2, top + 19, 4, 8, "#6b4428");
-  ink(ctx, cx - 2, top + 19, 1, 8, "#a07848");
+  ink(ctx, cx - 2, top + 19, 4, 8, theme.treeTrunk);
+  ink(ctx, cx - 2, top + 19, 1, 8, theme.treeTrunkLit);
+}
+
+/** Tall spruce / pine. Denser and pointier than Brick City's round trees. */
+function drawConifer(ctx, px, py, x, y) {
+  const theme = activeTheme;
+  const cx = px + 16;
+  const top = py + 1;
+  // Three stacked triangles, dark teal-green with near-black shadow.
+  const tiers = [
+    { y: 0, w: 10 },
+    { y: 6, w: 16 },
+    { y: 14, w: 22 },
+    { y: 22, w: 26 },
+  ];
+  for (const tier of tiers) {
+    const mid = top + tier.y;
+    ink(ctx, cx - tier.w / 2 - 1, mid, tier.w + 2, 8, OUTLINE);
+    ink(ctx, cx - tier.w / 2, mid + 1, tier.w, 6, theme.treeBands[1]);
+    ink(ctx, cx - tier.w / 2 + 2, mid + 1, Math.max(2, tier.w / 2 - 2), 3, theme.treeBands[0]);
+    ink(ctx, cx + 1, mid + 3, Math.max(2, tier.w / 2 - 2), 3, theme.treeBands[2]);
+  }
+  ink(ctx, cx - 2, top + 2, 3, 2, theme.treeHighlight);
+  ink(ctx, cx - 2, top + 28, 4, 4, OUTLINE);
+  ink(ctx, cx - 1, top + 28, 2, 3, theme.treeTrunk);
 }
 
 function drawWater(ctx, px, py, x, y, frame, ground) {
@@ -1015,25 +1060,27 @@ function drawTrack(ctx, px, py, x, y, ground) {
 }
 
 function drawInfield(ctx, px, py, x, y) {
-  ink(ctx, px, py, TILE, TILE, "#3f8f45");
-  ink(ctx, px + 6, py + 10, 3, 2, "#67b84c");
-  ink(ctx, px + 18, py + 20, 4, 2, "#2f7a32");
+  const theme = activeTheme;
+  ink(ctx, px, py, TILE, TILE, theme.infield);
+  ink(ctx, px + 6, py + 10, 3, 2, theme.infieldLit);
+  ink(ctx, px + 18, py + 20, 4, 2, theme.infieldShade);
   if (hash(x, y) % 5 === 0) drawFlower(ctx, px + 14, py + 14, x + y);
 }
 
 function drawRock(ctx, px, py, x, y, ground) {
+  const theme = activeTheme;
   const rock = (dx, dy) => ground[y + dy]?.[x + dx] === "o";
   const buried = rock(0, -1) && rock(0, 1) && rock(-1, 0) && rock(1, 0);
-  if (buried) ink(ctx, px, py, TILE, TILE, "#6a737c");
+  if (buried) ink(ctx, px, py, TILE, TILE, theme.rockFill[2] || "#6a737c");
   else drawGrass(ctx, px, py, x, y);
   const shift = (x + y) % 3;
   const tone = (x * 2 + y) % 3;
-  const fill = tone === 0 ? "#aeb6be" : tone === 1 ? "#8d959e" : "#7a848e";
+  const fill = theme.rockFill[tone] || theme.rockFill[0];
   ink(ctx, px + 2 + shift, py + 5, 26, 22, OUTLINE);
   ink(ctx, px + 3 + shift, py + 6, 24, 20, fill);
-  ink(ctx, px + 5 + shift, py + 7, 10, 4, "#e4ebf0");
-  ink(ctx, px + 8 + shift, py + 16, 12, 3, "#4e565e");
-  ink(ctx, px + 6 + shift, py + 20, 16, 4, "#5c656e");
+  ink(ctx, px + 5 + shift, py + 7, 10, 4, theme.rockLit);
+  ink(ctx, px + 8 + shift, py + 16, 12, 3, theme.rockShade);
+  ink(ctx, px + 6 + shift, py + 20, 16, 4, theme.rockShade);
 }
 
 function drawTile(ctx, code, x, y, ground, waterFrame) {
@@ -1041,8 +1088,13 @@ function drawTile(ctx, code, x, y, ground, waterFrame) {
   const py = y * TILE;
   switch (code) {
     case "r":
-    case "x":
       drawRoad(ctx, px, py, x, y, ground);
+      break;
+    case "x":
+      // Shared stamp uses "x" for park / trail pads. On Ridgeview those
+      // read as dusty tan pebble paths, not leftover asphalt.
+      if (activeTheme.id === "ridgeview") drawPebble(ctx, px, py, x, y);
+      else drawRoad(ctx, px, py, x, y, ground);
       break;
     case "d":
       drawDirt(ctx, px, py, x, y);
@@ -1448,6 +1500,139 @@ function drawRoaster(ctx, x, y) {
   ink(ctx, x + 18, y + 30, 6, 6, "#8a9098");
 }
 
+/**
+ * Steep slate gable + cream plaster + dark wood shutters (Chamonix mood).
+ * Door pixel positions match the Brick City drawers so mats stay lined up.
+ */
+function drawChaletShell(ctx, ox, oy, bodyW, bodyH, roofH, door) {
+  const theme = activeTheme;
+  // Steep gable roof
+  shingles(ctx, ox + 20, oy + 20, bodyW - 40, roofH, theme.slateRoof, theme.slateRoofDark, theme.slateRoofLit);
+  // Peak triangle overhang
+  ink(ctx, ox + bodyW / 2 - 8, oy + 8, 16, 14, theme.slateRoofDark);
+  ink(ctx, ox + bodyW / 2 - 6, oy + 10, 12, 10, theme.slateRoof);
+  // Cream plaster walls
+  box(ctx, ox + 28, oy + 20 + roofH - 4, bodyW - 56, bodyH, theme.chaletWall, theme.chaletWallLit, theme.chaletWallShade);
+  // Dark wood balcony rail
+  ink(ctx, ox + 36, oy + 20 + roofH + 20, bodyW - 72, 4, theme.chaletWood);
+  ink(ctx, ox + 36, oy + 20 + roofH + 24, bodyW - 72, 2, theme.chaletWoodLit);
+  for (let i = 0; i < 5; i += 1) {
+    ink(ctx, ox + 40 + i * Math.floor((bodyW - 80) / 5), oy + 20 + roofH + 16, 3, 10, theme.chaletWood);
+  }
+  // Shutters beside a center window
+  const wx = ox + bodyW / 2 - 16;
+  const wy = oy + 20 + roofH + 32;
+  ink(ctx, wx - 10, wy, 8, 18, theme.chaletWood);
+  ink(ctx, wx + 24, wy, 8, 18, theme.chaletWood);
+  windowPane(ctx, wx, wy, 24, 18);
+  doorPanel(ctx, door.x, door.y, door.w, door.h, theme.chaletWood);
+  if (door.steps) doorSteps(ctx, door.x, door.y + door.h, door.w);
+}
+
+/** Auburn Gold Rush false-front: tall board parapet, brick face, boardwalk. */
+function drawAuburnStorefront(ctx, ox, oy, bodyW, bodyH, door) {
+  const theme = activeTheme;
+  // False front parapet above the roof line
+  box(ctx, ox + 16, oy + 8, bodyW - 32, 28, theme.auburnFalse, "#fff8ea", "#8a6840");
+  ink(ctx, ox + 20, oy + 12, bodyW - 40, 4, theme.accentTeal);
+  ink(ctx, ox + 20, oy + 20, bodyW - 40, 2, theme.chaletWood);
+  // Brick courses
+  box(ctx, ox + 24, oy + 36, bodyW - 48, bodyH, theme.auburnBrick, theme.auburnBrickLit, theme.auburnBrickShade);
+  for (let row = 40; row < 36 + bodyH - 4; row += 6) {
+    ink(ctx, ox + 26, oy + row, bodyW - 52, 1, "#f0d2b4");
+  }
+  // Boardwalk porch lip (still on the building footprint)
+  ink(ctx, ox + 20, oy + 36 + bodyH - 10, bodyW - 40, 10, theme.auburnBoardwalk);
+  ink(ctx, ox + 20, oy + 36 + bodyH - 10, bodyW - 40, 2, "#c4a878");
+  windowPane(ctx, ox + 40, oy + 48, 28, 22);
+  windowPane(ctx, ox + bodyW - 72, oy + 48, 28, 22);
+  doorPanel(ctx, door.x, door.y, door.w, door.h, theme.chaletWood);
+  if (door.steps) doorSteps(ctx, door.x, door.y + door.h, door.w);
+}
+
+function drawRidgeHome(ctx, ox, oy, scene) {
+  const foot = 5 * TILE;
+  paintFence(ctx, scenePart(scene, "home-west"));
+  paintFence(ctx, scenePart(scene, "home-east"));
+  drawChaletShell(ctx, ox, oy, 7 * TILE, 56, 46, {
+    x: ox + 100,
+    y: oy + 112,
+    w: 26,
+    h: 32,
+    steps: false,
+  });
+  ink(ctx, ox + 88, oy + 144, 50, 16, "#d7d0c3");
+  ink(ctx, ox + 84, oy + foot - 8, 58, 8, "#cfc6b8");
+  drawLantern(ctx, ox + 112, oy + 108);
+  mailbox(ctx, ox + 70, oy + 120);
+  paintBoard(ctx, scenePart(scene, "home"));
+}
+
+function drawRidgeGrocery(ctx, ox, oy, scene) {
+  drawAuburnStorefront(ctx, ox, oy, 8 * TILE, 78, {
+    x: ox + 100,
+    y: oy + 5 * TILE - 36,
+    w: 24,
+    h: 36,
+    steps: true,
+  });
+  crate(ctx, ox + 32, oy + 5 * TILE - 28, ["#e23d3d", "#f2c14e", "#3d9a4a"]);
+  paintBoard(ctx, scenePart(scene, "grocery"));
+}
+
+function drawRidgeGym(ctx, ox, oy, scene) {
+  const theme = activeTheme;
+  shingles(ctx, ox + 28, oy + 24, 168, 56, theme.slateRoof, theme.slateRoofDark, theme.slateRoofLit);
+  box(ctx, ox + 36, oy + 72, 188, 96, theme.chaletWall, theme.chaletWallLit, theme.chaletWallShade);
+  ink(ctx, ox + 44, oy + 90, 160, 4, theme.chaletWood);
+  for (const pane of panes("gym")) windowPane(ctx, pane.x, pane.y, pane.w, pane.h);
+  doorPanel(ctx, ox + 188, oy + 96, 18, 32, theme.chaletWood);
+  doorPanel(ctx, ox + 206, oy + 96, 18, 32, theme.chaletWoodLit);
+  ink(ctx, ox + 222, oy + 118, 10, 40, "#cfc6b8");
+  bikeRack(ctx, ox + 48, oy + 7 * TILE - 28);
+  paintFence(ctx, scenePart(scene, "gym-fence"));
+  paintBoard(ctx, scenePart(scene, "gym"));
+}
+
+function drawRidgeStore(ctx, ox, oy, scene) {
+  stripedAwning(ctx, ox + 20, oy - 12, 184, 16, activeTheme.accentTeal, activeTheme.accentWhite);
+  drawAuburnStorefront(ctx, ox, oy + 20, 7 * TILE, 70, {
+    x: ox + 100,
+    y: oy,
+    w: 24,
+    h: 32,
+    steps: true,
+  });
+  drawSneaker(ctx, ox + 70, oy + 46);
+  paintFence(ctx, scenePart(scene, "store-fence"));
+  paintBoard(ctx, scenePart(scene, "store"));
+}
+
+function drawRidgeClinic(ctx, ox, oy, scene) {
+  const theme = activeTheme;
+  shingles(ctx, ox + 20, oy + 36, 152, 40, theme.slateRoof, theme.slateRoofDark, theme.slateRoofLit);
+  box(ctx, ox + 28, oy + 68, 136, 56, theme.chaletWall, theme.chaletWallLit, theme.chaletWallShade);
+  doorPanel(ctx, ox + 72, oy + 2, 28, 32, theme.accentTeal);
+  doorSteps(ctx, ox + 72, oy + 34, 28);
+  drawStretchFigure(ctx, ox + 36, oy + 78);
+  windowPane(ctx, ox + 108, oy + 78, 28, 22);
+  paintBoard(ctx, scenePart(scene, "clinic"));
+}
+
+function drawRidgeCafe(ctx, ox, oy, scene) {
+  const theme = activeTheme;
+  shingles(ctx, ox + 16, oy + 20, 224, 28, theme.slateRoof, theme.slateRoofDark, theme.slateRoofLit);
+  box(ctx, ox + 20, oy + 42, 216, 80, theme.chaletWall, theme.chaletWallLit, theme.chaletWallShade);
+  ink(ctx, ox + 28, oy + 60, 200, 4, theme.chaletWood);
+  doorPanel(ctx, ox + 100, oy + 2, 26, 30, theme.accentWhite);
+  doorSteps(ctx, ox + 100, oy + 32, 26);
+  windowPane(ctx, ox + 30, oy + 50, 88, 44);
+  drawRoaster(ctx, ox + 42, oy + 52);
+  bench(ctx, ox + 130, oy + 100);
+  planterBox(ctx, ox + 48, oy + 102, 3);
+  paintBoard(ctx, scenePart(scene, "cafe"));
+}
+
 function drawCafe(ctx, ox, oy, scene) {
   // Matte black, white trim, a concrete base, steel posts. The door sits
   // on the north edge so it meets the sidewalk. The roaster is in the
@@ -1780,10 +1965,17 @@ function drawActivityBoard(ctx, scene) {
 function drawCityPost(ctx, tx, ty) {
   const x = tx * TILE;
   const y = ty * TILE;
-  box(ctx, x + 13, y + 18, 6, 14, "#6b4428", "#c4956a", "#3e2614");
+  const theme = activeTheme;
+  const initials = theme.id === "ridgeview"
+    ? "RV"
+    : theme.id === "flatland"
+      ? "FL"
+      : "BC";
+  const stripe = theme.id === "ridgeview" ? theme.accentTeal : "#1d4ed8";
+  box(ctx, x + 13, y + 18, 6, 14, theme.chaletWood || "#6b4428", theme.chaletWoodLit || "#c4956a", "#3e2614");
   box(ctx, x + 1, y + 1, 30, 20, "#f7f1e4", "#fff8ea", "#6b4428");
-  ink(ctx, x + 2, y + 2, 28, 4, "#1d4ed8");
-  paintOutlinedText(ctx, "BC", x + 7, y + 8, "#1c140f", 2);
+  ink(ctx, x + 2, y + 2, 28, 4, stripe);
+  paintOutlinedText(ctx, initials, x + 7, y + 8, "#1c140f", 2);
 }
 
 function drawDepot(ctx, scene) {
@@ -1871,7 +2063,9 @@ function drawAreaFences(ctx, scene) {
 export function renderWorld(state, waterFrame = 0) {
   // Active map: Brick City, Ridgeview, Flatland, or a road between towns.
   const world = buildActiveWorld(state);
+  activeTheme = themeFor(world.id);
   const isBrick = world.id === "brick-city" || !world.id;
+  const isRidge = world.id === "ridgeview";
   const scene = isBrick ? sceneryLayout() : sceneryLayoutForWorld(world);
   const canvas = document.createElement("canvas");
   canvas.width = COLS * TILE;
@@ -1887,15 +2081,25 @@ export function renderWorld(state, waterFrame = 0) {
   // later, so they sit on the mat instead of hiding under it.
   paintActivationPads(ctx, world);
   const buildings = world.buildings || BUILDINGS;
+  const ridgeBuildings = activeTheme.buildingStyle === "ridgeview";
   for (const building of buildings) {
     const px = building.x * TILE;
     const py = building.y * TILE;
-    if (building.id === "home") drawHome(ctx, px, py, scene);
-    if (building.id === "grocery") drawGrocery(ctx, px, py, scene);
-    if (building.id === "gym") drawGym(ctx, px, py, scene);
-    if (building.id === "store") drawStore(ctx, px, py, scene);
-    if (building.id === "clinic") drawClinic(ctx, px, py, scene);
-    if (building.id === "cafe") drawCafe(ctx, px, py, scene);
+    if (ridgeBuildings) {
+      if (building.id === "home") drawRidgeHome(ctx, px, py, scene);
+      if (building.id === "grocery") drawRidgeGrocery(ctx, px, py, scene);
+      if (building.id === "gym") drawRidgeGym(ctx, px, py, scene);
+      if (building.id === "store") drawRidgeStore(ctx, px, py, scene);
+      if (building.id === "clinic") drawRidgeClinic(ctx, px, py, scene);
+      if (building.id === "cafe") drawRidgeCafe(ctx, px, py, scene);
+    } else {
+      if (building.id === "home") drawHome(ctx, px, py, scene);
+      if (building.id === "grocery") drawGrocery(ctx, px, py, scene);
+      if (building.id === "gym") drawGym(ctx, px, py, scene);
+      if (building.id === "store") drawStore(ctx, px, py, scene);
+      if (building.id === "clinic") drawClinic(ctx, px, py, scene);
+      if (building.id === "cafe") drawCafe(ctx, px, py, scene);
+    }
   }
   if (isBrick) {
     drawFountain(ctx, waterFrame);
@@ -1910,6 +2114,10 @@ export function renderWorld(state, waterFrame = 0) {
     drawLandmarksFrom(ctx, world.landmarks || []);
     drawDepotAt(ctx, world);
     if (world.activityBoard) drawActivityBoardAt(ctx, world.activityBoard);
+    if (isRidge) {
+      drawRidgePlazaExtras(ctx);
+      drawGate(ctx, world.mountainOpen, scene);
+    }
   }
   // One welcome post per map.
   const signs = world.signs || CITY_SIGNS;
@@ -1991,19 +2199,96 @@ function drawLandmarksFrom(ctx, landmarks) {
       box(ctx, x + 4, y + 2, w - 8, h - 4, "#8d3a32", "#c45a48", "#5e221c");
       ink(ctx, x + 12, y + h - 18, w - 24, 10, "#3a1c10");
       ink(ctx, x + 16, y + h - 14, w - 32, 4, "#e07a32");
+    } else if (mark.id === "church") {
+      drawChurch(ctx, x, y, w, h);
+    } else if (mark.id === "race-arch") {
+      drawRaceArch(ctx, x, y, w, h);
+    } else if (mark.id.startsWith("rock-pile")) {
+      drawRockPile(ctx, x, y, w, h);
+    } else if (mark.id.startsWith("trail-post")) {
+      drawTrailPost(ctx, x, y);
+    } else if (mark.id.startsWith("wood-fence")) {
+      drawHFence(ctx, x + 2, y + Math.floor(h / 2) - 2, w - 4);
     }
+  }
+}
+
+/**
+ * White church with a steeple and a small onion-dome cap. Landmark only —
+ * not a shop, not a race menu. Original design; no real parish mark.
+ */
+function drawChurch(ctx, x, y, w, h) {
+  const theme = activeTheme;
+  const bodyH = Math.max(24, h - 36);
+  shingles(ctx, x + 4, y + 28, w - 8, 18, theme.churchSlate || theme.slateRoof, theme.slateRoofDark, theme.slateRoofLit);
+  box(ctx, x + 8, y + 42, w - 16, bodyH, theme.churchWall || "#f7f7f7", "#ffffff", "#c8c0b4");
+  // Steeple
+  ink(ctx, x + w / 2 - 8, y + 8, 16, 24, theme.churchSlate || theme.slateRoof);
+  ink(ctx, x + w / 2 - 6, y + 10, 12, 20, theme.slateRoofLit || "#8a9098");
+  // Onion-dome cap (seafoam accent, not a copied silhouette)
+  ink(ctx, x + w / 2 - 10, y + 2, 20, 10, theme.churchDome || theme.accentTeal);
+  ink(ctx, x + w / 2 - 6, y, 12, 6, theme.accentWhite);
+  ink(ctx, x + w / 2 - 2, y - 4, 4, 6, theme.accentBlack);
+  windowPane(ctx, x + w / 2 - 10, y + 52, 20, 28);
+  doorPanel(ctx, x + w / 2 - 10, y + h - 28, 20, 24, theme.chaletWood || "#3e2a18");
+}
+
+/** Race start/finish arch over the plaza. Original text only. */
+function drawRaceArch(ctx, x, y, w, h) {
+  const theme = activeTheme;
+  ink(ctx, x + 4, y + 8, 6, h - 8, theme.chaletWood || "#3e2a18");
+  ink(ctx, x + w - 10, y + 8, 6, h - 8, theme.chaletWood || "#3e2a18");
+  box(ctx, x + 2, y, w - 4, 16, theme.accentTeal, theme.accentWhite, theme.accentBlack);
+  paintOutlinedText(ctx, "RIDGE", x + Math.max(4, w / 2 - 18), y + 4, "#1c140f", 1);
+}
+
+function drawRockPile(ctx, x, y, w, h) {
+  const theme = activeTheme;
+  const fills = theme.rockFill || ["#aeb6be", "#8d959e", "#7a848e"];
+  ink(ctx, x + 4, y + h - 18, w - 8, 14, OUTLINE);
+  ink(ctx, x + 6, y + h - 16, w - 12, 10, fills[1]);
+  ink(ctx, x + 10, y + h - 28, Math.floor(w / 2), 14, OUTLINE);
+  ink(ctx, x + 12, y + h - 26, Math.floor(w / 2) - 4, 10, fills[0]);
+  ink(ctx, x + 8, y + h - 24, 8, 3, theme.rockLit || "#e4ebf0");
+}
+
+function drawTrailPost(ctx, x, y) {
+  const theme = activeTheme;
+  ink(ctx, x + 14, y + 8, 4, 24, theme.chaletWood || "#3e2a18");
+  box(ctx, x + 4, y + 4, 24, 12, "#f2c14e", "#fff1c2", "#8a5a20");
+  paintOutlinedText(ctx, "TRAIL", x + 6, y + 6, "#1c140f", 1);
+}
+
+/** Plaza paint that is not a solid landmark: distant slate peaks hint. */
+function drawRidgePlazaExtras(ctx) {
+  // Pale slate / blue-gray mountain silhouette along the far north edge
+  // (inside the tree border). Decoration only — no collision.
+  for (let i = 0; i < 5; i += 1) {
+    const bx = (8 + i * 12) * TILE;
+    const peak = 6 + (i % 3) * 4;
+    ink(ctx, bx, peak, 40, 10, "#6a7380");
+    ink(ctx, bx + 8, peak - 6, 24, 10, "#8a949e");
+    ink(ctx, bx + 16, peak - 10, 10, 8, "#b0b8c0");
   }
 }
 
 function drawDepotAt(ctx, world) {
   const depot = (world.places || []).find((p) => p.id === "depot");
   if (!depot) return;
+  const theme = activeTheme;
   const x = depot.tx * TILE;
   const y = (depot.ty - 1) * TILE;
-  box(ctx, x + 2, y + 4, 8, TILE - 4, "#6b4428", "#c4956a", "#3e2614");
-  box(ctx, x + 54, y + 4, 8, TILE - 4, "#6b4428", "#c4956a", "#3e2614");
-  shingles(ctx, x, y, 64, 16, "#8d3a32", "#5e221c", "#c45a48");
-  box(ctx, x + 14, y + 14, 36, 18, "#f3e2c0", "#fff8ea", "#6b4428");
+  if (theme.buildingStyle === "ridgeview") {
+    box(ctx, x + 2, y + 4, 8, TILE - 4, theme.chaletWood, theme.chaletWoodLit, "#1a1008");
+    box(ctx, x + 54, y + 4, 8, TILE - 4, theme.chaletWood, theme.chaletWoodLit, "#1a1008");
+    shingles(ctx, x, y, 64, 16, theme.slateRoof, theme.slateRoofDark, theme.slateRoofLit);
+    box(ctx, x + 14, y + 14, 36, 18, theme.chaletWall, theme.chaletWallLit, theme.chaletWallShade);
+  } else {
+    box(ctx, x + 2, y + 4, 8, TILE - 4, "#6b4428", "#c4956a", "#3e2614");
+    box(ctx, x + 54, y + 4, 8, TILE - 4, "#6b4428", "#c4956a", "#3e2614");
+    shingles(ctx, x, y, 64, 16, "#8d3a32", "#5e221c", "#c45a48");
+    box(ctx, x + 14, y + 14, 36, 18, "#f3e2c0", "#fff8ea", "#6b4428");
+  }
   paintOutlinedText(ctx, "DEPOT", x + 8, y + 2, "#fff8ea", 1);
 }
 

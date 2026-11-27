@@ -18,8 +18,10 @@
  * camera bounds, collision, and tests stay comparable. Existing
  * buildings and doors keep their old tile coordinates; new streets
  * and landmarks fill the east and south expansion. An old save whose
- * pixel position lands in a wall is moved to the town-square spawn
- * (see safePlayerPosition).
+ * pixel position lands in a wall is nudged to the nearest walkable tile
+ * (see safePlayerPosition). Brick City roads are hand-authored here;
+ * Ridgeview / Flatland use stampCoreTown in maps/shared.js (kept tight
+ * so asphalt does not spill across empty grass — see docs/NOTES.md).
  *
  * The town has one welcome sign. It names the city and the motto, and
  * it stands on the sidewalk beside the Home mat (where you start).
@@ -809,10 +811,39 @@ export function townSquareSpawn() {
 }
 
 /**
- * If a saved pixel sits out of bounds or inside a wall (map grew, or an
- * old 16px position landed wrong), move the runner to the town square.
- * Feet use the same box as walking, so a head-over-fence save still
- * counts as safe when the feet are clear.
+ * Closest walkable tile to (fromTx, fromTy), searching up/down/left/right.
+ * Used when a save lands on a tile that used to be a road and is now
+ * grass after a map cleanup. Returns null if nothing is open nearby.
+ */
+export function nearestWalkableTile(world, fromTx, fromTy, maxSteps = 32) {
+  if (inBounds(fromTx, fromTy) && !isBlocked(world, fromTx, fromTy)) {
+    return { tx: fromTx, ty: fromTy };
+  }
+  const seen = new Set([`${fromTx},${fromTy}`]);
+  const queue = [{ tx: fromTx, ty: fromTy, steps: 0 }];
+  while (queue.length) {
+    const current = queue.shift();
+    for (const [dx, dy] of Object.values(DIR)) {
+      const tx = current.tx + dx;
+      const ty = current.ty + dy;
+      const key = `${tx},${ty}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const steps = current.steps + 1;
+      if (steps > maxSteps || !inBounds(tx, ty)) continue;
+      if (!isBlocked(world, tx, ty)) return { tx, ty };
+      queue.push({ tx, ty, steps });
+    }
+  }
+  return null;
+}
+
+/**
+ * If a saved pixel sits out of bounds or inside a wall (map grew, an old
+ * 16px position landed wrong, or a road tile became grass), nudge the
+ * runner to the nearest walkable tile. Falls back to the town square
+ * only when nothing nearby is open. Feet use the same box as walking,
+ * so a head-over-fence save still counts as safe when the feet are clear.
  */
 export function safePlayerPosition(state, world = null) {
   const map = world || buildActiveWorld(state);
@@ -820,16 +851,24 @@ export function safePlayerPosition(state, world = null) {
   if (!pos || typeof pos.x !== "number" || typeof pos.y !== "number") {
     return townSquareSpawn();
   }
-  const { tx, ty } = tileOf(pos.x, pos.y);
-  if (!inBounds(tx, ty) || isBlocked(map, tx, ty) || footBlocked(map, pos.x, pos.y)) {
-    return townSquareSpawn();
-  }
-  // Keep the saved facing and any extra fields. Do not invent tx/ty on
-  // an old blob that never stored them; Resume only needs x/y/facing.
   const facing = pos.facing === "up" || pos.facing === "left" || pos.facing === "right"
     ? pos.facing
     : "down";
-  return { ...pos, x: pos.x, y: pos.y, facing };
+  const { tx, ty } = tileOf(pos.x, pos.y);
+  if (inBounds(tx, ty) && !isBlocked(map, tx, ty) && !footBlocked(map, pos.x, pos.y)) {
+    // Keep the saved facing and any extra fields. Do not invent tx/ty on
+    // an old blob that never stored them; Resume only needs x/y/facing.
+    return { ...pos, x: pos.x, y: pos.y, facing };
+  }
+  // Prefer a nearby open tile (same district) over a hard teleport to the
+  // square, so a cleanup that turned asphalt into grass does not yank
+  // the runner across town. Save format is unchanged: still x/y/facing.
+  const near = nearestWalkableTile(map, tx, ty);
+  if (near) {
+    const center = tileCenter(near.tx, near.ty);
+    return { ...pos, x: center.x, y: center.y, facing, tx: near.tx, ty: near.ty };
+  }
+  return townSquareSpawn();
 }
 
 /**
