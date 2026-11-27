@@ -1186,9 +1186,34 @@ Version stays **`brick-city-save-v1`**. New fields get safe defaults on load: `m
 
 Lakeport, Mesa Verde Flats, Summit Hollow maps, and real-life run logging are still design-only. Shoe / nutrition / gear sponsors stay as in this private prototype.
 
+## Town layouts
+
+Each built town owns its own street plan. Ridgeview and Flatland no longer call `stampCoreTown` (that helper copied Brick City's door grid and then painted sidewalks across asphalt). Layout data lives in `src/game/maps/layouts/`:
+
+| Town | Layout feel |
+|---|---|
+| Brick City | Baseline grid in `town.js` — double-tile streets, plaza, track oval east of the booth, mountain switchbacks north |
+| Ridgeview | Winding valley asphalt, compact plaza with church + race arch, Gold Rush storefronts on one historic stretch, chalets on the slopes, switchback dirt north, park loops south |
+| Flatland | One big country crossroads, small NW building cluster, long farm roads, open field patches in the quadrants, practice yard on an east spur |
+| Lakeport / Mesa Verde / Summit Hollow | Still unbuilt |
+
+`layoutEngine.js` stamps a layout object (`roads`, `track`, `scatters`) onto a blank grass grid. Sidewalks (`s`) stop one tile before asphalt so curbs stay continuous — `roadInterruptions` fails if an `s` sits between two `r` cells. `sidewalkStubs` fails if a sidewalk tip dead-ends into grass (door mats and city-sign pads are allowed tips). Every town shares the same closed `TRACK_ROWS` oval so lane corners never chop mid-tile.
+
+**Save compatibility.** Version stays `brick-city-save-v1`. `safePlayerPosition` falls back to the active world's home mat (then nearest walkable, then town square) when a saved pixel lands in a wall after a layout move.
+
+**Tests.** `src/game/maps/layouts.test.js` checks door/NPC/warp reachability, one connected walkable component, no road/sidewalk seams, no sidewalk stubs, door mats aligned with the building kit, and unique Ridgeview / Flatland place coords vs Brick City.
+
+## Building composition
+
+Building drawers used to mix relative offsets (`ox`, `oy`) with absolute window lists from `lighting.js` (`panes()`). After towns moved their footprints, those absolute panes landed on the wrong wall — stacked on top of the relative windows, or floating beside the door. Theme restyles from PR #31 drew a second set of pieces on the same idea.
+
+`src/game/buildingKit.js` is the single source of truth. Every shop building (`home`, `grocery`, `gym`, `store`, `clinic`, `cafe`) has one composition: roof, wall, door, windows, optional awning — all in pixels relative to the building origin. Brick City and Ridgeview drawers read the same boxes; only the paint (brick vs chalet / Auburn) changes. Night window glows in `lighting.js` offset the same relative panes by each building's map origin.
+
+**Audit.** `buildingKit.test.js` asserts exactly one door, no overlapping windows, roof aligned to wall width, and every part inside the tile footprint — for every building type, on every built town.
+
 ## Town themes and palettes
 
-Each overworld can look different without moving doors. `src/game/townThemes.js` holds one theme per map id:
+Each overworld can look different without sharing one door grid. `src/game/townThemes.js` holds one theme per map id:
 
 | Map | Ground | Trees | Buildings |
 |---|---|---|---|
@@ -1196,24 +1221,8 @@ Each overworld can look different without moving doors. `src/game/townThemes.js`
 | Ridgeview | Cool alpine green + golden meadow patches | Tall conifers (spruce / pine) | Chamonix chalets (slate roof, cream plaster, dark wood) and Auburn Gold Rush false-front shops |
 | Flatland | Slightly warmer farm lawn | Round (same drawers as Brick City for now) | Brick City drawers |
 
-`renderWorld` in `art.js` calls `themeFor(world.id)` once and sets `activeTheme`. Tile drawers (grass, deep grass, trees, pebble, rocks, infield) read those colors. Ridgeview also paints `"x"` trail pads as dusty pebble paths instead of asphalt. Building drawers branch on `buildingStyle`: `"ridgeview"` uses the chalet / Auburn painters; `"brick-city"` keeps the original functions so Brick City's look does not change.
+`renderWorld` in `art.js` calls `themeFor(world.id)` once and sets `activeTheme`. Tile drawers (grass, deep grass, trees, pebble, rocks, infield) read those colors. Ridgeview also paints `"x"` trail pads as dusty pebble paths instead of asphalt. Building drawers branch on `buildingStyle`: `"ridgeview"` uses the chalet / Auburn painters; `"brick-city"` keeps the original functions so Brick City's look does not change. Both styles pull geometry from `buildingKit.js`.
 
-Ridgeview landmarks add mountain-town props: a white plaza **church** with steeple and onion-dome cap (landmark only — not a shop or race menu), a race arch with original "RIDGE" text, granite rock piles, trail posts, and a short wood fence. Door mats, building footprints, and warps stay on the shared coordinates from `stampCoreTown`.
+Ridgeview landmarks add mountain-town props: a white plaza **church** with steeple and onion-dome cap (landmark only — not a shop or race menu), a race arch with original "RIDGE" text, granite rock piles, trail posts, and a short wood fence.
 
 Inspiration mood (original pixels only, no real logos): Chamonix, France (UTMB) and Auburn, California (Western States finish) — alpine greens, slate roofs, cream walls, and Gold Rush brick storefronts. Accent teal / white / black comes from trail-runner kit colors, not a brand mark.
-
-## Town road stamping
-
-Ridgeview and Flatland reuse Brick City's door layout through `stampCoreTown` in `src/game/maps/shared.js`. That helper is supposed to stamp only the shared training block (inn, shops, clinic, cafe, depot, plaza, park, track). An early version also painted Brick City's full street grid: east-west asphalt on `y=8` and `y=20` all the way to the east trees, a third boulevard on `y=28`, and the west spine (`x=10`) down to the south border. On a mountain or farm town that left long asphalt strips through empty grass, stub T-junctions that died at a sidewalk, and roads that led nowhere.
-
-**Why the cleanup.** CJ's Ridgeview screenshot showed those leftovers. The stamp now stops the shared streets where the shared doors end (about `x<=42`, `y<=42`). The park approach on `y=28` is dirt (`x`), not asphalt. Each town adds only the spur it needs:
-
-| Town | Extra roads after the core stamp |
-|---|---|
-| Ridgeview | Dirt trail east around the kiln to the Flatland exit; short asphalt spur by the Trail Post (`y=18`, `x=55..70`) |
-| Flatland | Lower street extended to the farm / practice-yard spur (`x=48`); no full-width east meadow asphalt |
-| Brick City | Hand-authored in `town.js` (not `stampCoreTown`). Audit found no orphan megagrid strips; left alone |
-
-**Save compatibility.** Version stays `brick-city-save-v1`. If a saved pixel lands on a tile that used to be road and is now grass (or any wall), `safePlayerPosition` in `town.js` nudges to the nearest walkable tile. The town square is only the fallback when nothing nearby is open.
-
-**Tests.** `town road networks` in `town.test.js` asserts every asphalt tile (`r`) sits on the walkable network that touches a door, depot, trailhead, or exit, and that Ridgeview / Flatland no longer paint asphalt across the empty east meadow.

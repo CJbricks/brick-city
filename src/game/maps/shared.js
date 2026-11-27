@@ -2,22 +2,17 @@
  * shared.js
  * Helpers for building town and road overworlds at TOWN_MAP_* size.
  *
- * Every themed city gets the same core training locations (home/inn,
- * shops, clinic, cafe with Wi-Fi, depot, trails/park). This file stamps
- * roads, buildings, and interact grids so Ridgeview and Flatland stay
- * the same footprint as Brick City without copying every line of town.js.
+ * Towns no longer share one Brick City door grid. Each town file owns a
+ * layout (see layoutEngine.js + maps/layouts). This file still holds the
+ * grid size, ring of trees, road painters, assembleWorld, and the shared
+ * track oval pattern so every town's lane corners match.
  *
- * Sidewalk letters ("s") must meet every door mat. The gym mat is west
- * of the x=10 road at (9, 14); the track booth sits on (26, 12). Those
- * two used to stay grass in stampCoreTown, so A worked on the interact
- * grid but feet could not stand there.
+ * Sidewalk letters ("s") must meet every door mat and must never replace
+ * an asphalt cell in the middle of a street — that cut roads in half and
+ * drew hard curb seams (see roadInterruptions in layoutEngine.js).
  *
- * Road extents stay tight on purpose. An early stampCoreTown painted the
- * full Brick City megagrid (y=8 and y=20 across MAP_COLS, x=10 down to
- * the south trees). That left long asphalt strips through empty grass in
- * Ridgeview and Flatland. stampCoreTown now only lays the streets that
- * serve the shared doors; each town adds its own east/south spur (farm
- * road, Flatland exit trail, etc.). See "Town road stamping" in
+ * stampCoreTown is kept as a deprecated no-op-risk helper only for older
+ * tests; new towns call applyLayout instead. See "Town layouts" in
  * docs/NOTES.md.
  */
 
@@ -34,6 +29,24 @@ export const DIR = {
 };
 
 const WALK = new Set(["r", "d", "k", "i", "x", "s", "h"]);
+
+/**
+ * Closed track oval. "k" is the red lane, "i" is the infield. Corners
+ * share full edges so the feet can lap and the white border stays one
+ * curve. Town layouts pass their own origin; Brick City uses (27, 11).
+ */
+export const TRACK_ROWS = [
+  ".kkkkk.",
+  "kkiiikk",
+  "kiiiiik",
+  "kiiiiik",
+  "kiiiiik",
+  "kiiiiik",
+  "kkiiikk",
+  ".kkkkk.",
+];
+
+export const DEFAULT_TRACK_ORIGIN = { tx: 27, ty: 11 };
 
 export function emptyGround(fill = "g") {
   return Array.from({ length: MAP_ROWS }, () => Array(MAP_COLS).fill(fill));
